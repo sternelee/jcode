@@ -99,6 +99,12 @@ async fn resume_session(
     if let Some(ref saved_model) = session.model {
         let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), saved_model);
     }
+
+    let session_id_for_emit = session.id.clone();
+    let session_provider_key = session.provider_key.clone();
+    let session_model = session.model.clone();
+    let session_reasoning_effort = session.reasoning_effort.clone();
+
     let agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
     app_handle
         .emit(
@@ -106,6 +112,40 @@ async fn resume_session(
             &serde_json::json!({ "type": "session", "session_id": session_id }),
         )
         .ok();
+
+    let (rendered_messages, images) = jcode::session::render_messages_and_images(&session);
+    let messages: Vec<jcode::protocol::HistoryMessage> = rendered_messages
+        .into_iter()
+        .map(|msg| jcode::protocol::HistoryMessage {
+            role: msg.role,
+            content: msg.content,
+            tool_calls: if msg.tool_calls.is_empty() {
+                None
+            } else {
+                Some(msg.tool_calls)
+            },
+            tool_data: msg.tool_data,
+        })
+        .collect();
+
+    app_handle
+        .emit(
+            "server-event",
+            &serde_json::json!({
+                "type": "history",
+                "id": 0,
+                "session_id": session_id_for_emit,
+                "messages": messages,
+                "images": images,
+                "provider_name": session_provider_key,
+                "provider_model": session_model,
+                "available_models": Vec::<String>::new(),
+                "all_sessions": Vec::<String>::new(),
+                "reasoning_effort": session_reasoning_effort,
+            }),
+        )
+        .ok();
+
     init_agent_and_emit(&app_handle, &state, agent, working_dir).await
 }
 
