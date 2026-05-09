@@ -47,6 +47,15 @@ export default function App() {
     } catch {}
   };
 
+  const handleCreateWorkspace = () => {
+    pickWorkspace();
+  };
+
+  const handleCreateSession = (workspaceId: string) => {
+    setActiveWorkspace(workspaceId);
+    setWorkingDir(workspaceId === "default" ? null : workspaceId);
+  };
+
   const handleStart = () => {
     if (state.workingDir)
       connect(state.workingDir, preferredModel || undefined);
@@ -171,6 +180,8 @@ export default function App() {
             setActiveWorkspace(id);
             setWorkingDir(id === "default" ? null : id);
           }}
+          onCreateWorkspace={handleCreateWorkspace}
+          onCreateSession={handleCreateSession}
           isConnected={state.connected}
         />
         <Separator orientation="vertical" />
@@ -192,6 +203,7 @@ export default function App() {
           }}
           onSetReasoningEffort={setReasoningEffort}
           onCompactContext={compactContext}
+          onSelectWorkspace={pickWorkspace}
         />
       </div>
     </div>

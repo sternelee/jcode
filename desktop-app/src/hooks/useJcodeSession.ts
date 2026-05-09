@@ -302,6 +302,10 @@ export function useJcodeSession() {
   const [state, dispatch] = useReducer(sessionReducer, initialSessionState());
 
   useEffect(() => {
+    listSessions();
+  }, []);
+
+  useEffect(() => {
     const unlisten = listen<Record<string, unknown>>(
       "server-event",
       (event) => {

@@ -1,7 +1,7 @@
 import type { ChatMessage } from "@/types";
 import { MessageBubble } from "./MessageBubble";
 import { InputArea } from "./InputArea";
-import { Trash2, Undo2, ArrowDownWideNarrow, MessageSquare } from "lucide-react";
+import { Trash2, Undo2, ArrowDownWideNarrow, MessageSquare, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -31,6 +31,7 @@ interface ChatViewProps {
   onRewindChat: () => void;
   onSetReasoningEffort: (effort: string) => void;
   onCompactContext: () => void;
+  onSelectWorkspace?: () => void;
 }
 
 export function ChatView({
@@ -47,6 +48,7 @@ export function ChatView({
   onRewindChat,
   onSetReasoningEffort,
   onCompactContext,
+  onSelectWorkspace,
 }: ChatViewProps) {
   const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
 
@@ -118,7 +120,22 @@ export function ChatView({
       )}
       <Conversation className="flex-1">
         <ConversationContent>
-          {!connected ? (
+          {!connected && !connectionPhase ? (
+            <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-4 text-muted-foreground">
+              <Button
+                variant="outline"
+                size="lg"
+                className="gap-2"
+                onClick={onSelectWorkspace}
+              >
+                <FolderOpen className="w-5 h-5" />
+                Select Workspace
+              </Button>
+              <p className="text-xs">
+                Choose a folder to start a new workspace
+              </p>
+            </div>
+          ) : !connected ? (
             <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-2 text-muted-foreground">
               <p className="text-sm">{connectionPhase || "Not connected"}</p>
               <p className="text-xs">

@@ -2,7 +2,7 @@ import type { SessionInfo, Workspace } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { RefreshCw, ChevronRight, ChevronDown, Folder } from "lucide-react";
+import { RefreshCw, ChevronRight, ChevronDown, Folder, Plus, FileText } from "lucide-react";
 import { useMemo } from "react";
 
 interface SessionSidebarProps {
@@ -14,6 +14,8 @@ interface SessionSidebarProps {
   onRefresh: () => void;
   onToggleWorkspace: (workspaceId: string) => void;
   onSelectWorkspace: (workspaceId: string) => void;
+  onCreateWorkspace: () => void;
+  onCreateSession: (workspaceId: string) => void;
   isConnected: boolean;
 }
 
@@ -31,6 +33,8 @@ export function SessionSidebar({
   onRefresh,
   onToggleWorkspace,
   onSelectWorkspace,
+  onCreateWorkspace,
+  onCreateSession,
   isConnected,
 }: SessionSidebarProps) {
   const workspaces = useMemo(() => {
@@ -63,14 +67,26 @@ export function SessionSidebar({
         <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Workspaces
         </h3>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          onClick={onRefresh}
-        >
-          <RefreshCw className="w-3 h-3" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={onCreateWorkspace}
+            title="Create workspace"
+          >
+            <Plus className="w-3 h-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={onRefresh}
+            title="Refresh"
+          >
+            <RefreshCw className="w-3 h-3" />
+          </Button>
+        </div>
       </div>
       <ScrollArea className="flex-1 overflow-auto scrollbar-thin">
         <div className="p-2">
@@ -79,29 +95,40 @@ export function SessionSidebar({
             const isActive = ws.id === activeWorkspaceId;
             return (
               <div key={ws.id} className="mb-1">
-                <button
-                  onClick={() => {
-                    onSelectWorkspace(ws.id);
-                    onToggleWorkspace(ws.id);
-                  }}
-                  className={cn(
-                    "w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors",
-                    isActive
-                      ? "bg-primary/10 text-primary"
-                      : "hover:bg-secondary text-foreground",
-                  )}
-                >
-                  {isExpanded ? (
-                    <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                  )}
-                  <Folder className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                  <span className="font-medium truncate">{ws.name}</span>
-                  <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
-                    {ws.sessions.length}
-                  </span>
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      onSelectWorkspace(ws.id);
+                      onToggleWorkspace(ws.id);
+                    }}
+                    className={cn(
+                      "flex-1 flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors",
+                      isActive
+                        ? "bg-primary/10 text-primary"
+                        : "hover:bg-secondary text-foreground",
+                    )}
+                  >
+                    {isExpanded ? (
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    )}
+                    <Folder className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                    <span className="font-medium truncate">{ws.name}</span>
+                    <span className="text-[10px] text-muted-foreground ml-1 shrink-0">
+                      {ws.sessions.length}
+                    </span>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => onCreateSession(ws.id)}
+                    title="New session"
+                  >
+                    <FileText className="w-3 h-3" />
+                  </Button>
+                </div>
                 {isExpanded && (
                   <div className="ml-4 mt-0.5 space-y-0.5">
                     {ws.sessions.map((s) => (
