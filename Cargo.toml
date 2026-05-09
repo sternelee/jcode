@@ -1,63 +1,64 @@
 [package]
 name = "jcode"
 version = "0.12.0"
-description = "Possibly the greatest coding agent ever built — blazing-fast TUI, multi-model, swarm coordination, 30+ tools"
 edition = "2024"
+description = "Possibly the greatest coding agent ever built — blazing-fast TUI, multi-model, swarm coordination, 30+ tools"
 autobins = false
 
 [workspace]
 members = [
-    ".",
-    "crates/jcode-agent-runtime",
-    "crates/jcode-ambient-types",
-    "crates/jcode-auth-types",
-    "crates/jcode-embedding",
-    "crates/jcode-gateway-types",
-    "crates/jcode-import-core",
-    "crates/jcode-pdf",
-    "crates/jcode-background-types",
-    "crates/jcode-batch-types",
-    "crates/jcode-build-support",
-    "crates/jcode-compaction-core",
-    "crates/jcode-config-types",
-    "crates/jcode-core",
-    "crates/jcode-memory-types",
-    "crates/jcode-message-types",
-    "crates/jcode-overnight-core",
-    "crates/jcode-plan",
-    "crates/jcode-swarm-core",
-    "crates/jcode-protocol",
-    "crates/jcode-selfdev-types",
-    "crates/jcode-session-types",
-    "crates/jcode-storage",
-    "crates/jcode-side-panel-types",
-    "crates/jcode-azure-auth",
-    "crates/jcode-notify-email",
-    "crates/jcode-provider-metadata",
-    "crates/jcode-provider-core",
-    "crates/jcode-provider-openrouter",
-    "crates/jcode-provider-openai",
-    "crates/jcode-provider-gemini",
-    "crates/jcode-tui-markdown",
-    "crates/jcode-tui-messages",
-    "crates/jcode-usage-types",
-    "crates/jcode-tui-core",
-    "crates/jcode-tui-mermaid",
-    "crates/jcode-task-types",
-    "crates/jcode-tool-core",
-    "crates/jcode-tool-types",
-    "crates/jcode-tui-account-picker",
-    "crates/jcode-tui-render",
-    "crates/jcode-tui-session-picker",
-    "crates/jcode-tui-style",
-    "crates/jcode-tui-tool-display",
-    "crates/jcode-tui-usage-overlay",
-    "crates/jcode-update-core",
-    "crates/jcode-terminal-launch",
-    "crates/jcode-tui-workspace",
-    "crates/jcode-mobile-core",
-    "crates/jcode-mobile-sim",
-    "crates/jcode-desktop",
+  ".",
+  "crates/jcode-agent-runtime",
+  "crates/jcode-ambient-types",
+  "crates/jcode-auth-types",
+  "crates/jcode-azure-auth",
+  "crates/jcode-background-types",
+  "crates/jcode-batch-types",
+  "crates/jcode-build-support",
+  "crates/jcode-compaction-core",
+  "crates/jcode-config-types",
+  "crates/jcode-core",
+  "crates/jcode-desktop",
+  "crates/jcode-embedding",
+  "crates/jcode-gateway-types",
+  "crates/jcode-import-core",
+  "crates/jcode-memory-types",
+  "crates/jcode-message-types",
+  "crates/jcode-mobile-core",
+  "crates/jcode-mobile-sim",
+  "crates/jcode-notify-email",
+  "crates/jcode-overnight-core",
+  "crates/jcode-pdf",
+  "crates/jcode-plan",
+  "crates/jcode-protocol",
+  "crates/jcode-provider-core",
+  "crates/jcode-provider-gemini",
+  "crates/jcode-provider-metadata",
+  "crates/jcode-provider-openai",
+  "crates/jcode-provider-openrouter",
+  "crates/jcode-selfdev-types",
+  "crates/jcode-session-types",
+  "crates/jcode-side-panel-types",
+  "crates/jcode-storage",
+  "crates/jcode-swarm-core",
+  "crates/jcode-task-types",
+  "crates/jcode-terminal-launch",
+  "crates/jcode-tool-core",
+  "crates/jcode-tool-types",
+  "crates/jcode-tui-account-picker",
+  "crates/jcode-tui-core",
+  "crates/jcode-tui-markdown",
+  "crates/jcode-tui-mermaid",
+  "crates/jcode-tui-messages",
+  "crates/jcode-tui-render",
+  "crates/jcode-tui-session-picker",
+  "crates/jcode-tui-style",
+  "crates/jcode-tui-tool-display",
+  "crates/jcode-tui-usage-overlay",
+  "crates/jcode-tui-workspace",
+  "crates/jcode-update-core",
+  "crates/jcode-usage-types",
+  "desktop-app/src-tauri",
 ]
 
 [lib]
@@ -92,20 +93,36 @@ path = "src/bin/tui_bench.rs"
 required-features = ["dev-bins"]
 
 [dependencies]
-# Memory allocator (reduces fragmentation for long-running server)
-tikv-jemallocator = { version = "0.6", features = ["unprefixed_malloc_on_supported_platforms"], optional = true }
 tikv-jemalloc-ctl = { version = "0.6", optional = true }
 tikv-jemalloc-sys = { version = "0.6", optional = true }
+# Memory allocator (reduces fragmentation for long-running server)
+tikv-jemallocator = { version = "0.6", features = [
+  "unprefixed_malloc_on_supported_platforms"
+], optional = true }
 
-# Async runtime
-tokio = { version = "1", features = ["fs", "io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
-futures = "0.3"
 async-trait = "0.1"
+futures = "0.3"
+# Async runtime
+tokio = { version = "1", features = [
+  "fs",
+  "io-std",
+  "io-util",
+  "macros",
+  "net",
+  "process",
+  "rt-multi-thread",
+  "signal",
+  "sync",
+  "time"
+] }
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
+reqwest = { version = "0.12", features = ["blocking", "json", "stream"] }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
-tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = [
+  "connect",
+  "rustls-tls-native-roots"
+] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -118,20 +135,20 @@ clap = { version = "4", features = ["derive"] }
 
 # File operations
 glob = "0.3"
-ignore = "0.4"           # gitignore-aware file walking
+ignore = "0.4"  # gitignore-aware file walking
+similar = "2"  # diffing for edits
 walkdir = "2"
-similar = "2"            # diffing for edits
 
-# Utilities
-dirs = "5"               # home directory
 anyhow = "1"
-thiserror = "1"
-libc = "0.2"             # Unix system calls (flock)
 chrono = { version = "0.4", features = ["serde"] }
-regex = "1"
-urlencoding = "2"        # URL encoding for web search
-uuid = { version = "1", features = ["v4", "v5"] }
+# Utilities
+dirs = "5"  # home directory
+libc = "0.2"  # Unix system calls (flock)
 proctitle = "0.1"
+regex = "1"
+thiserror = "1"
+urlencoding = "2"  # URL encoding for web search
+uuid = { version = "1", features = ["v4", "v5"] }
 
 # Embeddings (local inference) - behind feature flag (163 crates, slow to compile)
 jcode-embedding = { path = "crates/jcode-embedding", optional = true }
@@ -140,51 +157,49 @@ jcode-import-core = { path = "crates/jcode-import-core" }
 
 # OAuth
 base64 = "0.22"
-sha2 = "0.10"
-rand = "0.9.3"
 hex = "0.4"
-url = "2"
-open = "5"               # Open URLs in browser
-jcode-auth-types = { path = "crates/jcode-auth-types" }
-jcode-azure-auth = { path = "crates/jcode-azure-auth" }
 jcode-agent-runtime = { path = "crates/jcode-agent-runtime" }
 jcode-ambient-types = { path = "crates/jcode-ambient-types" }
+jcode-auth-types = { path = "crates/jcode-auth-types" }
+jcode-azure-auth = { path = "crates/jcode-azure-auth" }
 jcode-notify-email = { path = "crates/jcode-notify-email" }
-jcode-provider-metadata = { path = "crates/jcode-provider-metadata" }
 jcode-provider-core = { path = "crates/jcode-provider-core" }
+jcode-provider-gemini = { path = "crates/jcode-provider-gemini" }
+jcode-provider-metadata = { path = "crates/jcode-provider-metadata" }
 jcode-provider-openai = { path = "crates/jcode-provider-openai" }
 jcode-provider-openrouter = { path = "crates/jcode-provider-openrouter" }
-jcode-provider-gemini = { path = "crates/jcode-provider-gemini" }
-jcode-tui-markdown = { path = "crates/jcode-tui-markdown" }
-jcode-tui-messages = { path = "crates/jcode-tui-messages" }
-jcode-tui-core = { path = "crates/jcode-tui-core" }
-jcode-tui-mermaid = { path = "crates/jcode-tui-mermaid" }
+jcode-terminal-launch = { path = "crates/jcode-terminal-launch" }
 jcode-tui-account-picker = { path = "crates/jcode-tui-account-picker" }
+jcode-tui-core = { path = "crates/jcode-tui-core" }
+jcode-tui-markdown = { path = "crates/jcode-tui-markdown" }
+jcode-tui-mermaid = { path = "crates/jcode-tui-mermaid" }
+jcode-tui-messages = { path = "crates/jcode-tui-messages" }
 jcode-tui-render = { path = "crates/jcode-tui-render" }
 jcode-tui-session-picker = { path = "crates/jcode-tui-session-picker" }
 jcode-tui-style = { path = "crates/jcode-tui-style" }
 jcode-tui-tool-display = { path = "crates/jcode-tui-tool-display" }
 jcode-tui-usage-overlay = { path = "crates/jcode-tui-usage-overlay" }
-jcode-update-core = { path = "crates/jcode-update-core" }
-jcode-terminal-launch = { path = "crates/jcode-terminal-launch" }
 jcode-tui-workspace = { path = "crates/jcode-tui-workspace" }
+jcode-update-core = { path = "crates/jcode-update-core" }
 jcode-usage-types = { path = "crates/jcode-usage-types" }
+open = "5"  # Open URLs in browser
+rand = "0.9.3"
+sha2 = "0.10"
+url = "2"
 
+bytes = "1"
 # Streaming
 tokio-stream = "0.1"
-bytes = "1"
 
+arboard = "3"  # Clipboard support
+crossterm = { version = "0.29", features = ["event-stream"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }  # Only PNG/JPEG (skip avif/rav1e, exr, gif, tiff, etc)
 # TUI
 ratatui = "0.30"
-crossterm = { version = "0.29", features = ["event-stream"] }
-arboard = "3"              # Clipboard support
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }  # Only PNG/JPEG (skip avif/rav1e, exr, gif, tiff, etc)
 
 # Markdown & syntax highlighting
-unicode-width = "0.2"   # Unicode character display width
+unicode-width = "0.2"  # Unicode character display width
 
-# PDF parsing (behind feature flag)
-jcode-pdf = { path = "crates/jcode-pdf", optional = true }
 jcode-background-types = { path = "crates/jcode-background-types" }
 jcode-batch-types = { path = "crates/jcode-batch-types" }
 jcode-build-support = { path = "crates/jcode-build-support" }
@@ -194,30 +209,46 @@ jcode-core = { path = "crates/jcode-core" }
 jcode-memory-types = { path = "crates/jcode-memory-types" }
 jcode-message-types = { path = "crates/jcode-message-types" }
 jcode-overnight-core = { path = "crates/jcode-overnight-core" }
+# PDF parsing (behind feature flag)
+jcode-pdf = { path = "crates/jcode-pdf", optional = true }
 jcode-plan = { path = "crates/jcode-plan" }
-jcode-swarm-core = { path = "crates/jcode-swarm-core" }
 jcode-protocol = { path = "crates/jcode-protocol" }
 jcode-selfdev-types = { path = "crates/jcode-selfdev-types" }
 jcode-session-types = { path = "crates/jcode-session-types" }
+jcode-side-panel-types = { path = "crates/jcode-side-panel-types" }
 jcode-storage = { path = "crates/jcode-storage" }
+jcode-swarm-core = { path = "crates/jcode-swarm-core" }
 jcode-task-types = { path = "crates/jcode-task-types" }
 jcode-tool-core = { path = "crates/jcode-tool-core" }
 jcode-tool-types = { path = "crates/jcode-tool-types" }
-jcode-side-panel-types = { path = "crates/jcode-side-panel-types" }
 
-# Archive extraction (for auto-update)
-flate2 = "1"
-tar = "0.4"
-tempfile = "3"
 agentgrep = { git = "https://github.com/1jehuang/agentgrep.git", tag = "v0.1.2" }
-qrcode = { version = "0.14.1", default-features = false }
 aws-config = "1.8.16"
 aws-credential-types = "1.2.14"
-aws-sdk-bedrockruntime = "1.130.0"
-aws-types = "1.3.15"
-aws-smithy-types = "1.4.7"
 aws-sdk-bedrock = "1.141.0"
+aws-sdk-bedrockruntime = "1.130.0"
 aws-sdk-sts = "1.103.0"
+aws-smithy-types = "1.4.7"
+aws-types = "1.3.15"
+# Archive extraction (for auto-update)
+flate2 = "1"
+qrcode = { version = "0.14.1", default-features = false }
+tar = "0.4"
+tempfile = "3"
+
+[dev-dependencies]
+async-stream = "0.3"
+
+[build-dependencies]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+global-hotkey = "0.7"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_System_Threading"
+] }
 
 [features]
 # Keep the heavyweight local ONNX/tokenizer embedding stack opt-in. It remains
@@ -225,43 +256,20 @@ aws-sdk-sts = "1.103.0"
 # ordinary check/build loops should not compile the tract/tokenizers subtree.
 default = ["pdf"]
 dev-bins = []
+embeddings = ["dep:jcode-embedding"]
 jemalloc = [
-    "dep:tikv-jemallocator",
-    "dep:tikv-jemalloc-ctl",
-    "dep:tikv-jemalloc-sys",
-    "tikv-jemallocator/stats",
-    "tikv-jemalloc-ctl/stats",
+  "dep:tikv-jemalloc-ctl",
+  "dep:tikv-jemalloc-sys",
+  "dep:tikv-jemallocator",
+  "tikv-jemalloc-ctl/stats",
+  "tikv-jemallocator/stats",
 ]
 jemalloc-prof = [
-    "jemalloc",
-    "tikv-jemallocator/profiling",
-    "tikv-jemalloc-ctl/profiling",
+  "jemalloc",
+  "tikv-jemalloc-ctl/profiling",
+  "tikv-jemallocator/profiling",
 ]
-embeddings = ["dep:jcode-embedding"]
 pdf = ["dep:jcode-pdf"]
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-global-hotkey = "0.7"
-
-[profile.release]
-opt-level = 1
-debug = 0
-codegen-units = 256
-incremental = true
-
-[profile.selfdev]
-inherits = "release"
-opt-level = 0
-
-# Full LTO release for stable/distribution builds
-[profile.release-lto]
-inherits = "release"
-lto = "thin"
-codegen-units = 16
-incremental = false
 
 [profile.dev]
 debug = 0
@@ -270,12 +278,24 @@ incremental = true
 [profile.dev.package."*"]
 opt-level = 0
 
+[profile.release]
+opt-level = 1
+debug = 0
+incremental = true
+codegen-units = 256
+
 [profile.test]
 debug = 0
 incremental = true
 codegen-units = 256
 
-[dev-dependencies]
-async-stream = "0.3"
+# Full LTO release for stable/distribution builds
+[profile.release-lto]
+inherits = "release"
+lto = "thin"
+incremental = false
+codegen-units = 16
 
-[build-dependencies]
+[profile.selfdev]
+inherits = "release"
+opt-level = 0

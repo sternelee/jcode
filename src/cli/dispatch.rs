@@ -209,6 +209,18 @@ pub(crate) async fn run_main(mut args: Args) -> Result<()> {
                 json,
             } => commands::run_session_rename_command(&session, name.as_deref(), clear, json)?,
         },
+        Some(Command::Clear) => {
+            commands::run_clear_command().await?;
+        }
+        Some(Command::Rewind { message_index }) => {
+            commands::run_rewind_command(message_index).await?;
+        }
+        Some(Command::SetReasoningEffort { effort }) => {
+            commands::run_set_reasoning_effort_command(&effort).await?;
+        }
+        Some(Command::Compact) => {
+            commands::run_compact_command().await?;
+        }
         Some(Command::Ambient(subcmd)) => {
             commands::run_ambient_command(map_ambient_subcommand(subcmd)).await?;
         }

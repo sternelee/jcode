@@ -236,6 +236,24 @@ pub(crate) enum Command {
     #[command(subcommand)]
     Session(SessionCommand),
 
+    /// Clear the current session conversation history
+    Clear,
+
+    /// Rewind conversation history to a specific message index
+    Rewind {
+        /// 1-based message index to rewind to
+        message_index: usize,
+    },
+
+    /// Set reasoning effort level (none|low|medium|high|xhigh)
+    SetReasoningEffort {
+        /// Reasoning effort level
+        effort: String,
+    },
+
+    /// Trigger manual context compaction
+    Compact,
+
     /// Ambient mode management
     #[command(subcommand)]
     Ambient(AmbientCommand),
