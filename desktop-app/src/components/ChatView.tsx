@@ -1,10 +1,7 @@
-import { useRef, useEffect } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ChatMessage } from "@/types";
 import { MessageBubble } from "./MessageBubble";
 import { InputArea } from "./InputArea";
-
-import { Trash2, Undo2, ArrowDownWideNarrow } from "lucide-react";
+import { Trash2, Undo2, ArrowDownWideNarrow, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -13,6 +10,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+  ConversationEmptyState,
+} from "@/components/ai-elements/conversation";
 
 interface ChatViewProps {
   messages: ChatMessage[];
@@ -45,13 +48,7 @@ export function ChatView({
   onSetReasoningEffort,
   onCompactContext,
 }: ChatViewProps) {
-  const viewportRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (viewportRef.current) {
-      viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
-    }
-  }, [messages]);
+  const lastMessageId = messages.length > 0 ? messages[messages.length - 1].id : null;
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -119,26 +116,33 @@ export function ChatView({
           </div>
         </div>
       )}
-      <ScrollArea className="flex-1">
-        <div className="p-4" ref={viewportRef}>
-          {!connected && (
+      <Conversation className="flex-1">
+        <ConversationContent>
+          {!connected ? (
             <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-2 text-muted-foreground">
               <p className="text-sm">{connectionPhase || "Not connected"}</p>
               <p className="text-xs">
                 Select a workspace folder and start a session to begin.
               </p>
             </div>
+          ) : messages.length === 0 ? (
+            <ConversationEmptyState
+              icon={<MessageSquare className="size-12" />}
+              title="Start a conversation"
+              description="Type a message below to begin chatting"
+            />
+          ) : (
+            messages.map((msg) => (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                isStreaming={msg.id === lastMessageId && isProcessing}
+              />
+            ))
           )}
-          {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
-          ))}
-          {isProcessing && messages.length === 0 && (
-            <p className="text-center text-sm text-muted-foreground py-6">
-              Waiting for response...
-            </p>
-          )}
-        </div>
-      </ScrollArea>
+        </ConversationContent>
+        <ConversationScrollButton />
+      </Conversation>
       <InputArea
         onSend={onSend}
         onCancel={onCancel}
