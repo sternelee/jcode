@@ -105,14 +105,6 @@ async fn resume_session(
     let session_model = session.model.clone();
     let session_reasoning_effort = session.reasoning_effort.clone();
 
-    let agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
-    app_handle
-        .emit(
-            "server-event",
-            &serde_json::json!({ "type": "session", "session_id": session_id }),
-        )
-        .ok();
-
     let (rendered_messages, images) = jcode::session::render_messages_and_images(&session);
     let messages: Vec<jcode::protocol::HistoryMessage> = rendered_messages
         .into_iter()
@@ -127,6 +119,14 @@ async fn resume_session(
             tool_data: msg.tool_data,
         })
         .collect();
+
+    let agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
+    app_handle
+        .emit(
+            "server-event",
+            &serde_json::json!({ "type": "session", "session_id": session_id }),
+        )
+        .ok();
 
     app_handle
         .emit(
