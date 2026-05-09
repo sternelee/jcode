@@ -1,8 +1,14 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Plus, Send, Square } from "lucide-react";
+import { Plus, Square } from "lucide-react";
 import type { AttachedImage } from "@/types";
+import {
+  PromptInput,
+  PromptInputBody,
+  PromptInputFooter,
+  PromptInputSubmit,
+  PromptInputTextarea,
+} from "@/components/ai-elements/prompt-input";
 
 interface InputAreaProps {
   onSend: (content: string, images?: [string, string][]) => void;
@@ -19,9 +25,8 @@ export function InputArea({
 }: InputAreaProps) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<AttachedImage[]>([]);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleSend = () => {
+  const handleSubmit = () => {
     if (isProcessing || disabled) return;
     const content = text.trim();
     if (!content && images.length === 0) return;
@@ -32,13 +37,6 @@ export function InputArea({
     onSend(content || "(image)", tuples.length > 0 ? tuples : undefined);
     setText("");
     setImages([]);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
   };
 
   const handleAttach = async () => {
@@ -95,50 +93,49 @@ export function InputArea({
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={handleAttach}
-          disabled={disabled}
-          className="h-10 w-10 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-        </Button>
-        <Textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={
-            disabled
-              ? "Select a workspace and start a session..."
-              : "Type a message... (Enter to send, Shift+Enter for newline)"
-          }
-          disabled={disabled}
-          className="min-h-10 max-h-48 resize-none"
-          rows={1}
-        />
-        {isProcessing ? (
-          <Button
-            variant="destructive"
-            size="icon"
-            onClick={onCancel}
-            className="h-10 w-10 shrink-0"
-          >
-            <Square className="w-4 h-4 fill-current" />
-          </Button>
-        ) : (
-          <Button
-            size="icon"
-            onClick={handleSend}
-            disabled={!text.trim() && images.length === 0}
-            className="h-10 w-10 shrink-0"
-          >
-            <Send className="w-4 h-4" />
-          </Button>
-        )}
-      </div>
+      <PromptInput onSubmit={handleSubmit} className="relative">
+        <PromptInputBody>
+          <PromptInputTextarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={
+              disabled
+                ? "Select a workspace and start a session..."
+                : "Type a message... (Enter to send, Shift+Enter for newline)"
+            }
+            className="min-h-10 max-h-48 resize-none"
+          />
+        </PromptInputBody>
+        <PromptInputFooter>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleAttach}
+              disabled={disabled}
+              className="h-10 w-10 shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+            </Button>
+            {isProcessing ? (
+              <Button
+                variant="destructive"
+                size="icon"
+                onClick={onCancel}
+                className="h-10 w-10 shrink-0"
+              >
+                <Square className="w-4 h-4 fill-current" />
+              </Button>
+            ) : (
+              <PromptInputSubmit
+                status={isProcessing ? "streaming" : "ready"}
+                disabled={!text.trim() && images.length === 0}
+                className="h-10 w-10 shrink-0"
+              />
+            )}
+          </div>
+        </PromptInputFooter>
+      </PromptInput>
     </div>
   );
 }
