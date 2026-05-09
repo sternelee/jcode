@@ -44,7 +44,10 @@ type Action =
   | { type: "REWIND_CHAT"; messageIndex: number }
   | { type: "SET_REASONING_EFFORT"; effort: string | null }
   | { type: "SET_CONNECTION_TYPE"; connection: string }
-  | { type: "SET_STATUS_DETAIL"; detail: string };
+  | { type: "SET_STATUS_DETAIL"; detail: string }
+  | { type: "LOAD_HISTORY"; messages: ChatMessage[] }
+  | { type: "SET_AVAILABLE_MODELS"; models: string[]; providerName?: string; providerModel?: string }
+  | { type: "SET_TOTAL_TOKENS"; tokens: [number, number] | null };
 
 let messageCounter = 0;
 function nextMsgId(): string {
@@ -293,6 +296,17 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
       }
       return { ...state, expandedWorkspaces: next };
     }
+    case "LOAD_HISTORY":
+      return { ...state, messages: action.messages };
+    case "SET_AVAILABLE_MODELS":
+      return {
+        ...state,
+        availableModels: action.models,
+        providerName: action.providerName ?? state.providerName,
+        providerModel: action.providerModel ?? state.providerModel,
+      };
+    case "SET_TOTAL_TOKENS":
+      return { ...state, totalTokens: action.tokens };
     default:
       return state;
   }
@@ -652,6 +666,62 @@ function processEvent(event: ServerEvent, dispatch: React.Dispatch<Action>) {
         type: "ADD_SYSTEM_MESSAGE",
         content: success ? msg : `⚠️ ${msg}`,
       });
+      break;
+    }
+    case "history": {
+      const msgs = (e.messages as Array<{
+        role: string;
+        content: string;
+        tool_calls?: string[];
+        tool_data?: { id: string; name: string; input: Record<string, unknown> };
+      }>) ?? [];
+      const chatMessages: ChatMessage[] = msgs.map((m, i) => {
+        const toolExecutions: ToolExecution[] = [];
+        if (m.tool_calls && m.tool_data) {
+          toolExecutions.push({
+            id: m.tool_data.id,
+            name: m.tool_data.name,
+            status: "done",
+            input: JSON.stringify(m.tool_data.input),
+            output: "",
+          });
+        }
+        return {
+          id: `history-${i}`,
+          role: m.role as "user" | "assistant" | "system",
+          content: m.content,
+          toolExecutions,
+          isStreaming: false,
+          timestamp: Date.now(),
+        };
+      });
+      dispatch({ type: "LOAD_HISTORY", messages: chatMessages });
+      if (e.available_models) {
+        dispatch({
+          type: "SET_AVAILABLE_MODELS",
+          models: e.available_models as string[],
+          providerName: e.provider_name as string | undefined,
+          providerModel: e.provider_model as string | undefined,
+        });
+      }
+      if (e.total_tokens) {
+        dispatch({
+          type: "SET_TOTAL_TOKENS",
+          tokens: e.total_tokens as [number, number],
+        });
+      }
+      if (e.connection_type) {
+        dispatch({
+          type: "SET_CONNECTION_TYPE",
+          connection: e.connection_type as string,
+        });
+      }
+      if (e.reasoning_effort) {
+        dispatch({
+          type: "SET_REASONING_EFFORT",
+          effort: e.reasoning_effort as string,
+        });
+      }
       break;
     }
     default:
