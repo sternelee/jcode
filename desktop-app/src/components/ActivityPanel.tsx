@@ -686,15 +686,22 @@ export function ActivityPanel({
   };
 
   return (
-    <aside className="hidden xl:flex xl:w-[380px] xl:min-w-[380px] xl:flex-col bg-card/30">
-      <div className="flex items-center justify-between px-4 py-3 border-b">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Activity className="w-4 h-4" />
+    <aside className="hidden xl:flex xl:w-[380px] xl:min-w-[380px] xl:flex-col bg-card border-l border-border">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
+        <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+          <Activity className="w-4 h-4 text-muted-foreground" />
           Activity
         </div>
-        <Badge variant={isProcessing ? "default" : "secondary"} className="text-[10px]">
+        <span className={cn(
+          "text-[10px] font-medium px-2 py-0.5 rounded-full",
+          isProcessing
+            ? "bg-primary text-primary-foreground"
+            : stdinPrompt
+              ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+              : "bg-secondary text-secondary-foreground"
+        )}>
           {stdinPrompt ? "waiting input" : isProcessing ? "running" : "idle"}
-        </Badge>
+        </span>
       </div>
 
       <ScrollArea className="flex-1 overflow-auto">
@@ -704,7 +711,7 @@ export function ActivityPanel({
               Session status
             </div>
             <div className="grid grid-cols-1 gap-2">
-              <div className="rounded-lg border bg-background/70 p-3 space-y-2">
+              <div className="rounded-lg border bg-card p-3 space-y-2">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Sparkles className="w-3.5 h-3.5" />
                   Model
@@ -730,7 +737,7 @@ export function ActivityPanel({
                 </div>
               </div>
 
-              <div className="rounded-lg border bg-background/70 p-3 space-y-2 text-xs">
+              <div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
                 <div className="flex items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                     <Brain className="w-3.5 h-3.5" />
@@ -769,12 +776,12 @@ export function ActivityPanel({
                   </div>
                 )}
                 {statusDetail && (
-                  <div className="rounded border bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+                  <div className="rounded border bg-secondary px-2 py-1.5 text-[11px] text-muted-foreground">
                     {statusDetail}
                   </div>
                 )}
                 {availableModelRoutes.length > 0 && (
-                  <div className="rounded border bg-muted/20 px-2 py-2 space-y-1.5">
+                  <div className="rounded border bg-secondary px-2 py-2 space-y-1.5">
                     <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                       Runtime capabilities
                     </div>
@@ -795,7 +802,7 @@ export function ActivityPanel({
                   </div>
                 )}
                 {currentRoute && (
-                  <div className="rounded border bg-muted/20 px-2 py-2 space-y-1.5">
+                  <div className="rounded border bg-secondary px-2 py-2 space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                         Current route metadata
@@ -831,13 +838,13 @@ export function ActivityPanel({
               </Badge>
             </div>
             {swarmPeers.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              <div className="rounded-lg border border p-3 text-xs text-muted-foreground">
                 No swarm-active peers detected for this workspace.
               </div>
             ) : (
               <div className="space-y-2">
                 {swarmPeers.map((peer) => (
-                  <div key={peer.sessionId} className="rounded-lg border bg-background/70 p-3 space-y-2 text-xs">
+                  <div key={peer.sessionId} className="rounded-lg border bg-card p-3 space-y-2 text-xs">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="font-medium truncate">{peer.title}</div>
@@ -873,7 +880,7 @@ export function ActivityPanel({
                       )}
                     </div>
                     {peer.liveStatusDetail && (
-                      <div className="rounded border bg-muted/20 px-2 py-1.5 text-[11px] text-muted-foreground">
+                      <div className="rounded border bg-secondary px-2 py-1.5 text-[11px] text-muted-foreground">
                         {peer.liveStatusDetail}
                       </div>
                     )}
@@ -905,27 +912,30 @@ export function ActivityPanel({
                 {blockedTasks.length + problemPeers.length + waitingPeers.length + (activeSwarmProposal ? 1 : 0)}
               </Badge>
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1">
               {(["all", "tasks", "peers", "proposal"] as const).map((filter) => (
-                <Button
+                <button
                   key={filter}
-                  variant={swarmProblemFilter === filter ? "secondary" : "outline"}
-                  size="sm"
-                  className="h-6 px-2 text-[10px]"
+                  className={cn(
+                    "px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors",
+                    swarmProblemFilter === filter
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                  )}
                   onClick={() => setSwarmProblemFilter(filter)}
                 >
                   {filter}
-                </Button>
+                </button>
               ))}
             </div>
             {filteredSwarmProblems.tasks.length === 0 && filteredSwarmProblems.peers.length === 0 && !filteredSwarmProblems.showProposal ? (
-              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              <div className="rounded-lg border border p-3 text-xs text-muted-foreground">
                 No blocked tasks, problem peers, or pending proposals detected.
               </div>
             ) : (
               <div className="space-y-2">
                 {filteredSwarmProblems.showProposal && activeSwarmProposal && (
-                  <div className="rounded-lg border bg-background/70 p-3 space-y-2 text-xs">
+                  <div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
                     <div className="flex items-center gap-2">
                       <TriangleAlert className="w-3.5 h-3.5 text-amber-500" />
                       <div className="font-medium">Pending proposal review</div>
@@ -956,7 +966,7 @@ export function ActivityPanel({
                     key={`problem-task-${item.id}`}
                     type="button"
                     className={cn(
-                      "w-full rounded-lg border bg-background/70 p-3 space-y-2 text-left text-xs transition-colors hover:bg-accent/30",
+                      "w-full rounded-lg border bg-card p-3 space-y-2 text-left text-xs transition-colors hover:bg-secondary",
                       selectedSwarmTaskId === item.id && "ring-1 ring-primary/40 bg-primary/5",
                     )}
                     onClick={() => {
@@ -979,7 +989,7 @@ export function ActivityPanel({
                   </button>
                 ))}
                 {filteredSwarmProblems.peers.map((peer) => (
-                  <div key={`problem-peer-${peer.sessionId}`} className="rounded-lg border bg-background/70 p-3 space-y-2 text-xs">
+                  <div key={`problem-peer-${peer.sessionId}`} className="rounded-lg border bg-card p-3 space-y-2 text-xs">
                     <div className="flex items-start gap-2">
                       <TriangleAlert className={cn("mt-0.5 w-3.5 h-3.5", peer.status?.toLowerCase().includes("fail") || peer.status?.toLowerCase().includes("error") ? "text-red-500" : "text-amber-500")} />
                       <div className="min-w-0 flex-1">
@@ -1020,18 +1030,18 @@ export function ActivityPanel({
               </Badge>
             </div>
             {!activeSwarmProposal ? (
-              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              <div className="rounded-lg border border p-3 text-xs text-muted-foreground">
                 No live swarm plan proposal is currently queued for this workspace.
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="rounded-lg border bg-background/70 p-3 space-y-2 text-xs">
+                <div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge variant="secondary" className="text-[10px]">{activeSwarmProposal.itemCount} proposed tasks</Badge>
                     <Badge variant="outline" className="text-[10px] font-mono">{activeSwarmProposal.swarmId}</Badge>
                     <Badge variant="outline" className="text-[10px] font-mono">{activeSwarmProposal.proposalKey}</Badge>
                   </div>
-                  <div className="rounded border bg-muted/20 px-2 py-2 text-[11px] text-muted-foreground whitespace-pre-wrap break-words">
+                  <div className="rounded border bg-secondary px-2 py-2 text-[11px] text-muted-foreground whitespace-pre-wrap break-words">
                     {activeSwarmProposal.summary}
                   </div>
                   <div className="flex items-center justify-between gap-2">
@@ -1051,7 +1061,7 @@ export function ActivityPanel({
                     )}
                   </div>
                 </div>
-                <div className="rounded-lg border bg-background/70 p-3 space-y-2 text-xs">
+                <div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Proposal items</div>
                   {activeSwarmProposal.itemsPreview.length === 0 ? (
                     <div className="text-muted-foreground">No proposal items captured.</div>
@@ -1062,7 +1072,7 @@ export function ActivityPanel({
                           ? sessions.find((session) => session.sessionId === item.assignedTo) || null
                           : null;
                         return (
-                          <div key={`proposal-${item.id}`} className="rounded border bg-muted/20 px-2 py-2 space-y-1.5">
+                          <div key={`proposal-${item.id}`} className="rounded border bg-secondary px-2 py-2 space-y-1.5">
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="font-medium break-words">{compactText(item.content, 96)}</div>
@@ -1105,12 +1115,12 @@ export function ActivityPanel({
               </Badge>
             </div>
             {!activeSwarmPlan ? (
-              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              <div className="rounded-lg border border p-3 text-xs text-muted-foreground">
                 No live or persisted swarm plan snapshot is available for this workspace yet.
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="rounded-lg border bg-background/70 p-3 space-y-2 text-xs">
+                <div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Badge variant="secondary" className="text-[10px]">{activeSwarmPlan.itemCount} tasks</Badge>
                     <Badge variant="secondary" className="text-[10px]">{activeSwarmPlan.participantCount} participants</Badge>
@@ -1120,25 +1130,25 @@ export function ActivityPanel({
                     <Badge variant="outline" className="text-[10px] font-mono">{activeSwarmPlan.swarmId}</Badge>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded border bg-muted/20 px-2 py-2">
+                    <div className="rounded border bg-secondary px-2 py-2">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Ready</div>
                       <div className="text-sm font-medium">{activeSwarmPlan.readyCount}</div>
                     </div>
-                    <div className="rounded border bg-muted/20 px-2 py-2">
+                    <div className="rounded border bg-secondary px-2 py-2">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Active</div>
                       <div className="text-sm font-medium">{activeSwarmPlan.activeCount}</div>
                     </div>
-                    <div className="rounded border bg-muted/20 px-2 py-2">
+                    <div className="rounded border bg-secondary px-2 py-2">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Blocked</div>
                       <div className="text-sm font-medium">{activeSwarmPlan.blockedCount}</div>
                     </div>
-                    <div className="rounded border bg-muted/20 px-2 py-2">
+                    <div className="rounded border bg-secondary px-2 py-2">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Completed</div>
                       <div className="text-sm font-medium">{activeSwarmPlan.completedCount}</div>
                     </div>
                   </div>
                   {activeSwarmPlan.nextReadyIds.length > 0 && (
-                    <div className="rounded border bg-muted/20 px-2 py-2 space-y-1.5">
+                    <div className="rounded border bg-secondary px-2 py-2 space-y-1.5">
                       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Next ready</div>
                       <div className="flex flex-wrap gap-1.5">
                         {activeSwarmPlan.nextReadyIds.map((taskId) => (
@@ -1151,14 +1161,14 @@ export function ActivityPanel({
                   )}
                 </div>
 
-                <div className="rounded-lg border bg-background/70 p-3 space-y-2 text-xs">
+                <div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Participants</div>
                   {swarmPlanParticipants.length === 0 ? (
                     <div className="text-muted-foreground">No participant sessions available in this desktop runtime.</div>
                   ) : (
                     <div className="space-y-2">
                       {swarmPlanParticipants.map((participant) => (
-                        <div key={participant.sessionId} className="rounded border bg-muted/20 px-2 py-2 space-y-1.5">
+                        <div key={participant.sessionId} className="rounded border bg-secondary px-2 py-2 space-y-1.5">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="font-medium truncate">{participant.title}</div>
@@ -1204,7 +1214,7 @@ export function ActivityPanel({
                   )}
                 </div>
 
-                <div className="rounded-lg border bg-background/70 p-3 space-y-2 text-xs">
+                <div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Plan lane</div>
                   {activeSwarmPlan.itemsPreview.length === 0 ? (
                     <div className="text-muted-foreground">No plan tasks captured in the latest snapshot.</div>
@@ -1220,7 +1230,7 @@ export function ActivityPanel({
                             key={item.id}
                             type="button"
                             className={cn(
-                              "w-full rounded border bg-muted/20 px-2 py-2 space-y-1.5 text-left transition-colors hover:bg-accent/30",
+                              "w-full rounded border bg-secondary px-2 py-2 space-y-1.5 text-left transition-colors hover:bg-secondary",
                               isFocused && "ring-1 ring-primary/40 bg-primary/5",
                             )}
                             onClick={() => {
@@ -1300,7 +1310,7 @@ export function ActivityPanel({
                     : "none"}
               </Badge>
             </div>
-            <div className="rounded-lg border bg-background/70 p-3 space-y-2 text-xs">
+            <div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
               <div>
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
                   Latest user prompt
@@ -1356,13 +1366,13 @@ export function ActivityPanel({
               </Badge>
             </div>
             {runningTools.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              <div className="rounded-lg border border p-3 text-xs text-muted-foreground">
                 No active tools right now.
               </div>
             ) : (
               <div className="space-y-2">
                 {runningTools.map((tool) => (
-                  <div key={tool.key} className="space-y-2 rounded-lg border bg-background/70 p-2">
+                  <div key={tool.key} className="space-y-2 rounded-lg border bg-card p-2">
                     <div className="flex items-center justify-between gap-2 px-1">
                       <div className="text-[10px] text-muted-foreground uppercase tracking-wide">
                         {tool.turnLabel}
@@ -1395,8 +1405,8 @@ export function ActivityPanel({
                 {filteredTimelineEntries.length}
               </Badge>
             </div>
-            <div className="rounded-lg border bg-background/70 p-2 space-y-2">
-              <div className="flex items-center gap-2 rounded border bg-muted/20 px-2 py-1.5">
+            <div className="rounded-lg border bg-card p-2 space-y-2">
+              <div className="flex items-center gap-2 rounded border bg-secondary px-2 py-1.5">
                 <Search className="w-3.5 h-3.5 text-muted-foreground" />
                 <input
                   value={turnSearch}
@@ -1425,7 +1435,7 @@ export function ActivityPanel({
               </div>
             </div>
             {filteredTimelineEntries.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              <div className="rounded-lg border border p-3 text-xs text-muted-foreground">
                 Assistant turns will appear here once the conversation starts.
               </div>
             ) : (
@@ -1437,7 +1447,7 @@ export function ActivityPanel({
                       <button
                         key={entry.id}
                         type="button"
-                        className="w-full rounded-lg border border-dashed bg-background/50 p-3 text-left transition-colors hover:bg-accent/30"
+                        className="w-full rounded-lg border border bg-background/50 p-3 text-left transition-colors hover:bg-secondary"
                         onClick={() => onSelectMessage?.(entry.messageId)}
                       >
                         <div className="flex items-center gap-2 mb-1.5">
@@ -1465,7 +1475,7 @@ export function ActivityPanel({
                   const status = turnStatusLabel(turn, isLatest, isProcessing, stdinPrompt);
 
                   return (
-                    <div key={entry.id} className="rounded-lg border bg-background/70">
+                    <div key={entry.id} className="rounded-lg border bg-card">
                       <div className="p-3 space-y-2">
                         <div className="flex items-start gap-2">
                           <button
@@ -1551,7 +1561,7 @@ export function ActivityPanel({
                                 Tools in this turn
                               </div>
                               {turn.tools.length === 0 ? (
-                                <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">
+                                <div className="rounded-md border border p-2 text-xs text-muted-foreground">
                                   No tools used in this turn.
                                 </div>
                               ) : (
@@ -1590,11 +1600,11 @@ export function ActivityPanel({
               </Badge>
             </div>
             {!selectedSwarmTask && !selectedMessage ? (
-              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              <div className="rounded-lg border border p-3 text-xs text-muted-foreground">
                 Select a turn, boundary, runtime event, or swarm task to inspect details here.
               </div>
             ) : selectedSwarmTask ? (
-              <div className="rounded-lg border bg-background/70 p-3 space-y-3 text-xs">
+              <div className="rounded-lg border bg-card p-3 space-y-3 text-xs">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="secondary" className="text-[10px] uppercase">task</Badge>
                   <Badge variant={selectedSwarmTask.status.toLowerCase().includes("block") || selectedSwarmTask.status.toLowerCase().includes("fail") ? "destructive" : "outline"} className="text-[10px] uppercase">
@@ -1656,7 +1666,7 @@ export function ActivityPanel({
                       copy
                     </Button>
                   </div>
-                  <pre className="rounded border bg-muted/20 px-2 py-2 text-muted-foreground whitespace-pre-wrap break-words max-h-40 overflow-y-auto font-mono text-[11px] leading-relaxed">
+                  <pre className="rounded border bg-secondary px-2 py-2 text-muted-foreground whitespace-pre-wrap break-words max-h-40 overflow-y-auto font-mono text-[11px] leading-relaxed">
                     {inspectorView === "parsed"
                       ? formatJsonBlock(selectedSwarmTask.content || "(empty task body)", jsonView === "pretty")
                       : (selectedSwarmTask.content || "(empty task body)")}
@@ -1682,11 +1692,11 @@ export function ActivityPanel({
                       )}
                     </div>
                     {(selectedSwarmTask.blockedBy?.length || 0) === 0 ? (
-                      <div className="rounded border border-dashed p-2 text-muted-foreground">
+                      <div className="rounded border border p-2 text-muted-foreground">
                         No recorded dependencies.
                       </div>
                     ) : (
-                      <div className="rounded border bg-muted/20 divide-y">
+                      <div className="rounded border bg-secondary divide-y">
                         {(selectedSwarmTask.blockedBy || []).map((blockedId) => (
                           <div key={blockedId} className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground">
                             {blockedId}
@@ -1714,11 +1724,11 @@ export function ActivityPanel({
                       )}
                     </div>
                     {(selectedSwarmTask.fileScope?.length || 0) === 0 ? (
-                      <div className="rounded border border-dashed p-2 text-muted-foreground">
+                      <div className="rounded border border p-2 text-muted-foreground">
                         No file scope recorded.
                       </div>
                     ) : (
-                      <div className="rounded border bg-muted/20 divide-y">
+                      <div className="rounded border bg-secondary divide-y">
                         {(selectedSwarmTask.fileScope || []).map((file) => (
                           <div key={file} className="px-2 py-1.5 font-mono text-[11px] text-muted-foreground break-all">
                             {file}
@@ -1734,13 +1744,13 @@ export function ActivityPanel({
                     Related peers
                   </div>
                   {selectedTaskRelatedPeers.length === 0 ? (
-                    <div className="rounded border border-dashed p-2 text-muted-foreground">
+                    <div className="rounded border border p-2 text-muted-foreground">
                       No related peer snapshot available.
                     </div>
                   ) : (
                     <div className="space-y-2">
                       {selectedTaskRelatedPeers.map((peer) => (
-                        <div key={peer.sessionId} className="rounded border bg-muted/20 px-2 py-2 space-y-1.5">
+                        <div key={peer.sessionId} className="rounded border bg-secondary px-2 py-2 space-y-1.5">
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="font-medium truncate">{peer.title}</div>
@@ -1782,7 +1792,7 @@ export function ActivityPanel({
                 </div>
               </div>
             ) : selectedMessage ? (
-              <div className="rounded-lg border bg-background/70 p-3 space-y-3 text-xs">
+              <div className="rounded-lg border bg-card p-3 space-y-3 text-xs">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="secondary" className="text-[10px] uppercase">
                     {selectedMessage.role}
@@ -1837,7 +1847,7 @@ export function ActivityPanel({
                     <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                       Structured fields
                     </div>
-                    <div className="rounded border bg-muted/20 divide-y">
+                    <div className="rounded border bg-secondary divide-y">
                       {systemFields(selectedMessage).map((field) => (
                         <div key={`${field.label}-${field.value}`} className="flex items-start justify-between gap-3 px-2 py-1.5">
                           <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{field.label}</span>
@@ -1880,7 +1890,7 @@ export function ActivityPanel({
                       </Button>
                     </div>
                   </div>
-                  <pre className="rounded border bg-muted/20 px-2 py-2 text-muted-foreground whitespace-pre-wrap break-words max-h-48 overflow-y-auto font-mono text-[11px] leading-relaxed">
+                  <pre className="rounded border bg-secondary px-2 py-2 text-muted-foreground whitespace-pre-wrap break-words max-h-48 overflow-y-auto font-mono text-[11px] leading-relaxed">
                     {inspectorView === "parsed"
                       ? formatJsonBlock(selectedMessage.content || "(empty message body)", jsonView === "pretty")
                       : (selectedMessage.content || "(empty message body)")}
@@ -1892,7 +1902,7 @@ export function ActivityPanel({
                       Image preview
                     </div>
                     {selectedImage && (
-                      <div className="rounded-md border bg-muted/20 p-2 space-y-2">
+                      <div className="rounded-md border bg-secondary p-2 space-y-2">
                         <img
                           src={imageSrc(selectedImage)}
                           alt={selectedImage.label || "Selected"}
@@ -1931,7 +1941,7 @@ export function ActivityPanel({
                           key={image.id}
                           type="button"
                           className={cn(
-                            "rounded-md border bg-muted/20 p-1.5 space-y-1 text-left",
+                            "rounded-md border bg-secondary p-1.5 space-y-1 text-left",
                             index === selectedImageIndex && "ring-1 ring-primary/40 bg-primary/5",
                           )}
                           onClick={() => setSelectedImageIndex(index)}
@@ -1992,7 +2002,7 @@ export function ActivityPanel({
                                   copy
                                 </Button>
                               </div>
-                              <pre className="rounded border bg-muted/20 px-2 py-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">
+                              <pre className="rounded border bg-secondary px-2 py-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">
                                 {formatJsonBlock(selectedTool.input, jsonView === "pretty")}
                               </pre>
                             </div>
@@ -2013,7 +2023,7 @@ export function ActivityPanel({
                                   copy
                                 </Button>
                               </div>
-                              <pre className="rounded border bg-muted/20 px-2 py-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">
+                              <pre className="rounded border bg-secondary px-2 py-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] text-muted-foreground">
                                 {formatJsonBlock(selectedTool.output || selectedTool.error || "", jsonView === "pretty")}
                               </pre>
                             </div>
@@ -2050,21 +2060,24 @@ export function ActivityPanel({
                 {filteredRuntimeEvents.length}
               </Badge>
             </div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1">
               {(["all", "compaction", "rewind", "stdin", "queue", "memory", "reasoning", "connection", "other"] as const).map((kind) => (
-                <Button
+                <button
                   key={kind}
-                  variant={runtimeFilter === kind ? "secondary" : "outline"}
-                  size="sm"
-                  className="h-6 px-2 text-[10px]"
+                  className={cn(
+                    "px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors",
+                    runtimeFilter === kind
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                  )}
                   onClick={() => setRuntimeFilter(kind)}
                 >
                   {kind}
-                </Button>
+                </button>
               ))}
             </div>
             {filteredRuntimeEvents.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+              <div className="rounded-lg border border p-3 text-xs text-muted-foreground">
                 System notices, queued prompts, stdin requests, and compaction events will show here.
               </div>
             ) : (
@@ -2073,7 +2086,7 @@ export function ActivityPanel({
                   <button
                     key={event.messageId}
                     type="button"
-                    className="w-full rounded-lg border bg-background/70 p-3 text-left text-xs transition-colors hover:bg-accent/40"
+                    className="w-full rounded-lg border bg-card p-3 text-left text-xs transition-colors hover:bg-secondary"
                     onClick={() => onSelectMessage?.(event.messageId)}
                   >
                     <div className="flex items-center gap-2 mb-1.5">

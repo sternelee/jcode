@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useState, useEffect } from "react";
+import { useTheme } from "@/hooks/useTheme";
 import type { SessionInfo } from "@/types";
 import {
   FolderOpen,
@@ -21,6 +22,8 @@ import {
   Search,
   Brain,
   Wrench,
+  Sun,
+  Moon,
 } from "lucide-react";
 
 export default function App() {
@@ -45,6 +48,7 @@ export default function App() {
     setActiveWorkspace,
     toggleWorkspace,
   } = useJcodeSession();
+  const { toggleTheme, effectiveTheme } = useTheme();
   const [preferredModel, setPreferredModel] = useState("");
   const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
@@ -354,6 +358,19 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={toggleTheme}
+            title={effectiveTheme === "dark" ? "Switch to light" : "Switch to dark"}
+          >
+            {effectiveTheme === "dark" ? (
+              <Sun className="w-4 h-4" />
+            ) : (
+              <Moon className="w-4 h-4" />
+            )}
+          </Button>
           <Button
             variant="outline"
             size="sm"

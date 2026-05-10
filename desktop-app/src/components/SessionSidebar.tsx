@@ -1,6 +1,5 @@
 import type { ChatMessage, SessionInfo, Workspace } from "@/types";
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -137,16 +136,6 @@ function latestRuntimeSignal(messages: ChatMessage[], activeError?: string | nul
   return null;
 }
 
-function statusTone(status?: string) {
-  const normalized = status?.toLowerCase() || "";
-  if (normalized.includes("crash") || normalized.includes("error") || normalized.includes("fail")) {
-    return "destructive" as const;
-  }
-  if (normalized.includes("active") || normalized.includes("running") || normalized.includes("chunking")) {
-    return "default" as const;
-  }
-  return "secondary" as const;
-}
 
 function livePhaseLabel(session: SessionInfo): string | null {
   switch (session.livePhase) {
@@ -248,45 +237,50 @@ export function SessionSidebar({
   const runtimeSignal = useMemo(() => latestRuntimeSignal(activeMessages, activeError), [activeMessages, activeError]);
 
   return (
-    <div className="w-[320px] min-w-[260px] overflow-hidden bg-card border-r flex flex-col">
-      <div className="px-3.5 py-3 border-b space-y-2.5">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+    <div className="w-[320px] min-w-[260px] overflow-hidden bg-sidebar border-r border-sidebar-border flex flex-col">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-sidebar-border bg-sidebar">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/60">
             Workspaces
           </h3>
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
+              className="h-7 w-7 hover:bg-sidebar-accent"
               onClick={onCreateWorkspace}
               title="Create workspace"
             >
-              <Plus className="w-3 h-3" />
+              <Plus className="w-3.5 h-3.5" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
-              className="h-6 w-6"
+              className="h-7 w-7 hover:bg-sidebar-accent"
               onClick={onRefresh}
               title="Refresh"
             >
-              <RefreshCw className="w-3 h-3" />
+              <RefreshCw className="w-3.5 h-3.5" />
             </Button>
           </div>
         </div>
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-muted-foreground" />
+
+        {/* Search */}
+        <div className="relative mb-2.5">
+          <Search className="absolute left-3 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search sessions, prompts, tools"
-            className="pl-8 text-xs"
+            placeholder="Search sessions..."
+            className="pl-9 text-xs h-8 bg-background border-border rounded-lg"
           />
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Workspace Filter */}
+        <div className="mb-2.5">
           <Select value={workspaceFilter} onValueChange={(value) => setWorkspaceFilter(value || "all")}>
-            <SelectTrigger className="h-8 w-full text-xs">
+            <SelectTrigger className="h-8 w-full text-xs bg-background border-border rounded-lg">
               <SelectValue placeholder="Filter workspace" />
             </SelectTrigger>
             <SelectContent>
@@ -299,59 +293,38 @@ export function SessionSidebar({
             </SelectContent>
           </Select>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          <Button
-            variant={statusFilter === "all" ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => setStatusFilter("all")}
-          >
-            all
-          </Button>
-          <Button
-            variant={statusFilter === "problem" ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => setStatusFilter("problem")}
-          >
-            problem
-          </Button>
-          <Button
-            variant={statusFilter === "running" ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => setStatusFilter("running")}
-          >
-            running
-          </Button>
-          <Button
-            variant={statusFilter === "swarm" ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => setStatusFilter("swarm")}
-          >
-            swarm
-          </Button>
-          <Button
-            variant={statusFilter === "crashed" ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => setStatusFilter("crashed")}
-          >
-            crashed
-          </Button>
+
+        {/* Status Filters - Pill style */}
+        <div className="flex flex-wrap gap-1">
+          {(["all", "problem", "running", "swarm", "crashed"] as const).map((filter) => (
+            <button
+              key={filter}
+              onClick={() => setStatusFilter(filter)}
+              className={cn(
+                "px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors",
+                statusFilter === filter
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+              )}
+            >
+              {filter}
+            </button>
+          ))}
         </div>
       </div>
+
+      {/* Workspace List */}
       <ScrollArea className="min-w-0 flex-1 overflow-auto scrollbar-thin">
-        <div className="min-w-0 p-2 space-y-2">
+        <div className="min-w-0 p-3 space-y-3">
           {filteredWorkspaces.map((ws) => {
             const isExpanded = normalizedQuery.length > 0 || workspaceFilter !== "all"
               ? true
               : expandedWorkspaces.has(ws.id);
             const isActive = ws.id === activeWorkspaceId;
             return (
-              <div key={ws.id} className="min-w-0 rounded-lg border bg-background/40 p-1.5 overflow-hidden">
-                <div className="flex min-w-0 items-center gap-1">
+              <div key={ws.id} className="min-w-0 rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+                {/* Workspace Header */}
+                <div className="flex min-w-0 items-center gap-1 px-2 py-1.5">
                   <button
                     onClick={() => {
                       onSelectWorkspace(ws.id);
@@ -360,7 +333,7 @@ export function SessionSidebar({
                       }
                     }}
                     className={cn(
-                      "flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors",
+                      "flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition-colors",
                       isActive
                         ? "bg-primary/10 text-primary"
                         : "hover:bg-secondary text-foreground",
@@ -368,13 +341,13 @@ export function SessionSidebar({
                     title={ws.id === "default" ? "Default workspace" : ws.id}
                   >
                     {isExpanded ? (
-                      <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                      <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground" />
                     ) : (
-                      <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                      <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />
                     )}
-                    <Folder className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                    <span className="font-medium truncate">{ws.name}</span>
-                    <span className="text-[10px] text-muted-foreground ml-1 shrink-0">
+                    <Folder className="w-4 h-4 shrink-0 text-muted-foreground" />
+                    <span className="font-semibold truncate">{ws.name}</span>
+                    <span className="text-[11px] text-muted-foreground ml-auto shrink-0 bg-secondary px-1.5 py-0.5 rounded-full">
                       {ws.filteredSessions.length !== ws.totalSessions
                         ? `${ws.filteredSessions.length}/${ws.totalSessions}`
                         : ws.totalSessions}
@@ -383,24 +356,26 @@ export function SessionSidebar({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6 shrink-0"
+                    className="h-7 w-7 shrink-0 hover:bg-secondary"
                     onClick={() => onCreateSession(ws.id)}
                     title="New session"
                   >
-                    <FileText className="w-3 h-3" />
+                    <FileText className="w-3.5 h-3.5" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
+                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                     onClick={() => onDeleteWorkspace(ws.id)}
                     title="Delete workspace sessions"
                   >
-                    <Trash2 className="w-3 h-3" />
+                    <Trash2 className="w-3.5 h-3.5" />
                   </Button>
                 </div>
+
+                {/* Session List */}
                 {isExpanded && (
-                  <div className="mt-1.5 min-w-0 space-y-1">
+                  <div className="px-2 pb-2 min-w-0 space-y-1">
                     {ws.filteredSessions.map((s) => {
                       const isCurrentSession = s.sessionId === activeSessionId;
                       return (
@@ -408,115 +383,158 @@ export function SessionSidebar({
                           <button
                             onClick={() => onSelectSession(s)}
                             className={cn(
-                              "flex-1 min-w-0 overflow-hidden text-left px-2.5 py-2 rounded-md text-sm flex flex-col transition-colors border",
+                              "flex-1 min-w-0 overflow-hidden text-left px-3 py-2.5 rounded-lg text-sm flex flex-col transition-all border",
                               isCurrentSession
-                                ? "bg-primary/10 text-primary border-primary/20 shadow-sm"
-                                : "hover:bg-secondary text-foreground border-transparent",
+                                ? "bg-primary/5 border-primary/20 shadow-sm"
+                                : "hover:bg-secondary/60 border-transparent",
                             )}
                             title={s.detailLines?.join("\n") || s.detail || s.sessionId}
                           >
+                            {/* Title + Status */}
                             <div className="flex items-start justify-between gap-2">
-                              <span className="font-medium truncate">{s.title}</span>
-                              <Badge variant={isCurrentSession ? "default" : statusTone(s.status)} className="text-[9px] uppercase shrink-0">
+                              <span className={cn(
+                                "font-semibold truncate",
+                                isCurrentSession ? "text-primary" : "text-foreground"
+                              )}>
+                                {s.title}
+                              </span>
+                              <span className={cn(
+                                "text-[9px] uppercase font-semibold shrink-0 px-1.5 py-0.5 rounded-full",
+                                isCurrentSession
+                                  ? "bg-primary text-primary-foreground"
+                                  : s.status?.toLowerCase().includes("crash") || s.status?.toLowerCase().includes("error")
+                                    ? "bg-destructive/10 text-destructive"
+                                    : s.status?.toLowerCase().includes("running") || s.status?.toLowerCase().includes("active")
+                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                      : "bg-secondary text-secondary-foreground"
+                              )}>
                                 {isCurrentSession ? "current" : s.status || "session"}
-                              </Badge>
-                            </div>
-                          {s.subtitle && (
-                            <span className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                              {s.subtitle}
-                            </span>
-                          )}
-                          <div className="mt-1 flex flex-wrap gap-1">
-                            {s.swarmEnabled && (
-                              <Badge variant="outline" className="text-[9px]">
-                                <Users className="w-2.5 h-2.5 mr-1" />swarm {s.swarmPeerCount || 0}
-                              </Badge>
-                            )}
-                            {s.swarmEnabled && s.swarmRole && (
-                              <Badge variant="outline" className="text-[9px] uppercase">
-                                {s.swarmRole}
-                              </Badge>
-                            )}
-                            {!isCurrentSession && livePhaseLabel(s) && (
-                              <Badge variant={s.livePhase === "chunking" ? "default" : "secondary"} className="text-[9px]">
-                                <Sparkles className="w-2.5 h-2.5 mr-1" />{livePhaseLabel(s)}
-                              </Badge>
-                            )}
-                          </div>
-                          {s.detail && (
-                            <span className="text-[10px] text-muted-foreground/90 mt-1 truncate">
-                              {s.detail}
-                            </span>
-                          )}
-                          {isCurrentSession && (
-                            <div className="mt-1.5 flex flex-wrap gap-1">
-                              <Badge variant={isProcessing ? "default" : "secondary"} className="text-[9px]">
-                                {isProcessing ? (
-                                  <><LoaderCircle className="w-2.5 h-2.5 mr-1 animate-spin" />running</>
-                                ) : "idle"}
-                              </Badge>
-                              {queuedDraftCount > 0 && (
-                                <Badge variant="outline" className="text-[9px]">
-                                  <Layers3 className="w-2.5 h-2.5 mr-1" />queued {queuedDraftCount}
-                                </Badge>
-                              )}
-                              {stdinPromptActive && (
-                                <Badge variant="outline" className="text-[9px]">
-                                  <Keyboard className="w-2.5 h-2.5 mr-1" />input pending
-                                </Badge>
-                              )}
-                              {availableRouteCount > 0 && (
-                                <Badge variant="outline" className="text-[9px]">
-                                  {availableRouteCount} routes
-                                </Badge>
-                              )}
-                            </div>
-                          )}
-                          {isCurrentSession && runtimeSignal && (
-                            <div
-                              className={cn(
-                                "mt-1.5 rounded border px-2 py-1 text-[10px] flex items-start gap-1.5",
-                                runtimeSignal.kind === "error"
-                                  ? "border-destructive/30 bg-destructive/5 text-destructive"
-                                  : "border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300",
-                              )}
-                            >
-                              {runtimeSignal.kind === "error" ? (
-                                <TriangleAlert className="w-3 h-3 mt-0.5 shrink-0" />
-                              ) : (
-                                <WandSparkles className="w-3 h-3 mt-0.5 shrink-0" />
-                              )}
-                              <span className="break-words">
-                                {runtimeSignal.kind === "error" ? "Recent error" : "Recent compaction"}: {runtimeSignal.label}
                               </span>
                             </div>
-                          )}
-                          {!isCurrentSession && s.liveStatusDetail && (
-                            <div className="mt-1 rounded border border-primary/10 bg-primary/5 px-2 py-1 text-[10px] text-muted-foreground truncate">
-                              {s.liveStatusDetail}
+
+                            {/* Subtitle */}
+                            {s.subtitle && (
+                              <span className="text-[11px] text-muted-foreground mt-1 truncate">
+                                {s.subtitle}
+                              </span>
+                            )}
+
+                            {/* Badges row */}
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              {s.swarmEnabled && (
+                                <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-secondary text-secondary-foreground">
+                                  <Users className="w-2.5 h-2.5" />
+                                  swarm {s.swarmPeerCount || 0}
+                                </span>
+                              )}
+                              {s.swarmEnabled && s.swarmRole && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-secondary text-secondary-foreground uppercase">
+                                  {s.swarmRole}
+                                </span>
+                              )}
+                              {!isCurrentSession && livePhaseLabel(s) && (
+                                <span className={cn(
+                                  "inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full",
+                                  s.livePhase === "chunking"
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-secondary text-secondary-foreground"
+                                )}>
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  {livePhaseLabel(s)}
+                                </span>
+                              )}
                             </div>
-                          )}
-                          {s.previewLines && s.previewLines.length > 0 ? (
-                            <div className="mt-1.5 space-y-0.5">
-                              {s.previewLines.slice(0, isCurrentSession ? 2 : 3).map((line, index) => (
-                                <div
-                                  key={`${s.sessionId}-preview-${index}`}
-                                  className="text-[10px] text-muted-foreground font-mono truncate"
-                                >
-                                  {line}
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-[10px] text-muted-foreground font-mono mt-1.5 truncate">
-                              {s.model || s.sessionId.slice(0, 8)}
-                            </span>
-                          )}
+
+                            {/* Detail */}
+                            {s.detail && (
+                              <span className="text-[11px] text-muted-foreground/80 mt-1.5 truncate">
+                                {s.detail}
+                              </span>
+                            )}
+
+                            {/* Current session indicators */}
+                            {isCurrentSession && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                <span className={cn(
+                                  "inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full",
+                                  isProcessing
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-secondary text-secondary-foreground"
+                                )}>
+                                  {isProcessing ? (
+                                    <><LoaderCircle className="w-2.5 h-2.5 animate-spin" />running</>
+                                  ) : "idle"}
+                                </span>
+                                {queuedDraftCount > 0 && (
+                                  <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
+                                    <Layers3 className="w-2.5 h-2.5" />queued {queuedDraftCount}
+                                  </span>
+                                )}
+                                {stdinPromptActive && (
+                                  <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
+                                    <Keyboard className="w-2.5 h-2.5" />input pending
+                                  </span>
+                                )}
+                                {availableRouteCount > 0 && (
+                                  <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
+                                    {availableRouteCount} routes
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Runtime signal */}
+                            {isCurrentSession && runtimeSignal && (
+                              <div
+                                className={cn(
+                                  "mt-2 rounded-lg border px-2.5 py-1.5 text-[10px] flex items-start gap-1.5",
+                                  runtimeSignal.kind === "error"
+                                    ? "border-destructive/20 bg-destructive/5 text-destructive"
+                                    : "border-amber-500/20 bg-amber-500/5 text-amber-700 dark:text-amber-300",
+                                )}
+                              >
+                                {runtimeSignal.kind === "error" ? (
+                                  <TriangleAlert className="w-3 h-3 mt-0.5 shrink-0" />
+                                ) : (
+                                  <WandSparkles className="w-3 h-3 mt-0.5 shrink-0" />
+                                )}
+                                <span className="break-words">
+                                  {runtimeSignal.kind === "error" ? "Recent error" : "Recent compaction"}: {runtimeSignal.label}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Live status */}
+                            {!isCurrentSession && s.liveStatusDetail && (
+                              <div className="mt-1.5 rounded-lg border border-primary/10 bg-primary/5 px-2.5 py-1 text-[10px] text-muted-foreground truncate">
+                                {s.liveStatusDetail}
+                              </div>
+                            )}
+
+                            {/* Preview lines or model */}
+                            {s.previewLines && s.previewLines.length > 0 ? (
+                              <div className="mt-2 space-y-0.5">
+                                {s.previewLines.slice(0, isCurrentSession ? 2 : 3).map((line, index) => (
+                                  <div
+                                    key={`${s.sessionId}-preview-${index}`}
+                                    className="text-[10px] text-muted-foreground font-mono truncate"
+                                  >
+                                    {line}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-muted-foreground font-mono mt-2 truncate">
+                                {s.model || s.sessionId.slice(0, 8)}
+                              </span>
+                            )}
                           </button>
+
+                          {/* Delete button */}
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-8 w-8 mt-1 shrink-0 text-muted-foreground hover:text-destructive"
+                            className="h-8 w-8 mt-1 shrink-0 text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10"
                             onClick={() => onDeleteSession(s)}
                             disabled={isCurrentSession}
                             title={isCurrentSession ? "Switch away before deleting" : "Delete session"}
@@ -532,9 +550,10 @@ export function SessionSidebar({
             );
           })}
           {filteredWorkspaces.length === 0 && (
-            <p className="text-xs text-muted-foreground text-center py-6">
-              No sessions match this search/filter
-            </p>
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+              <Search className="w-8 h-8 mb-2 opacity-40" />
+              <p className="text-xs">No sessions match this search</p>
+            </div>
           )}
         </div>
       </ScrollArea>

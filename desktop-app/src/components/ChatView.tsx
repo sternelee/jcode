@@ -19,7 +19,6 @@ import {
   Brain,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -295,18 +294,18 @@ export function ChatView({
         )}
       >
         {segment.kind !== "conversation" && (
-          <div className="flex items-center gap-2 px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <div className="flex items-center gap-2 px-3 text-[10px] uppercase tracking-wider font-medium text-muted-foreground">
             <Icon className="w-3.5 h-3.5" />
             <span>{segmentTitle(segment.kind)}</span>
             {summary && (
-              <Badge variant="outline" className="text-[10px] normal-case">
+              <span className="text-[10px] normal-case px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
                 {summary}
-              </Badge>
+              </span>
             )}
             {!isVisibleRegion && (
-              <Badge variant="secondary" className="text-[10px] ml-auto">
+              <span className="text-[10px] ml-auto px-2 py-0.5 rounded-full bg-secondary text-secondary-foreground">
                 hidden segment
-              </Badge>
+              </span>
             )}
           </div>
         )}
@@ -327,13 +326,13 @@ export function ChatView({
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       {connected && (
-        <div className="flex items-center justify-between px-4 py-2 border-b bg-card/50">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
           <div className="flex items-center gap-2">
             <Select
               value={reasoningEffort || ""}
               onValueChange={(v) => v && onSetReasoningEffort(v)}
             >
-              <SelectTrigger className="h-7 text-xs w-32">
+              <SelectTrigger className="h-7 text-xs w-32 bg-background border-border rounded-lg">
                 <SelectValue placeholder="Reasoning" />
               </SelectTrigger>
               <SelectContent>
@@ -346,9 +345,9 @@ export function ChatView({
               </SelectContent>
             </Select>
             <Button
-              variant={memoryEnabled ? "secondary" : "outline"}
+              variant={memoryEnabled ? "default" : "outline"}
               size="sm"
-              className="h-7 text-xs gap-1"
+              className="h-7 text-xs gap-1 rounded-lg"
               onClick={() => onSetMemoryEnabled(!memoryEnabled)}
             >
               <Brain className="w-3 h-3" />
@@ -357,7 +356,7 @@ export function ChatView({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs gap-1"
+              className="h-7 text-xs gap-1 rounded-lg"
               onClick={onCompactContext}
               disabled={isProcessing}
             >
@@ -367,7 +366,7 @@ export function ChatView({
           </div>
           <div className="flex items-center gap-2">
             {connectionType && (
-              <span className="text-[10px] text-muted-foreground font-mono">
+              <span className="text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded-full">
                 {connectionType}
               </span>
             )}
@@ -377,13 +376,13 @@ export function ChatView({
               </span>
             )}
             {stdinPromptActive && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-400 font-mono">
+              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 font-mono">
                 <Keyboard className="w-3 h-3" />
-                interactive input pending
+                input pending
               </span>
             )}
             {queuedDraftCount > 0 && (
-              <span className="text-[10px] text-muted-foreground font-mono">
+              <span className="text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded-full">
                 queued:{queuedDraftCount}
                 {stdinPromptActive ? " (paused)" : ""}
               </span>
@@ -391,7 +390,7 @@ export function ChatView({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs gap-1"
+              className="h-7 text-xs gap-1 rounded-lg"
               onClick={onRewindChat}
               disabled={isProcessing || messages.length === 0}
             >
@@ -401,7 +400,7 @@ export function ChatView({
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs gap-1 text-destructive hover:text-destructive"
+              className="h-7 text-xs gap-1 text-destructive hover:text-destructive rounded-lg"
               onClick={onClearChat}
               disabled={isProcessing || messages.length === 0}
             >
@@ -414,60 +413,58 @@ export function ChatView({
       <Conversation className="flex-1">
         <ConversationContent>
           {!connected && !connectionPhase ? (
-            <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-4 text-muted-foreground">
-              <h1>
-                <span className="font-dotted font-black text-3xl md:text-4xl leading-none">
-                  <span style={{ opacity: 1, filter: "blur(0px)" }}>J</span>
-                  <span style={{ opacity: 1, filter: "blur(0px)" }}>C</span>
-                  <span style={{ opacity: 1, filter: "blur(0px)" }}>o</span>
-                  <span style={{ opacity: 1, filter: "blur(0px)" }}>d</span>
-                  <span style={{ opacity: 1, filter: "blur(0px)" }}>e</span>
-                </span>
-              </h1>
+            <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-6 text-muted-foreground">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mb-2">
+                  <span className="text-primary-foreground font-black text-3xl">J</span>
+                </div>
+                <h1 className="text-2xl font-bold text-foreground tracking-tight">JCode Desktop</h1>
+                <p className="text-sm text-muted-foreground">AI-powered coding assistant</p>
+              </div>
               <div className="flex items-center gap-3">
                 <Button
                   variant="outline"
                   size="lg"
-                  className="gap-2"
+                  className="gap-2 rounded-xl h-11 px-6"
                   onClick={onSelectWorkspace}
                 >
                   <FolderOpen className="w-5 h-5" />
                   Select Workspace
                 </Button>
                 <Button
-                  variant="secondary"
+                  variant="default"
                   size="lg"
-                  className="gap-2"
+                  className="gap-2 rounded-xl h-11 px-6"
                   onClick={onStartDefaultSession}
                 >
                   <MessageSquare className="w-5 h-5" />
-                  Use Default Workspace
+                  Start Chatting
                 </Button>
               </div>
-              <p className="text-xs">
+              <p className="text-xs text-muted-foreground/70">
                 Choose a folder or start directly in the default workspace
               </p>
             </div>
           ) : !connected ? (
             <div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-2 text-muted-foreground">
-              <p className="text-sm">{connectionPhase || "Not connected"}</p>
-              <p className="text-xs">
+              <p className="text-sm font-medium">{connectionPhase || "Not connected"}</p>
+              <p className="text-xs text-muted-foreground/70">
                 Select a workspace folder and start a session to begin.
               </p>
             </div>
           ) : messages.length === 0 ? (
             <ConversationEmptyState
-              icon={<MessageSquare className="size-12" />}
+              icon={<div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center"><MessageSquare className="w-6 h-6 text-muted-foreground" /></div>}
               title="Start a conversation"
               description="Type a message below to begin chatting"
             />
           ) : (
             <>
               {collapseState.hiddenSegments.length > 0 && (
-                <div className="mb-4 flex justify-center">
+                <div className="mb-6 flex justify-center">
                   <button
                     type="button"
-                    className="inline-flex items-center gap-2 rounded-full border bg-card/80 px-4 py-2 text-xs text-muted-foreground transition-colors hover:bg-accent/40"
+                    className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-xs font-medium text-muted-foreground transition-all hover:bg-secondary hover:text-foreground shadow-sm"
                     onClick={() => setShowEarlierMessages((value) => !value)}
                   >
                     <History className="w-3.5 h-3.5" />
@@ -499,7 +496,7 @@ export function ChatView({
               {showEarlierMessages &&
                 collapseState.hiddenSegments.length > 0 && (
                   <>
-                    <div className="mb-4 flex items-center gap-3 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <div className="mb-6 flex items-center gap-3 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                       <div className="h-px flex-1 bg-border" />
                       earlier transcript segments
                       <div className="h-px flex-1 bg-border" />
@@ -507,7 +504,7 @@ export function ChatView({
                     {collapseState.hiddenSegments.map((segment) =>
                       renderSegment(segment, false),
                     )}
-                    <div className="my-4 flex items-center gap-3 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <div className="my-6 flex items-center gap-3 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                       <div className="h-px flex-1 bg-border" />
                       current context
                       <Layers3 className="w-3.5 h-3.5" />
