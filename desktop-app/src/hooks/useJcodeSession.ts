@@ -610,9 +610,9 @@ export function useJcodeSession() {
     }
   }, []);
 
-  const setModel = useCallback(async (model: string) => {
+  const setModel = useCallback(async (model: string, profileId?: string) => {
     try {
-      await invoke("set_model", { model });
+      await invoke("set_model", { model, profileId: profileId || null });
     } catch (e) {
       dispatch({ type: "SET_ERROR", message: String(e) });
     }

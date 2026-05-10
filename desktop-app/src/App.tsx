@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTheme } from "@/hooks/useTheme";
 import type { SessionInfo } from "@/types";
 import {
@@ -60,17 +60,18 @@ export default function App() {
   const [defaultWorkspaceMemoryEnabled, setDefaultWorkspaceMemoryEnabled] =
     useState(true);
 
+  const hasPolledOnConnect = useRef(false);
   useEffect(() => {
-    if (state.connected) listSessions();
-  }, [state.connected, state.sessionId]);
-
-  useEffect(() => {
-    if (!state.connected) return;
-    const timer = window.setInterval(() => {
-      void listSessions();
-    }, 2000);
-    return () => window.clearInterval(timer);
+    if (state.connected && !hasPolledOnConnect.current) {
+      hasPolledOnConnect.current = true;
+      listSessions();
+    }
+    if (!state.connected) {
+      hasPolledOnConnect.current = false;
+    }
   }, [state.connected, listSessions]);
+
+
 
   useEffect(() => {
     const loadMemoryPreferences = async () => {

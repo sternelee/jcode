@@ -33,7 +33,7 @@ import {
 interface ModelSelectorProps {
   currentModel: string | null;
   currentProvider?: string | null;
-  onSelectModel: (model: string) => void;
+  onSelectModel: (model: string, profileId?: string) => void;
   disabled: boolean;
 }
 
@@ -49,27 +49,72 @@ interface ProviderDraftState {
   extras?: Record<string, string>;
 }
 
-function providerLabel(provider: string): string {
+function profileLabel(profileId: string): string {
   const labels: Record<string, string> = {
-    anthropic: "Anthropic",
-    openai: "OpenAI",
-    gemini: "Google Gemini",
-    copilot: "GitHub Copilot",
     openrouter: "OpenRouter",
+    claude: "Claude",
+    openai: "OpenAI",
+    copilot: "GitHub Copilot",
+    gemini: "Google Gemini",
     bedrock: "AWS Bedrock",
     antigravity: "Antigravity",
     cursor: "Cursor",
-    claude: "Claude",
     jcode: "Jcode",
+    opencode: "OpenCode Zen",
+    "opencode-go": "OpenCode Go",
+    zai: "Z.AI",
+    kimi: "Kimi Code",
+    "302ai": "302.AI",
+    baseten: "Baseten",
+    cortecs: "Cortecs",
+    deepseek: "DeepSeek",
+    comtegra: "Comtegra GPU Cloud",
+    fpt: "FPT AI Marketplace",
+    firmware: "Firmware",
+    huggingface: "Hugging Face",
+    moonshotai: "Moonshot AI",
+    nebius: "Nebius Token Factory",
+    scaleway: "Scaleway",
+    stackit: "STACKIT",
+    groq: "Groq",
+    mistral: "Mistral",
+    perplexity: "Perplexity",
+    togetherai: "Together AI",
+    deepinfra: "Deep Infra",
+    fireworks: "Fireworks",
+    minimax: "MiniMax",
+    xai: "xAI",
+    lmstudio: "LM Studio",
+    ollama: "Ollama",
+    chutes: "Chutes",
+    cerebras: "Cerebras",
+    "alibaba-coding-plan": "Alibaba Cloud Coding Plan",
+    "openai-compatible": "OpenAI-compatible",
   };
-  return labels[provider] || provider;
+  return labels[profileId] || profileId;
 }
 
 function currentLabel(currentProvider?: string | null, currentModel?: string | null): string {
   if (currentProvider && currentModel) {
-    return `${providerLabel(currentProvider)} · ${currentModel}`;
+    return `${profileLabel(currentProvider)} · ${currentModel}`;
   }
   return currentModel || "Select model";
+}
+
+/** Extract the profile ID used for grouping models */
+function profileIdFromRoute(route: ModelRoute): string {
+  if (route.api_method?.startsWith("openai-compatible:")) {
+    return route.api_method.slice("openai-compatible:".length);
+  }
+  if (route.api_method === "openrouter") {
+    return "openrouter";
+  }
+  return route.provider.toLowerCase();
+}
+
+/** Extract profile ID from a ProviderCatalogEntry */
+function profileIdFromProvider(provider: ProviderCatalogEntry): string {
+  return provider.auth_provider_id || provider.provider_key;
 }
 
 function dedupeRoutes(routes: ModelRoute[]): ModelRoute[] {
@@ -202,28 +247,33 @@ export function ModelSelector({
   const [onlyAvailable, setOnlyAvailable] = useState(true);
   const [longContextOnly, setLongContextOnly] = useState(false);
   const [cheapOnly, setCheapOnly] = useState(false);
-  const [collapsedProviders, setCollapsedProviders] = useState<Record<string, boolean>>({});
+  const [collapsedProfiles, setCollapsedProfiles] = useState<Record<string, boolean>>({});
   const [providerDrafts, setProviderDrafts] = useState<Record<string, ProviderDraftState>>({});
   const [selectedOptionByProvider, setSelectedOptionByProvider] = useState<Record<string, string>>({});
   const [providerBusy, setProviderBusy] = useState<Record<string, boolean>>({});
   const [providerMessages, setProviderMessages] = useState<Record<string, string | null>>({});
   const [providerErrors, setProviderErrors] = useState<Record<string, string | null>>({});
   const [authPrompts, setAuthPrompts] = useState<Record<string, ProviderAuthPrompt | null>>({});
+  const [search, setSearch] = useState("");
 
-  const loadModels = useCallback(async () => {
-    if (disabled) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await invoke<ModelCatalogResponse>("get_models");
-      setRoutes(dedupeRoutes(data.routes || []));
-      setProviders(data.providers || []);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [disabled]);
+  const loadModels = useCallback(
+    async (force = false) => {
+      if (disabled) return;
+      if (!force && routes.length > 0) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await invoke<ModelCatalogResponse>("get_models");
+        setRoutes(dedupeRoutes(data.routes || []));
+        setProviders(data.providers || []);
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [disabled, routes.length],
+  );
 
   useEffect(() => {
     if (open) {
@@ -236,45 +286,48 @@ export function ModelSelector({
     [routes, currentModel, currentProvider],
   );
 
-  const providerMap = useMemo(
-    () => new Map(providers.map((provider) => [provider.provider_key, provider])),
-    [providers],
-  );
-
-  const ownerKeyForProvider = useCallback(
-    (providerKey: string) => providerMap.get(providerKey)?.auth_provider_id || providerKey,
-    [providerMap],
-  );
-
-  const groupedProviderMap = useMemo(() => {
+  // Map profile_id -> ProviderCatalogEntry
+  const profileMap = useMemo(() => {
     const map = new Map<string, ProviderCatalogEntry>();
     for (const provider of providers) {
-      const groupKey = provider.auth_provider_id || provider.provider_key;
-      const existing = map.get(groupKey);
+      const pid = profileIdFromProvider(provider);
+      const existing = map.get(pid);
       if (!existing) {
-        map.set(groupKey, provider);
+        map.set(pid, provider);
         continue;
       }
       if ((provider.has_config_surface && !existing.has_config_surface)
         || (provider.is_current_provider && !existing.is_current_provider)
         || (provider.route_count > existing.route_count)) {
-        map.set(groupKey, provider);
+        map.set(pid, provider);
       }
     }
     return map;
   }, [providers]);
 
+  // Derive current profile id from currentProvider
+  const currentProfileId = useMemo(() => {
+    if (!currentProvider) return null;
+    return currentProvider.toLowerCase();
+  }, [currentProvider]);
+
   const filteredRoutes = useMemo(
     () =>
       visibleRoutes.filter((route) => {
-        const ownerProvider = providerMap.get(ownerKeyForProvider(route.provider));
-        if (ownerProvider && !ownerProvider.configured && route.model !== currentModel) return false;
+        const pid = profileIdFromRoute(route);
+        const profile = profileMap.get(pid);
+        if (profile && !profile.configured && route.model !== currentModel) return false;
         if (onlyAvailable && route.available === false) return false;
         if (longContextOnly && !(route.context_window && route.context_window >= 100000)) return false;
         if (cheapOnly && !route.cheapness?.relative_label?.toLowerCase().includes("cheap")) return false;
+        if (search) {
+          const q = search.toLowerCase();
+          const hay = routeSearchValue(route).toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
         return true;
       }),
-    [visibleRoutes, providerMap, ownerKeyForProvider, currentModel, onlyAvailable, longContextOnly, cheapOnly],
+    [visibleRoutes, profileMap, currentModel, onlyAvailable, longContextOnly, cheapOnly, search],
   );
 
   const currentRoute = useMemo(
@@ -289,105 +342,71 @@ export function ModelSelector({
       .sort((a, b) => compareRoutes(a, b, currentModel, currentProvider));
   }, [visibleRoutes, currentModel, currentProvider]);
 
-  const groupedProviders = useMemo(() => {
+  // Group routes by profile_id
+  const groupedProfiles = useMemo(() => {
     const routeGroups = new Map<string, ModelRoute[]>();
     for (const route of filteredRoutes) {
-      const ownerKey = ownerKeyForProvider(route.provider);
-      const bucket = routeGroups.get(ownerKey) || [];
+      const pid = profileIdFromRoute(route);
+      const bucket = routeGroups.get(pid) || [];
       bucket.push(route);
-      routeGroups.set(ownerKey, bucket);
+      routeGroups.set(pid, bucket);
     }
 
-    const currentOwnerKey = currentProvider ? ownerKeyForProvider(currentProvider) : null;
-    const providerKeys = new Set<string>();
-    groupedProviderMap.forEach((provider, groupKey) => {
-      if (provider.has_config_surface || provider.is_current_provider || routeGroups.has(groupKey)) {
-        providerKeys.add(groupKey);
+    const profileKeys = new Set<string>();
+    profileMap.forEach((provider, pid) => {
+      if (provider.has_config_surface || provider.is_current_provider || routeGroups.has(pid)) {
+        profileKeys.add(pid);
       }
     });
-    routeGroups.forEach((_, ownerKey) => providerKeys.add(ownerKey));
-    if (currentOwnerKey) providerKeys.add(currentOwnerKey);
+    routeGroups.forEach((_, pid) => profileKeys.add(pid));
+    if (currentProfileId) profileKeys.add(currentProfileId);
 
-    const rawGroups = Array.from(providerKeys)
-      .map((providerKey) => {
-        const provider = groupedProviderMap.get(providerKey) || null;
-        const groupRoutes = [...(routeGroups.get(providerKey) || [])].sort((a, b) =>
+    const groups = Array.from(profileKeys)
+      .map((pid) => {
+        const provider = profileMap.get(pid) || null;
+        const groupRoutes = [...(routeGroups.get(pid) || [])].sort((a, b) =>
           compareRoutes(a, b, currentModel, currentProvider),
         );
-        const canonicalLabel = providerLabel(providerKey);
-        const resolvedLabel =
-          provider && provider.provider_key === providerKey
-            ? provider.display_name || canonicalLabel
-            : canonicalLabel;
         return {
-          providerKey,
-          label: resolvedLabel,
+          profileId: pid,
+          label: profileLabel(pid),
           provider,
           routes: groupRoutes,
-          isCurrentProvider:
-            provider?.is_current_provider || (currentOwnerKey ? providerKey === currentOwnerKey : false),
+          isCurrentProfile: pid === currentProfileId,
           configured: provider?.configured ?? true,
           hasConfigSurface: provider?.has_config_surface ?? false,
         };
       })
-      .filter((group) => group.provider || group.routes.length > 0);
-
-    const mergedByLabel = new Map<string, (typeof rawGroups)[number]>();
-    for (const group of rawGroups) {
-      const labelKey = group.label.trim().toLowerCase();
-      const existing = mergedByLabel.get(labelKey);
-      if (!existing) {
-        mergedByLabel.set(labelKey, group);
-        continue;
-      }
-
-      const preferred =
-        (group.hasConfigSurface && !existing.hasConfigSurface)
-        || (group.isCurrentProvider && !existing.isCurrentProvider)
-        || (group.routes.length > existing.routes.length);
-
-      const primary = preferred ? group : existing;
-      const secondary = preferred ? existing : group;
-      const mergedRoutes = dedupeRoutes([...primary.routes, ...secondary.routes]).sort((a, b) =>
-        compareRoutes(a, b, currentModel, currentProvider),
-      );
-
-      mergedByLabel.set(labelKey, {
-        ...primary,
-        routes: mergedRoutes,
-        isCurrentProvider: primary.isCurrentProvider || secondary.isCurrentProvider,
-        configured: primary.configured || secondary.configured,
-        hasConfigSurface: primary.hasConfigSurface || secondary.hasConfigSurface,
+      .filter((group) => group.provider || group.routes.length > 0)
+      .sort((a, b) => {
+        if (a.isCurrentProfile !== b.isCurrentProfile) return a.isCurrentProfile ? -1 : 1;
+        if (a.configured !== b.configured) return a.configured ? -1 : 1;
+        return a.label.localeCompare(b.label);
       });
-    }
 
-    return Array.from(mergedByLabel.values()).sort((a, b) => {
-      if (a.isCurrentProvider !== b.isCurrentProvider) return a.isCurrentProvider ? -1 : 1;
-      if (a.configured !== b.configured) return a.configured ? -1 : 1;
-      return a.label.localeCompare(b.label);
-    });
-  }, [filteredRoutes, groupedProviderMap, ownerKeyForProvider, currentModel, currentProvider]);
+    return groups;
+  }, [filteredRoutes, profileMap, currentModel, currentProvider, currentProfileId]);
 
   useEffect(() => {
-    setCollapsedProviders((current) => {
+    setCollapsedProfiles((current) => {
       let changed = false;
       const next = { ...current };
-      for (const group of groupedProviders) {
-        if (!(group.providerKey in next)) {
-          next[group.providerKey] = group.provider ? !group.provider.configured : false;
+      for (const group of groupedProfiles) {
+        if (!(group.profileId in next)) {
+          next[group.profileId] = group.provider ? !group.provider.configured : false;
           changed = true;
         }
       }
       return changed ? next : current;
     });
-  }, [groupedProviders]);
+  }, [groupedProfiles]);
 
   const setDraftValue = useCallback(
-    (providerKey: string, field: keyof ProviderDraftState, value: string) => {
+    (profileId: string, field: keyof ProviderDraftState, value: string) => {
       setProviderDrafts((current) => ({
         ...current,
-        [providerKey]: {
-          ...current[providerKey],
+        [profileId]: {
+          ...current[profileId],
           [field]: value,
         },
       }));
@@ -395,54 +414,54 @@ export function ModelSelector({
     [],
   );
 
-  const setDraftExtraValue = useCallback((providerKey: string, extraKey: string, value: string) => {
+  const setDraftExtraValue = useCallback((profileId: string, extraKey: string, value: string) => {
     setProviderDrafts((current) => ({
       ...current,
-      [providerKey]: {
-        ...current[providerKey],
+      [profileId]: {
+        ...current[profileId],
         extras: {
-          ...(current[providerKey]?.extras || {}),
+          ...(current[profileId]?.extras || {}),
           [extraKey]: value,
         },
       },
     }));
   }, []);
 
-  const selectProviderOption = useCallback((providerKey: string, option: ProviderConfigOption) => {
-    const key = optionKey(providerKey, option);
-    setSelectedOptionByProvider((current) => ({ ...current, [providerKey]: key }));
-    setProviderErrors((current) => ({ ...current, [providerKey]: null }));
-    setProviderMessages((current) => ({ ...current, [providerKey]: null }));
-    setCollapsedProviders((current) => ({ ...current, [providerKey]: false }));
+  const selectProviderOption = useCallback((profileId: string, option: ProviderConfigOption) => {
+    const key = optionKey(profileId, option);
+    setSelectedOptionByProvider((current) => ({ ...current, [profileId]: key }));
+    setProviderErrors((current) => ({ ...current, [profileId]: null }));
+    setProviderMessages((current) => ({ ...current, [profileId]: null }));
+    setCollapsedProfiles((current) => ({ ...current, [profileId]: false }));
     setProviderDrafts((current) => {
-      if (current[providerKey]) return current;
+      if (current[profileId]) return current;
       const extras = Object.fromEntries(
         (option.extra_fields || []).map((field) => [field.key, field.default_value || ""]),
       );
       return {
         ...current,
-        [providerKey]: { extras },
+        [profileId]: { extras },
       };
     });
   }, []);
 
-  const withProviderBusy = useCallback(async (providerKey: string, fn: () => Promise<void>) => {
-    setProviderBusy((current) => ({ ...current, [providerKey]: true }));
-    setProviderErrors((current) => ({ ...current, [providerKey]: null }));
+  const withProviderBusy = useCallback(async (profileId: string, fn: () => Promise<void>) => {
+    setProviderBusy((current) => ({ ...current, [profileId]: true }));
+    setProviderErrors((current) => ({ ...current, [profileId]: null }));
     try {
       await fn();
     } catch (err) {
-      setProviderErrors((current) => ({ ...current, [providerKey]: String(err) }));
+      setProviderErrors((current) => ({ ...current, [profileId]: String(err) }));
     } finally {
-      setProviderBusy((current) => ({ ...current, [providerKey]: false }));
+      setProviderBusy((current) => ({ ...current, [profileId]: false }));
     }
   }, []);
 
   const handleSaveApiKey = useCallback(
-    async (providerKey: string, option: ProviderConfigOption) => {
-      const draft = providerDrafts[providerKey];
+    async (profileId: string, option: ProviderConfigOption) => {
+      const draft = providerDrafts[profileId];
       const apiKey = draft?.apiKey?.trim() || "";
-      await withProviderBusy(providerKey, async () => {
+      await withProviderBusy(profileId, async () => {
         if (!apiKey) {
           throw new Error("Please paste an API key first.");
         }
@@ -454,12 +473,12 @@ export function ModelSelector({
         });
         setProviderMessages((current) => ({
           ...current,
-          [providerKey]: `${option.label} saved. Model catalog refreshed.`,
+          [profileId]: `${option.label} saved. Model catalog refreshed.`,
         }));
         setProviderDrafts((current) => ({
           ...current,
-          [providerKey]: {
-            ...current[providerKey],
+          [profileId]: {
+            ...current[profileId],
             apiKey: "",
           },
         }));
@@ -470,15 +489,15 @@ export function ModelSelector({
   );
 
   const handleStartAuth = useCallback(
-    async (providerKey: string, option: ProviderConfigOption) => {
-      await withProviderBusy(providerKey, async () => {
+    async (profileId: string, option: ProviderConfigOption) => {
+      await withProviderBusy(profileId, async () => {
         const prompt = await invoke<ProviderAuthPrompt>("start_provider_auth_flow", {
           providerId: option.provider_id,
         });
-        setAuthPrompts((current) => ({ ...current, [providerKey]: prompt }));
+        setAuthPrompts((current) => ({ ...current, [profileId]: prompt }));
         setProviderMessages((current) => ({
           ...current,
-          [providerKey]: "Sign-in flow started. Open the auth URL below, then complete the flow here.",
+          [profileId]: "Sign-in flow started. Open the auth URL below, then complete the flow here.",
         }));
       });
     },
@@ -486,10 +505,10 @@ export function ModelSelector({
   );
 
   const handleCompleteAuth = useCallback(
-    async (providerKey: string) => {
-      const prompt = authPrompts[providerKey];
-      const input = providerDrafts[providerKey]?.authInput?.trim() || "";
-      await withProviderBusy(providerKey, async () => {
+    async (profileId: string) => {
+      const prompt = authPrompts[profileId];
+      const input = providerDrafts[profileId]?.authInput?.trim() || "";
+      await withProviderBusy(profileId, async () => {
         if (!prompt) {
           throw new Error("Start the auth flow first.");
         }
@@ -504,13 +523,13 @@ export function ModelSelector({
         const suffix = result?.email || result?.account_label ? ` (${result.email || result.account_label})` : "";
         setProviderMessages((current) => ({
           ...current,
-          [providerKey]: `Authentication completed${suffix}.`,
+          [profileId]: `Authentication completed${suffix}.`,
         }));
-        setAuthPrompts((current) => ({ ...current, [providerKey]: null }));
+        setAuthPrompts((current) => ({ ...current, [profileId]: null }));
         setProviderDrafts((current) => ({
           ...current,
-          [providerKey]: {
-            ...current[providerKey],
+          [profileId]: {
+            ...current[profileId],
             authInput: "",
           },
         }));
@@ -536,13 +555,16 @@ export function ModelSelector({
 
       <CommandDialog
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(v) => {
+          if (!v) setSearch("");
+          setOpen(v);
+        }}
         title="Model Picker"
         description="Search and switch models for the current session."
         className="sm:max-w-3xl max-h-[85vh]"
         showCloseButton={false}
       >
-        <Command shouldFilter className="h-full max-h-[85vh]">
+        <Command shouldFilter={false} className="h-full max-h-[85vh]">
           <div className="flex items-center gap-2 px-2 pt-2 flex-wrap">
             <div className="min-w-0 flex-1 text-xs text-muted-foreground">
               current: {currentLabel(currentProvider, currentModel)}
@@ -585,7 +607,7 @@ export function ModelSelector({
               variant="ghost"
               size="icon"
               className="h-7 w-7 shrink-0"
-              onClick={() => void loadModels()}
+              onClick={() => void loadModels(true)}
               disabled={loading}
               title="Reload model catalog"
             >
@@ -617,7 +639,7 @@ export function ModelSelector({
                 )}
               </div>
               <div className="text-muted-foreground break-words">
-                {providerLabel(currentRoute.provider)}
+                {profileLabel(profileIdFromRoute(currentRoute))}
                 {currentRoute.api_method ? ` · ${currentRoute.api_method}` : ""}
                 {currentRoute.detail ? ` · ${currentRoute.detail}` : ""}
               </div>
@@ -633,7 +655,7 @@ export function ModelSelector({
                         className="rounded border bg-muted/20 px-2 py-1.5 flex items-center gap-2 flex-wrap"
                       >
                         <Badge variant="outline" className="text-[10px]">
-                          {providerLabel(route.provider)}
+                          {profileLabel(profileIdFromRoute(route))}
                         </Badge>
                         {route.api_method && (
                           <Badge variant="outline" className="text-[10px]">
@@ -657,34 +679,38 @@ export function ModelSelector({
               )}
             </div>
           )}
-          <CommandInput placeholder={loading ? "Loading models..." : "Search models, providers, methods..."} />
+          <CommandInput
+            placeholder={loading ? "Loading models..." : "Search models, providers, methods..."}
+            value={search}
+            onValueChange={(v) => setSearch(v)}
+          />
           <CommandList className="min-h-0 flex-1 max-h-none">
             {error && <div className="px-3 py-2 text-xs text-destructive">model picker error: {error}</div>}
-            {!loading && !error && groupedProviders.length === 0 && <CommandEmpty>No matching models.</CommandEmpty>}
-            {groupedProviders.map(({ providerKey, label, provider, routes: groupRoutes, isCurrentProvider, configured, hasConfigSurface }) => {
-              const collapsed = collapsedProviders[providerKey] ?? false;
+            {!loading && !error && groupedProfiles.length === 0 && <CommandEmpty>No matching models.</CommandEmpty>}
+            {groupedProfiles.map(({ profileId, label, provider, routes: groupRoutes, isCurrentProfile, configured, hasConfigSurface }) => {
+              const collapsed = collapsedProfiles[profileId] ?? false;
               const status = provider?.status || "unknown";
               const statusText = provider && hasConfigSurface ? statusLabel(status) : null;
-              const selectedOptionKey = selectedOptionByProvider[providerKey];
+              const selectedOptionKey = selectedOptionByProvider[profileId];
               const selectedOption = provider?.options.find(
-                (option) => optionKey(providerKey, option) === selectedOptionKey,
+                (option) => optionKey(profileId, option) === selectedOptionKey,
               ) || provider?.options[0];
-              const draft = providerDrafts[providerKey] || {};
-              const authPrompt = authPrompts[providerKey];
-              const busy = providerBusy[providerKey] || false;
+              const draft = providerDrafts[profileId] || {};
+              const authPrompt = authPrompts[profileId];
+              const busy = providerBusy[profileId] || false;
               const authNeedsInput =
                 authPrompt && authPrompt.input_kind !== "complete";
 
               return (
-                <CommandGroup key={providerKey}>
+                <CommandGroup key={profileId}>
                   <div className="px-2 py-1.5 sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b">
                     <button
                       type="button"
                       className="w-full flex items-center gap-2 text-left"
                       onClick={() =>
-                        setCollapsedProviders((current) => ({
+                        setCollapsedProfiles((current) => ({
                           ...current,
-                          [providerKey]: !collapsed,
+                          [profileId]: !collapsed,
                         }))
                       }
                     >
@@ -697,7 +723,7 @@ export function ModelSelector({
                       <Badge variant="outline" className="h-5 text-[10px]">
                         {provider?.route_count ?? groupRoutes.length}
                       </Badge>
-                      {isCurrentProvider && (
+                      {isCurrentProfile && (
                         <Badge variant="secondary" className="h-5 text-[10px]">
                           current provider
                         </Badge>
@@ -724,8 +750,8 @@ export function ModelSelector({
                       {provider.options.length > 0 && (
                         <div className="flex gap-2 flex-wrap">
                           {provider.options.map((option) => {
-                            const key = optionKey(providerKey, option);
-                            const active = selectedOption && optionKey(providerKey, selectedOption) === key;
+                            const key = optionKey(profileId, option);
+                            const active = selectedOption && optionKey(profileId, selectedOption) === key;
                             return (
                               <Button
                                 key={key}
@@ -733,7 +759,7 @@ export function ModelSelector({
                                 size="sm"
                                 variant={active ? "secondary" : "outline"}
                                 className="h-7 text-[10px]"
-                                onClick={() => selectProviderOption(providerKey, option)}
+                                onClick={() => selectProviderOption(profileId, option)}
                               >
                                 {option.kind === "api_key" ? (
                                   <KeyRound className="w-3 h-3 mr-1" />
@@ -760,15 +786,15 @@ export function ModelSelector({
                                 type="password"
                                 placeholder={selectedOption.input_placeholder || "Paste API key"}
                                 value={draft.apiKey || ""}
-                                onChange={(event) => setDraftValue(providerKey, "apiKey", event.target.value)}
+                                onChange={(event) => setDraftValue(profileId, "apiKey", event.target.value)}
                               />
                               {(selectedOption.extra_fields || []).map((field) => (
                                 <Input
-                                  key={`${providerKey}-${field.key}`}
+                                  key={`${profileId}-${field.key}`}
                                   placeholder={field.placeholder || field.label}
                                   value={draft.extras?.[field.key] || ""}
                                   onChange={(event) =>
-                                    setDraftExtraValue(providerKey, field.key, event.target.value)
+                                    setDraftExtraValue(profileId, field.key, event.target.value)
                                   }
                                 />
                               ))}
@@ -777,7 +803,7 @@ export function ModelSelector({
                                   size="sm"
                                   className="h-7 text-[10px]"
                                   disabled={busy}
-                                  onClick={() => void handleSaveApiKey(providerKey, selectedOption)}
+                                  onClick={() => void handleSaveApiKey(profileId, selectedOption)}
                                 >
                                   {busy ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
                                   Save credentials
@@ -803,7 +829,7 @@ export function ModelSelector({
                                     size="sm"
                                     className="h-7 text-[10px]"
                                     disabled={busy}
-                                    onClick={() => void handleStartAuth(providerKey, selectedOption)}
+                                    onClick={() => void handleStartAuth(profileId, selectedOption)}
                                   >
                                     {busy ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
                                     Start sign-in
@@ -840,7 +866,7 @@ export function ModelSelector({
                                       }
                                       value={draft.authInput || ""}
                                       onChange={(event) =>
-                                        setDraftValue(providerKey, "authInput", event.target.value)
+                                        setDraftValue(profileId, "authInput", event.target.value)
                                       }
                                     />
                                   )}
@@ -849,7 +875,7 @@ export function ModelSelector({
                                       size="sm"
                                       className="h-7 text-[10px]"
                                       disabled={busy}
-                                      onClick={() => void handleCompleteAuth(providerKey)}
+                                      onClick={() => void handleCompleteAuth(profileId)}
                                     >
                                       {busy ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
                                       {authPrompt.input_kind === "complete"
@@ -864,11 +890,11 @@ export function ModelSelector({
                         </div>
                       )}
 
-                      {providerErrors[providerKey] && (
-                        <div className="text-xs text-destructive">{providerErrors[providerKey]}</div>
+                      {providerErrors[profileId] && (
+                        <div className="text-xs text-destructive">{providerErrors[profileId]}</div>
                       )}
-                      {providerMessages[providerKey] && !providerErrors[providerKey] && (
-                        <div className="text-xs text-muted-foreground">{providerMessages[providerKey]}</div>
+                      {providerMessages[profileId] && !providerErrors[profileId] && (
+                        <div className="text-xs text-muted-foreground">{providerMessages[profileId]}</div>
                       )}
                     </div>
                   )}
@@ -887,7 +913,7 @@ export function ModelSelector({
                         key={`${route.provider}:${route.model}:${route.api_method || ""}:${route.detail || ""}`}
                         value={value}
                         onSelect={() => {
-                          onSelectModel(route.model);
+                          onSelectModel(route.model, profileIdFromRoute(route));
                           setOpen(false);
                         }}
                         className="items-start py-2.5"
@@ -918,8 +944,7 @@ export function ModelSelector({
                             )}
                           </div>
                           <div className="text-xs text-muted-foreground break-words">
-                            provider {providerLabel(route.provider)}
-                            {route.api_method ? ` · ${route.api_method}` : ""}
+                            {route.api_method ? `${route.api_method}` : ""}
                             {route.detail ? ` · ${route.detail}` : ""}
                           </div>
                         </div>

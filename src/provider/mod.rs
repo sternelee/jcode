@@ -673,6 +673,20 @@ impl Provider for MultiProvider {
             return self.set_model_on_openai_compatible_profile(profile, target_model);
         }
 
+        // Generic profile:model prefix sent by the desktop model picker so
+        // every route carries an explicit profile id. OpenAI-compatible
+        // profiles are handled above; here we handle native providers.
+        if let Some((prefix, rest)) = requested_model.split_once(':') {
+            let prefix = prefix.trim().to_ascii_lowercase();
+            let rest = rest.trim();
+            if !rest.is_empty() {
+                if let Some(target) = provider_from_model_key(&prefix) {
+                    self.ensure_provider_lock_allows_model_target(target, requested_model)?;
+                    return self.set_model_on_provider(target, rest);
+                }
+            }
+        }
+
         // Provider-prefixed model names are explicit routing directives. They
         // must never silently fall through to another provider when the target
         // is unavailable or when --provider locks a different backend.

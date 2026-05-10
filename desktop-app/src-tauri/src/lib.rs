@@ -1623,11 +1623,17 @@ async fn set_model(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     model: String,
+    profile_id: Option<String>,
 ) -> Result<(), String> {
     let runtime = active_runtime(&state).await?;
     let mut guard = runtime.agent.lock().await;
+    let model_arg = if let Some(pid) = profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        format!("{}:{}", pid, model)
+    } else {
+        model
+    };
     guard
-        .set_model(&model)
+        .set_model(&model_arg)
         .map_err(|e| format!("Failed to set model: {e}"))?;
     let current = guard.provider_handle().model();
     drop(guard);
