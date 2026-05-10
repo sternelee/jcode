@@ -1,4 +1,4 @@
-import { useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import {
   Dialog,
   DialogContent,
@@ -7,6 +7,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import type { StdinPrompt } from "@/types";
 
@@ -18,34 +19,65 @@ interface StdinInputModalProps {
 export function StdinInputModal({ prompt, onSubmit }: StdinInputModalProps) {
   const [value, setValue] = useState("");
 
+  useEffect(() => {
+    setValue("");
+  }, [prompt.requestId]);
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     onSubmit(prompt.requestId, value);
   };
 
+  const promptText = prompt.prompt?.trim() || "Interactive input requested";
+
   return (
     <Dialog open onOpenChange={() => {}}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle className="text-primary">
-            Tool input required
+            {prompt.isPassword ? "Password input required" : "Interactive input required"}
           </DialogTitle>
-          <p className="text-xs text-muted-foreground font-mono mt-1">
-            {prompt.toolCallId}
-          </p>
+          <div className="mt-1 space-y-1 text-xs text-muted-foreground font-mono">
+            <div>tool: {prompt.toolCallId || "unknown"}</div>
+            <div>request: {prompt.requestId}</div>
+          </div>
         </DialogHeader>
-        <form onSubmit={handleSubmit}>
-          <p className="text-sm text-muted-foreground mb-3 whitespace-pre-wrap break-words">
-            {prompt.prompt || "Enter input:"}
-          </p>
-          <Input
-            type={prompt.isPassword ? "password" : "text"}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            autoFocus
-            placeholder={prompt.isPassword ? "Password..." : "Input..."}
-          />
-          <DialogFooter className="mt-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
+              {promptText}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {prompt.isPassword
+                ? "Sensitive input is masked locally and queued drafts stay paused until this request is answered."
+                : "Queued drafts stay paused until this request is answered."}
+            </p>
+          </div>
+
+          {prompt.isPassword ? (
+            <Input
+              type="password"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              autoFocus
+              placeholder="Password..."
+            />
+          ) : (
+            <Textarea
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              autoFocus
+              placeholder="Input..."
+              className="min-h-24 resize-y"
+            />
+          )}
+
+          <DialogFooter>
+            <div className="mr-auto text-xs text-muted-foreground">
+              {prompt.isPassword
+                ? "Enter submits"
+                : "Enter submits · use Shift+Enter for newline if your platform supports it"}
+            </div>
             <Button type="submit">Submit</Button>
           </DialogFooter>
         </form>

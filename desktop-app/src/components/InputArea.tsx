@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, Square } from "lucide-react";
+import { Plus, Square, ListPlus } from "lucide-react";
 import type { AttachedImage } from "@/types";
 import {
   PromptInput,
@@ -12,29 +12,41 @@ import {
 
 interface InputAreaProps {
   onSend: (content: string, images?: [string, string][]) => void;
+  onQueueSend: (content: string, images?: [string, string][]) => void;
   onCancel: () => void;
   isProcessing: boolean;
   disabled: boolean;
+  queuedDraftCount?: number;
 }
 
 export function InputArea({
   onSend,
+  onQueueSend,
   onCancel,
   isProcessing,
   disabled,
+  queuedDraftCount = 0,
 }: InputAreaProps) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<AttachedImage[]>([]);
 
   const handleSubmit = () => {
-    if (isProcessing || disabled) return;
+    if (disabled) return;
     const content = text.trim();
     if (!content && images.length === 0) return;
-    const tuples: [string, string][] = images.map((i) => [
-      i.mediaType,
-      i.base64Data,
-    ]);
-    onSend(content || "(image)", tuples.length > 0 ? tuples : undefined);
+
+    const tuples: [string, string][] = images
+      .filter((i): i is AttachedImage & { base64Data: string } =>
+        Boolean(i.base64Data),
+      )
+      .map((i) => [i.mediaType, i.base64Data]);
+
+    if (isProcessing) {
+      onQueueSend(content || "(image)", tuples.length > 0 ? tuples : undefined);
+    } else {
+      onSend(content || "(image)", tuples.length > 0 ? tuples : undefined);
+    }
+
     setText("");
     setImages([]);
   };
@@ -78,7 +90,7 @@ export function InputArea({
           {images.map((img) => (
             <div key={img.id} className="relative">
               <img
-                src={`data:${img.mediaType};base64,${img.base64Data}`}
+                src={img.base64Data ? `data:${img.mediaType};base64,${img.base64Data}` : ""}
                 className="w-14 h-14 rounded-lg object-cover border"
               />
               <button
@@ -101,7 +113,9 @@ export function InputArea({
             placeholder={
               disabled
                 ? "Select a workspace and start a session..."
-                : "Type a message... (Enter to send, Shift+Enter for newline)"
+                : isProcessing
+                  ? "Type a message... (Enter to queue, stop button to cancel)"
+                  : "Type a message... (Enter to send, Shift+Enter for newline)"
             }
             className="min-h-10 max-h-48 resize-none"
           />
@@ -114,26 +128,45 @@ export function InputArea({
               onClick={handleAttach}
               disabled={disabled}
               className="h-10 w-10 shrink-0"
+              title="Attach image"
             >
               <Plus className="w-4 h-4" />
             </Button>
             {isProcessing ? (
-              <Button
-                variant="destructive"
-                size="icon"
-                onClick={onCancel}
-                className="h-10 w-10 shrink-0"
-              >
-                <Square className="w-4 h-4 fill-current" />
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleSubmit}
+                  disabled={!text.trim() && images.length === 0}
+                  className="h-10 w-10 shrink-0"
+                  title={`Queue prompt${queuedDraftCount > 0 ? ` (${queuedDraftCount} pending)` : ""}`}
+                >
+                  <ListPlus className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="icon"
+                  onClick={onCancel}
+                  className="h-10 w-10 shrink-0"
+                  title="Stop current response"
+                >
+                  <Square className="w-4 h-4 fill-current" />
+                </Button>
+              </>
             ) : (
               <PromptInputSubmit
-                status={isProcessing ? "streaming" : "ready"}
+                status="ready"
                 disabled={!text.trim() && images.length === 0}
                 className="h-10 w-10 shrink-0"
               />
             )}
           </div>
+          {queuedDraftCount > 0 && (
+            <div className="ml-auto text-[11px] text-muted-foreground">
+              {queuedDraftCount} queued
+            </div>
+          )}
         </PromptInputFooter>
       </PromptInput>
     </div>

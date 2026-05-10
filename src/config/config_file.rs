@@ -140,6 +140,42 @@ impl Config {
         Ok(())
     }
 
+    /// Resolve the effective memory preference for a workspace/default context.
+    pub fn resolve_workspace_memory_enabled(working_dir: Option<&str>) -> bool {
+        let cfg = Self::load();
+        if let Some(dir) = working_dir.map(str::trim).filter(|dir| !dir.is_empty())
+            && let Some(enabled) = cfg.workspace_memory.workspaces.get(dir)
+        {
+            return *enabled;
+        }
+        cfg.workspace_memory
+            .default_enabled
+            .unwrap_or(cfg.features.memory)
+    }
+
+    /// Persist the memory preference for a workspace or the default workspace.
+    pub fn set_workspace_memory_enabled(
+        working_dir: Option<&str>,
+        enabled: bool,
+    ) -> anyhow::Result<()> {
+        let mut cfg = Self::load();
+        if let Some(dir) = working_dir.map(str::trim).filter(|dir| !dir.is_empty()) {
+            cfg.workspace_memory.workspaces.insert(dir.to_string(), enabled);
+            crate::logging::info(&format!(
+                "Saved workspace memory preference: {} => {}",
+                dir, enabled
+            ));
+        } else {
+            cfg.workspace_memory.default_enabled = Some(enabled);
+            crate::logging::info(&format!(
+                "Saved default workspace memory preference: {}",
+                enabled
+            ));
+        }
+        cfg.save()?;
+        Ok(())
+    }
+
     fn normalize_external_auth_source_id(source_id: &str) -> String {
         source_id.trim().to_ascii_lowercase()
     }

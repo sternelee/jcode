@@ -35,6 +35,9 @@ pub struct Config {
     /// Display/UI configuration
     pub display: DisplayConfig,
 
+    /// Workspace/default memory preferences.
+    pub workspace_memory: WorkspaceMemoryConfig,
+
     /// Feature toggles
     pub features: FeatureConfig,
 
@@ -98,6 +101,16 @@ impl Default for DictationConfig {
             timeout_secs: 90,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct WorkspaceMemoryConfig {
+    /// Optional default for sessions without a specific workspace override.
+    pub default_enabled: Option<bool>,
+    /// Per-workspace overrides keyed by absolute workspace path.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub workspaces: BTreeMap<String, bool>,
 }
 
 mod config_file;

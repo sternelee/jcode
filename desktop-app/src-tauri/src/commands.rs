@@ -4,26 +4,61 @@ use jcode::provider::MultiProvider;
 use jcode::session::Session;
 use jcode::tool::Registry;
 use jcode::tool::StdinInputRequest;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::Mutex;
 
+pub struct SessionRuntime {
+    pub session_id: String,
+    pub ordinal: u64,
+    pub created_at: Instant,
+    pub agent: Arc<Mutex<Agent>>,
+    pub cancel_signal: InterruptSignal,
+    pub is_processing: Arc<Mutex<bool>>,
+    pub current_tool_name: Arc<Mutex<Option<String>>>,
+    pub connection_phase: Arc<Mutex<Option<String>>>,
+    pub status_detail: Arc<Mutex<Option<String>>>,
+}
+
+static NEXT_RUNTIME_ORDINAL: AtomicU64 = AtomicU64::new(1);
+
+impl SessionRuntime {
+    pub fn new(session_id: String, agent: Agent, cancel_signal: InterruptSignal) -> Self {
+        Self {
+            session_id,
+            ordinal: NEXT_RUNTIME_ORDINAL.fetch_add(1, Ordering::Relaxed),
+            created_at: Instant::now(),
+            agent: Arc::new(Mutex::new(agent)),
+            cancel_signal,
+            is_processing: Arc::new(Mutex::new(false)),
+            current_tool_name: Arc::new(Mutex::new(None)),
+            connection_phase: Arc::new(Mutex::new(Some("connected".to_string()))),
+            status_detail: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
 pub struct AppState {
-    pub agent: Arc<Mutex<Option<Agent>>>,
-    pub cancel_signal: Arc<Mutex<Option<InterruptSignal>>>,
-    pub model: Arc<Mutex<Option<String>>>,
-    pub working_dir: Arc<Mutex<Option<String>>>,
+    pub runtimes: Arc<Mutex<HashMap<String, Arc<SessionRuntime>>>>,
+    pub active_session_id: Arc<Mutex<Option<String>>>,
     pub pending_stdin:
         Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
+    pub live_swarm_members: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    pub live_swarm_plans: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    pub live_swarm_proposals: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
-            agent: Arc::new(Mutex::new(None)),
-            cancel_signal: Arc::new(Mutex::new(None)),
-            model: Arc::new(Mutex::new(None)),
-            working_dir: Arc::new(Mutex::new(None)),
+            runtimes: Arc::new(Mutex::new(HashMap::new())),
+            active_session_id: Arc::new(Mutex::new(None)),
             pending_stdin: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            live_swarm_members: Arc::new(Mutex::new(HashMap::new())),
+            live_swarm_plans: Arc::new(Mutex::new(HashMap::new())),
+            live_swarm_proposals: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

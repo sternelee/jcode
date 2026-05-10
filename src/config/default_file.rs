@@ -137,6 +137,13 @@ prompt_entry_animation = true
 # Runtime policy may cap this lower on slower environments such as WSL/Windows Terminal.
 # redraw_fps = 60
 
+[workspace_memory]
+# Optional default for sessions started without a workspace-specific override.
+# default_enabled = true
+# Per-workspace overrides live under [workspace_memory.workspaces]
+# [workspace_memory.workspaces]
+# "/Users/you/src/big-repo" = false
+
 [features]
 # Memory: retrieval + extraction sidecar features
 memory = true

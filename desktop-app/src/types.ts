@@ -111,6 +111,7 @@ export interface GeneratedImageEvent {
   type: "generated_image";
   id: string;
   path: string;
+  metadata_path?: string;
   output_format: string;
   revised_prompt?: string;
 }
@@ -146,6 +147,7 @@ export interface HistoryEvent {
   connection_type?: string;
   compaction_mode?: string;
   reasoning_effort?: string;
+  memory_enabled?: boolean;
 }
 
 export interface AvailableModelsUpdatedEvent {
@@ -154,6 +156,67 @@ export interface AvailableModelsUpdatedEvent {
   provider_model?: string;
   available_models: string[];
   available_model_routes?: ModelRoute[];
+}
+
+export interface PlanItemSnapshot {
+  id: string;
+  content: string;
+  status: string;
+  priority: string;
+  subsystem?: string;
+  file_scope?: string[];
+  blocked_by?: string[];
+  assigned_to?: string;
+}
+
+export interface PlanGraphStatusSnapshot {
+  swarm_id?: string;
+  version: number;
+  item_count: number;
+  ready_ids: string[];
+  blocked_ids: string[];
+  active_ids: string[];
+  completed_ids: string[];
+  cycle_ids: string[];
+  unresolved_dependency_ids: string[];
+  next_ready_ids: string[];
+  newly_ready_ids: string[];
+}
+
+export interface SwarmMemberStatusSnapshot {
+  session_id: string;
+  friendly_name?: string;
+  status: string;
+  detail?: string;
+  role?: string;
+  is_headless?: boolean;
+  live_attachments?: number;
+  status_age_secs?: number;
+}
+
+export interface SwarmStatusEvent {
+  type: "swarm_status";
+  members: SwarmMemberStatusSnapshot[];
+}
+
+export interface SwarmPlanEvent {
+  type: "swarm_plan";
+  swarm_id: string;
+  version: number;
+  items: PlanItemSnapshot[];
+  participants?: string[];
+  reason?: string;
+  summary?: PlanGraphStatusSnapshot;
+}
+
+export interface SwarmPlanProposalEvent {
+  type: "swarm_plan_proposal";
+  swarm_id: string;
+  proposer_session: string;
+  proposer_name?: string;
+  items: PlanItemSnapshot[];
+  summary: string;
+  proposal_key: string;
 }
 
 export interface ClearChatEvent {
@@ -179,11 +242,17 @@ export interface CompactResultEvent {
   success: boolean;
 }
 
+export interface MemoryFeatureChangedEvent {
+  type: "memory_feature_changed";
+  enabled: boolean;
+}
+
 export interface HistoryMessage {
   role: string;
   content: string;
   tool_calls?: string[];
   tool_data?: ToolCallData;
+  images?: RenderedImage[];
 }
 
 export interface ToolCallData {
@@ -193,16 +262,83 @@ export interface ToolCallData {
 }
 
 export interface RenderedImage {
-  path: string;
+  path?: string;
   media_type: string;
   base64_data?: string;
+  data?: string;
+  label?: string;
+  source?: {
+    kind: "user_input" | "tool_result" | "other";
+    tool_name?: string;
+    role?: string;
+  };
+}
+
+export interface RouteCheapnessEstimate {
+  billing_kind?: "metered" | "subscription" | "included_quota" | "unknown";
+  relative_label?: string;
+  estimated_reference_cost_micros?: number;
 }
 
 export interface ModelRoute {
   provider: string;
   model: string;
+  api_method?: string;
+  available?: boolean;
+  detail?: string;
   display_name?: string;
   context_window?: number;
+  cheapness?: RouteCheapnessEstimate;
+}
+
+export interface ProviderConfigExtraField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  default_value?: string;
+}
+
+export interface ProviderConfigOption {
+  provider_id: string;
+  kind: "api_key" | "oauth" | "device_code";
+  label: string;
+  detail?: string;
+  setup_url?: string;
+  input_label?: string;
+  input_placeholder?: string;
+  extra_fields?: ProviderConfigExtraField[];
+}
+
+export interface ProviderCatalogEntry {
+  provider_key: string;
+  auth_provider_id?: string;
+  display_name: string;
+  has_config_surface?: boolean;
+  configured: boolean;
+  status: "available" | "expired" | "not_configured" | "unknown";
+  method_detail: string;
+  route_count: number;
+  is_current_provider?: boolean;
+  options: ProviderConfigOption[];
+}
+
+export interface ProviderAuthPrompt {
+  status: "pending";
+  provider: string;
+  auth_url: string;
+  input_kind: "callback_url" | "auth_code" | "auth_code_or_callback_url" | "complete";
+  pending_path: string;
+  user_code?: string | null;
+  expires_at_ms: number;
+  resume_command: string;
+}
+
+export interface ProviderAuthSuccess {
+  status: "authenticated";
+  provider: string;
+  account_label?: string | null;
+  credentials_path?: string | null;
+  email?: string | null;
 }
 
 // --- Server event union ---
@@ -229,10 +365,14 @@ export type ServerEvent =
   | StdinRequestEvent
   | HistoryEvent
   | AvailableModelsUpdatedEvent
+  | SwarmStatusEvent
+  | SwarmPlanEvent
+  | SwarmPlanProposalEvent
   | ClearChatEvent
   | RewindChatEvent
   | ReasoningEffortChangedEvent
-  | CompactResultEvent;
+  | CompactResultEvent
+  | MemoryFeatureChangedEvent;
 
 // --- UI-internal types ---
 
@@ -266,13 +406,55 @@ export interface ChatMessage {
 export interface AttachedImage {
   id: string;
   mediaType: string;
-  base64Data: string;
+  base64Data?: string;
+  filePath?: string;
   thumbnailData?: string;
+  label?: string;
+}
+
+export interface SwarmPlanPreviewItem {
+  id: string;
+  content: string;
+  status: string;
+  priority: string;
+  assignedTo?: string;
+  subsystem?: string;
+  blockedBy?: string[];
+  fileScope?: string[];
+}
+
+export interface SwarmPlanSummary {
+  swarmId: string;
+  version: number;
+  itemCount: number;
+  participantIds: string[];
+  participantCount: number;
+  reason?: string;
+  readyCount: number;
+  activeCount: number;
+  blockedCount: number;
+  completedCount: number;
+  nextReadyIds: string[];
+  itemsPreview: SwarmPlanPreviewItem[];
+}
+
+export interface SwarmPlanProposalSummary {
+  swarmId: string;
+  proposerSession: string;
+  proposerName?: string;
+  summary: string;
+  proposalKey: string;
+  itemCount: number;
+  itemsPreview: SwarmPlanPreviewItem[];
 }
 
 export interface SessionInfo {
   sessionId: string;
   title: string;
+  subtitle?: string;
+  detail?: string;
+  previewLines?: string[];
+  detailLines?: string[];
   isActive: boolean;
   providerName?: string;
   providerModel?: string;
@@ -280,6 +462,16 @@ export interface SessionInfo {
   provider?: string;
   status?: string;
   workingDir?: string;
+  swarmId?: string;
+  swarmEnabled?: boolean;
+  swarmPeerCount?: number;
+  swarmRole?: "coordinator" | "agent";
+  swarmPlan?: SwarmPlanSummary;
+  swarmProposal?: SwarmPlanProposalSummary;
+  liveProcessing?: boolean;
+  liveToolName?: string;
+  liveStatusDetail?: string;
+  livePhase?: "thinking" | "tool" | "chunking" | "waiting" | "idle";
 }
 
 export interface Workspace {
@@ -293,6 +485,12 @@ export interface StdinPrompt {
   prompt: string;
   isPassword: boolean;
   toolCallId: string;
+}
+
+export interface QueuedDraft {
+  id: string;
+  content: string;
+  images?: [string, string][];
 }
 
 export interface SessionState {
@@ -314,8 +512,10 @@ export interface SessionState {
   stdinPrompt: StdinPrompt | null;
   workingDir: string | null;
   reasoningEffort: string | null;
+  memoryEnabled: boolean;
   connectionType: string | null;
   statusDetail: string | null;
+  queuedDrafts: QueuedDraft[];
   activeWorkspaceId: string | null;
   expandedWorkspaces: Set<string>;
 }
