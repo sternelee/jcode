@@ -221,6 +221,20 @@ pub fn openai_compatible_profile_static_models(profile: OpenAiCompatibleProfile)
             push("MiniMax-M2.1-highspeed");
             push("MiniMax-M2");
         }
+        "opencode-go" => {
+            push("glm-5.1");
+            push("glm-5");
+            push("kimi-k2.5");
+            push("kimi-k2.6");
+            push("deepseek-v4-pro");
+            push("deepseek-v4-flash");
+            push("mimo-v2.5");
+            push("mimo-v2.5-pro");
+            push("minimax-m2.7");
+            push("minimax-m2.5");
+            push("qwen3.6-plus");
+            push("qwen3.5-plus");
+        }
         _ => {}
     }
 
