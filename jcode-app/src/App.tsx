@@ -31,6 +31,7 @@ export default function App() {
     state,
     connect,
     resumeSession,
+    switchSession,
     sendMessage,
     queueMessage,
     cancel,
@@ -208,7 +209,7 @@ export default function App() {
   const handleSetMemoryEnabled = async (enabled: boolean) => {
     await updateWorkspaceMemoryPreference(currentWorkspaceKey, enabled);
     if (state.connected) {
-      await setMemoryEnabled(enabled);
+      await setMemoryEnabled(enabled, state.sessionId || undefined);
     }
   };
 
@@ -232,7 +233,17 @@ export default function App() {
     setActiveWorkspace(session.workingDir || "default");
     setWorkingDir(session.workingDir || null);
     setSessionSwitcherOpen(false);
-    resumeSession(session.sessionId, session.workingDir || null);
+    // If session is already active, just switch view without re-invoking backend
+    if (state.sessionId === session.sessionId) {
+      return;
+    }
+    // Check if session is already connected in our state
+    const sessionData = state.sessionData[session.sessionId];
+    if (sessionData?.connectionPhase === "connected") {
+      switchSession(session.sessionId);
+    } else {
+      resumeSession(session.sessionId, session.workingDir || null);
+    }
   };
 
   const openSessionSwitcher = () => {
@@ -245,7 +256,7 @@ export default function App() {
       {state.stdinPrompt && (
         <StdinInputModal
           prompt={state.stdinPrompt}
-          onSubmit={sendStdinResponse}
+          onSubmit={(requestId, input) => sendStdinResponse(requestId, input, state.sessionId || undefined)}
         />
       )}
       <SessionSwitcherDialog
@@ -334,7 +345,7 @@ export default function App() {
               <ModelSelector
                 currentModel={state.providerModel}
                 currentProvider={state.providerName}
-                onSelectModel={setModel}
+                onSelectModel={(model, profileId) => setModel(model, profileId, state.sessionId || undefined)}
                 disabled={state.isProcessing}
               />
               {state.providerName && (
@@ -442,18 +453,18 @@ export default function App() {
           queuedDraftCount={state.queuedDrafts.length}
           stdinPromptActive={Boolean(state.stdinPrompt)}
           selectedMessageId={selectedMessageId}
-          onSend={sendMessage}
-          onQueueSend={queueMessage}
-          onCancel={cancel}
-          onClearChat={clearChat}
+          onSend={(content, images) => sendMessage(content, images, state.sessionId || undefined)}
+          onQueueSend={(content, images) => queueMessage(content, images, state.sessionId || undefined)}
+          onCancel={() => cancel(state.sessionId || undefined)}
+          onClearChat={() => clearChat(state.sessionId || undefined)}
           onRewindChat={() => {
             if (visibleConversationCount > 0) {
-              rewindChat(visibleConversationCount);
+              rewindChat(visibleConversationCount, state.sessionId || undefined);
             }
           }}
-          onSetReasoningEffort={setReasoningEffort}
+          onSetReasoningEffort={(effort) => setReasoningEffort(effort, state.sessionId || undefined)}
           onSetMemoryEnabled={handleSetMemoryEnabled}
-          onCompactContext={compactContext}
+          onCompactContext={() => compactContext(state.sessionId || undefined)}
           onSelectWorkspace={pickWorkspace}
           onStartDefaultSession={handleStartDefaultWorkspace}
         />

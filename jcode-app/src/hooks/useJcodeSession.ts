@@ -17,46 +17,46 @@ import type {
 } from "@/types";
 
 type Action =
-  | { type: "SET_CONNECTING" }
-  | { type: "SET_CONNECTED" }
-  | { type: "SET_DISCONNECTED" }
-  | { type: "SET_ERROR"; message: string }
-  | { type: "CLEAR_ERROR" }
-  | { type: "SET_PHASE"; phase: string }
+  | { type: "SET_CONNECTING"; sessionId?: string }
+  | { type: "SET_CONNECTED"; sessionId?: string }
+  | { type: "SET_DISCONNECTED"; sessionId?: string }
+  | { type: "SET_ERROR"; message: string; sessionId?: string }
+  | { type: "CLEAR_ERROR"; sessionId?: string }
+  | { type: "SET_PHASE"; phase: string; sessionId?: string }
   | { type: "SET_SESSION_ID"; sessionId: string }
   | { type: "SET_SESSIONS"; sessions: SessionInfo[] }
-  | { type: "ADD_USER_MESSAGE"; content: string; images?: AttachedImage[] }
-  | { type: "ADD_ASSISTANT_MESSAGE"; content: string; images?: AttachedImage[] }
-  | { type: "START_ASSISTANT_MESSAGE" }
-  | { type: "APPEND_TEXT"; text: string }
-  | { type: "REPLACE_TEXT"; text: string }
-  | { type: "TOOL_START"; id: string; name: string }
-  | { type: "TOOL_INPUT"; id: string; delta: string }
-  | { type: "TOOL_EXEC"; id: string; name: string }
-  | { type: "TOOL_DONE"; id: string; output: string; error?: string }
-  | { type: "SET_TOKEN_USAGE"; input: number; output: number }
-  | { type: "DONE" }
-  | { type: "INTERRUPTED" }
-  | { type: "MODEL_CHANGED"; model: string; providerName?: string }
-  | { type: "MODELS_UPDATED"; models: string[] }
-  | { type: "STDIN_REQUEST"; prompt: StdinPrompt }
-  | { type: "STDIN_DONE" }
+  | { type: "ADD_USER_MESSAGE"; content: string; images?: AttachedImage[]; sessionId?: string }
+  | { type: "ADD_ASSISTANT_MESSAGE"; content: string; images?: AttachedImage[]; sessionId?: string }
+  | { type: "START_ASSISTANT_MESSAGE"; sessionId?: string }
+  | { type: "APPEND_TEXT"; text: string; sessionId?: string }
+  | { type: "REPLACE_TEXT"; text: string; sessionId?: string }
+  | { type: "TOOL_START"; id: string; name: string; sessionId?: string }
+  | { type: "TOOL_INPUT"; id: string; delta: string; sessionId?: string }
+  | { type: "TOOL_EXEC"; id: string; name: string; sessionId?: string }
+  | { type: "TOOL_DONE"; id: string; output: string; error?: string; sessionId?: string }
+  | { type: "SET_TOKEN_USAGE"; input: number; output: number; sessionId?: string }
+  | { type: "DONE"; sessionId?: string }
+  | { type: "INTERRUPTED"; sessionId?: string }
+  | { type: "MODEL_CHANGED"; model: string; providerName?: string; sessionId?: string }
+  | { type: "MODELS_UPDATED"; models: string[]; sessionId?: string }
+  | { type: "STDIN_REQUEST"; prompt: StdinPrompt; sessionId?: string }
+  | { type: "STDIN_DONE"; sessionId?: string }
   | { type: "SET_WORKING_DIR"; dir: string | null }
-  | { type: "QUEUE_DRAFT"; draft: QueuedDraft }
-  | { type: "DEQUEUE_DRAFT"; draftId: string }
-  | { type: "SET_PROCESSING"; value: boolean }
+  | { type: "QUEUE_DRAFT"; draft: QueuedDraft; sessionId?: string }
+  | { type: "DEQUEUE_DRAFT"; draftId: string; sessionId?: string }
+  | { type: "SET_PROCESSING"; value: boolean; sessionId?: string }
   | { type: "SET_ACTIVE_WORKSPACE"; workspaceId: string | null }
   | { type: "TOGGLE_WORKSPACE"; workspaceId: string }
-  | { type: "ADD_SYSTEM_MESSAGE"; content: string }
-  | { type: "CLEAR_CHAT" }
-  | { type: "REWIND_CHAT"; messageIndex: number }
-  | { type: "SET_REASONING_EFFORT"; effort: string | null }
-  | { type: "SET_MEMORY_ENABLED"; enabled: boolean }
-  | { type: "SET_CONNECTION_TYPE"; connection: string }
-  | { type: "SET_STATUS_DETAIL"; detail: string }
-  | { type: "LOAD_HISTORY"; messages: ChatMessage[] }
-  | { type: "SET_AVAILABLE_MODELS"; models: string[]; routes?: import("@/types").ModelRoute[]; providerName?: string; providerModel?: string }
-  | { type: "SET_TOTAL_TOKENS"; tokens: [number, number] | null }
+  | { type: "ADD_SYSTEM_MESSAGE"; content: string; sessionId?: string }
+  | { type: "CLEAR_CHAT"; sessionId?: string }
+  | { type: "REWIND_CHAT"; messageIndex: number; sessionId?: string }
+  | { type: "SET_REASONING_EFFORT"; effort: string | null; sessionId?: string }
+  | { type: "SET_MEMORY_ENABLED"; enabled: boolean; sessionId?: string }
+  | { type: "SET_CONNECTION_TYPE"; connection: string; sessionId?: string }
+  | { type: "SET_STATUS_DETAIL"; detail: string; sessionId?: string }
+  | { type: "LOAD_HISTORY"; messages: ChatMessage[]; sessionId?: string }
+  | { type: "SET_AVAILABLE_MODELS"; models: string[]; routes?: import("@/types").ModelRoute[]; providerName?: string; providerModel?: string; sessionId?: string }
+  | { type: "SET_TOTAL_TOKENS"; tokens: [number, number] | null; sessionId?: string }
   | { type: "APPLY_SWARM_STATUS"; members: SwarmMemberStatusSnapshot[] }
   | { type: "APPLY_SWARM_PLAN"; plan: SwarmPlanSummary }
   | { type: "APPLY_SWARM_PROPOSAL"; proposal: SwarmPlanProposalSummary };
@@ -118,6 +118,7 @@ function initialSessionState(): SessionState {
     queuedDrafts: [],
     activeWorkspaceId: "default",
     expandedWorkspaces: new Set<string>(["default"]),
+    sessionData: {},
   };
 }
 
@@ -216,39 +217,132 @@ function applySwarmProposalToSessions(
   );
 }
 
+function getOrCreateSessionData(state: SessionState, sessionId: string): import("@/types").PerSessionData {
+  if (state.sessionData[sessionId]) {
+    return state.sessionData[sessionId];
+  }
+  return {
+    sessionId,
+    messages: [],
+    isProcessing: false,
+    stdinPrompt: null,
+    error: null,
+    providerName: null,
+    providerModel: null,
+    availableModels: [],
+    availableModelRoutes: [],
+    totalTokens: null,
+    connectionPhase: null,
+    reasoningEffort: null,
+    memoryEnabled: true,
+    statusDetail: null,
+    queuedDrafts: [],
+  };
+}
+
+function updateSessionData(
+  state: SessionState,
+  sessionId: string | undefined,
+  updater: (data: import("@/types").PerSessionData) => import("@/types").PerSessionData,
+): SessionState {
+  const sid = sessionId || state.sessionId;
+  if (!sid) {
+    // Fallback to global state if no session ID
+    return state;
+  }
+  const data = getOrCreateSessionData(state, sid);
+  const updated = updater(data);
+  return {
+    ...state,
+    sessionData: { ...state.sessionData, [sid]: updated },
+    // Sync active session data to global state for backward compatibility
+    ...(state.sessionId === sid
+      ? {
+          messages: updated.messages,
+          isProcessing: updated.isProcessing,
+          stdinPrompt: updated.stdinPrompt,
+          error: updated.error,
+          providerName: updated.providerName,
+          providerModel: updated.providerModel,
+          availableModels: updated.availableModels,
+          availableModelRoutes: updated.availableModelRoutes,
+          totalTokens: updated.totalTokens,
+          connectionPhase: updated.connectionPhase,
+          reasoningEffort: updated.reasoningEffort,
+          memoryEnabled: updated.memoryEnabled,
+          statusDetail: updated.statusDetail,
+          queuedDrafts: updated.queuedDrafts,
+        }
+      : {}),
+  };
+}
+
 function sessionReducer(state: SessionState, action: Action): SessionState {
   switch (action.type) {
     case "SET_CONNECTING":
-      return {
-        ...state,
-        connecting: true,
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        isProcessing: true,
         connectionPhase: "initializing",
         error: null,
-      };
+      }));
     case "SET_CONNECTED":
-      return {
-        ...state,
-        connected: true,
-        connecting: false,
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
         connectionPhase: "connected",
+        isProcessing: false,
         error: null,
-      };
+      }));
     case "SET_DISCONNECTED":
-      return {
-        ...state,
-        connected: false,
-        connecting: false,
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
         connectionPhase: "disconnected",
         error: "Session ended",
-      };
+        isProcessing: false,
+      }));
     case "SET_ERROR":
-      return { ...state, error: action.message, isProcessing: false };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        error: action.message,
+        isProcessing: false,
+      }));
     case "CLEAR_ERROR":
-      return { ...state, error: null };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        error: null,
+      }));
     case "SET_PHASE":
-      return { ...state, connectionPhase: action.phase };
-    case "SET_SESSION_ID":
-      return { ...state, sessionId: action.sessionId };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        connectionPhase: action.phase,
+      }));
+    case "SET_SESSION_ID": {
+      const newSessionId = action.sessionId;
+      const newSessionData = state.sessionData[newSessionId];
+      if (newSessionData) {
+        return {
+          ...state,
+          sessionId: newSessionId,
+          connected: newSessionData.connectionPhase === "connected",
+          connecting: newSessionData.connectionPhase === "connecting",
+          messages: newSessionData.messages,
+          isProcessing: newSessionData.isProcessing,
+          stdinPrompt: newSessionData.stdinPrompt,
+          error: newSessionData.error,
+          providerName: newSessionData.providerName,
+          providerModel: newSessionData.providerModel,
+          availableModels: newSessionData.availableModels,
+          availableModelRoutes: newSessionData.availableModelRoutes,
+          totalTokens: newSessionData.totalTokens,
+          connectionPhase: newSessionData.connectionPhase,
+          reasoningEffort: newSessionData.reasoningEffort,
+          memoryEnabled: newSessionData.memoryEnabled,
+          statusDetail: newSessionData.statusDetail,
+          queuedDrafts: newSessionData.queuedDrafts,
+        };
+      }
+      return { ...state, sessionId: newSessionId };
+    }
     case "SET_SESSIONS":
       return { ...state, sessions: action.sessions };
     case "SET_WORKING_DIR":
@@ -258,17 +352,17 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         activeWorkspaceId: action.dir ?? "default",
       };
     case "QUEUE_DRAFT":
-      return {
-        ...state,
-        queuedDrafts: [...state.queuedDrafts, action.draft],
-      };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        queuedDrafts: [...data.queuedDrafts, action.draft],
+      }));
     case "DEQUEUE_DRAFT":
-      return {
-        ...state,
-        queuedDrafts: state.queuedDrafts.filter(
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        queuedDrafts: data.queuedDrafts.filter(
           (draft) => draft.id !== action.draftId,
         ),
-      };
+      }));
     case "ADD_USER_MESSAGE": {
       const um: ChatMessage = {
         id: nextMsgId(),
@@ -279,11 +373,11 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         images: action.images,
         timestamp: Date.now(),
       };
-      return {
-        ...state,
-        messages: [...state.messages, um],
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        messages: [...data.messages, um],
         isProcessing: true,
-      };
+      }));
     }
     case "ADD_ASSISTANT_MESSAGE": {
       const am: ChatMessage = {
@@ -295,131 +389,164 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         images: action.images,
         timestamp: Date.now(),
       };
-      return {
-        ...state,
-        messages: [...state.messages, am],
-      };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        messages: [...data.messages, am],
+      }));
     }
     case "APPEND_TEXT": {
-      const ms = [...state.messages];
-      const l = ms[ms.length - 1];
-      if (l && l.role === "assistant" && l.isStreaming)
-        ms[ms.length - 1] = { ...l, content: l.content + action.text };
-      else
-        ms.push({
-          id: nextMsgId(),
-          role: "assistant",
-          content: action.text,
-          toolExecutions: [],
-          isStreaming: true,
-          timestamp: Date.now(),
-        });
-      return { ...state, messages: ms };
+      return updateSessionData(state, action.sessionId, (data) => {
+        const ms = [...data.messages];
+        const l = ms[ms.length - 1];
+        if (l && l.role === "assistant" && l.isStreaming)
+          ms[ms.length - 1] = { ...l, content: l.content + action.text };
+        else
+          ms.push({
+            id: nextMsgId(),
+            role: "assistant",
+            content: action.text,
+            toolExecutions: [],
+            isStreaming: true,
+            timestamp: Date.now(),
+          });
+        return { ...data, messages: ms };
+      });
     }
     case "REPLACE_TEXT": {
-      const ms = [...state.messages];
-      const l = ms[ms.length - 1];
-      if (l && l.role === "assistant")
-        ms[ms.length - 1] = { ...l, content: action.text };
-      return { ...state, messages: ms };
+      return updateSessionData(state, action.sessionId, (data) => {
+        const ms = [...data.messages];
+        const l = ms[ms.length - 1];
+        if (l && l.role === "assistant")
+          ms[ms.length - 1] = { ...l, content: action.text };
+        return { ...data, messages: ms };
+      });
     }
     case "TOOL_START": {
-      const ms = [...state.messages];
-      const l = ms[ms.length - 1];
-      if (l && l.role === "assistant") {
-        const t: ToolExecution = {
-          id: action.id,
-          name: action.name,
-          status: "starting",
-          input: "",
-        };
-        ms[ms.length - 1] = { ...l, toolExecutions: [...l.toolExecutions, t] };
-      }
-      return { ...state, messages: ms };
+      return updateSessionData(state, action.sessionId, (data) => {
+        const ms = [...data.messages];
+        const l = ms[ms.length - 1];
+        if (l && l.role === "assistant") {
+          const t: ToolExecution = {
+            id: action.id,
+            name: action.name,
+            status: "starting",
+            input: "",
+          };
+          ms[ms.length - 1] = { ...l, toolExecutions: [...l.toolExecutions, t] };
+        }
+        return { ...data, messages: ms };
+      });
     }
     case "TOOL_INPUT": {
-      const ms = [...state.messages];
-      const l = ms[ms.length - 1];
-      if (l && l.role === "assistant") {
-        const tls = [...l.toolExecutions];
-        const c = tls[tls.length - 1];
-        if (c && c.status !== "done" && c.status !== "error")
-          tls[tls.length - 1] = {
-            ...c,
-            input: c.input + action.delta,
-            status: "collecting_input",
-          };
-        ms[ms.length - 1] = { ...l, toolExecutions: tls };
-      }
-      return { ...state, messages: ms };
+      return updateSessionData(state, action.sessionId, (data) => {
+        const ms = [...data.messages];
+        const l = ms[ms.length - 1];
+        if (l && l.role === "assistant") {
+          const tls = [...l.toolExecutions];
+          const c = tls[tls.length - 1];
+          if (c && c.status !== "done" && c.status !== "error")
+            tls[tls.length - 1] = {
+              ...c,
+              input: c.input + action.delta,
+              status: "collecting_input",
+            };
+          ms[ms.length - 1] = { ...l, toolExecutions: tls };
+        }
+        return { ...data, messages: ms };
+      });
     }
     case "TOOL_EXEC": {
-      const ms = [...state.messages];
-      const l = ms[ms.length - 1];
-      if (l && l.role === "assistant") {
-        const tls = [...l.toolExecutions];
-        const i = tls.findIndex((t) => t.id === action.id);
-        if (i !== -1)
-          tls[i] = { ...tls[i], status: "executing", name: action.name };
-        ms[ms.length - 1] = { ...l, toolExecutions: tls };
-      }
-      return { ...state, messages: ms };
+      return updateSessionData(state, action.sessionId, (data) => {
+        const ms = [...data.messages];
+        const l = ms[ms.length - 1];
+        if (l && l.role === "assistant") {
+          const tls = [...l.toolExecutions];
+          const i = tls.findIndex((t) => t.id === action.id);
+          if (i !== -1)
+            tls[i] = { ...tls[i], status: "executing", name: action.name };
+          ms[ms.length - 1] = { ...l, toolExecutions: tls };
+        }
+        return { ...data, messages: ms };
+      });
     }
     case "TOOL_DONE": {
-      const ms = [...state.messages];
-      const l = ms[ms.length - 1];
-      if (l && l.role === "assistant") {
-        const tls = [...l.toolExecutions];
-        const i = tls.findIndex((t) => t.id === action.id);
-        if (i !== -1)
-          tls[i] = {
-            ...tls[i],
-            status: action.error ? "error" : "done",
-            output: action.output,
-            error: action.error,
-          };
-        ms[ms.length - 1] = { ...l, toolExecutions: tls };
-      }
-      return { ...state, messages: ms };
+      return updateSessionData(state, action.sessionId, (data) => {
+        const ms = [...data.messages];
+        const l = ms[ms.length - 1];
+        if (l && l.role === "assistant") {
+          const tls = [...l.toolExecutions];
+          const i = tls.findIndex((t) => t.id === action.id);
+          if (i !== -1)
+            tls[i] = {
+              ...tls[i],
+              status: action.error ? "error" : "done",
+              output: action.output,
+              error: action.error,
+            };
+          ms[ms.length - 1] = { ...l, toolExecutions: tls };
+        }
+        return { ...data, messages: ms };
+      });
     }
     case "SET_TOKEN_USAGE": {
-      const ms = [...state.messages];
-      const l = ms[ms.length - 1];
-      if (l && l.role === "assistant")
-        ms[ms.length - 1] = {
-          ...l,
-          tokenUsage: { input: action.input, output: action.output },
+      return updateSessionData(state, action.sessionId, (data) => {
+        const ms = [...data.messages];
+        const l = ms[ms.length - 1];
+        if (l && l.role === "assistant")
+          ms[ms.length - 1] = {
+            ...l,
+            tokenUsage: { input: action.input, output: action.output },
+          };
+        return {
+          ...data,
+          totalTokens: [action.input, action.output],
+          messages: ms,
         };
-      return {
-        ...state,
-        totalTokens: [action.input, action.output],
-        messages: ms,
-      };
+      });
     }
     case "DONE": {
-      const ms = [...state.messages];
-      const l = ms[ms.length - 1];
-      if (l && l.role === "assistant")
-        ms[ms.length - 1] = { ...l, isStreaming: false };
-      return { ...state, isProcessing: false, messages: ms };
+      return updateSessionData(state, action.sessionId, (data) => {
+        const ms = [...data.messages];
+        const l = ms[ms.length - 1];
+        if (l && l.role === "assistant")
+          ms[ms.length - 1] = { ...l, isStreaming: false };
+        return { ...data, isProcessing: false, messages: ms };
+      });
     }
     case "INTERRUPTED": {
-      const ms = [...state.messages];
-      const l = ms[ms.length - 1];
-      if (l && l.role === "assistant" && l.isStreaming)
-        ms[ms.length - 1] = { ...l, isStreaming: false };
-      return { ...state, isProcessing: false, messages: ms };
+      return updateSessionData(state, action.sessionId, (data) => {
+        const ms = [...data.messages];
+        const l = ms[ms.length - 1];
+        if (l && l.role === "assistant" && l.isStreaming)
+          ms[ms.length - 1] = { ...l, isStreaming: false };
+        return { ...data, isProcessing: false, messages: ms };
+      });
     }
     case "MODEL_CHANGED":
-      return { ...state, providerModel: action.model };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        providerModel: action.model,
+      }));
     case "MODELS_UPDATED":
-      return { ...state, availableModels: action.models };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        availableModels: action.models,
+      }));
     case "STDIN_REQUEST":
-      return { ...state, stdinPrompt: action.prompt };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        stdinPrompt: action.prompt,
+      }));
     case "STDIN_DONE":
-      return { ...state, stdinPrompt: null };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        stdinPrompt: null,
+      }));
     case "SET_PROCESSING":
-      return { ...state, isProcessing: action.value };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        isProcessing: action.value,
+      }));
     case "ADD_SYSTEM_MESSAGE": {
       const sm: ChatMessage = {
         id: nextMsgId(),
@@ -429,27 +556,42 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
         isStreaming: false,
         timestamp: Date.now(),
       };
-      return { ...state, messages: [...state.messages, sm] };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        messages: [...data.messages, sm],
+      }));
     }
     case "CLEAR_CHAT":
-      return { ...state, messages: [] };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        messages: [],
+      }));
     case "REWIND_CHAT": {
-      return {
-        ...state,
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
         messages: truncateMessagesToVisibleConversationCount(
-          state.messages,
+          data.messages,
           action.messageIndex,
         ),
-      };
+      }));
     }
     case "SET_REASONING_EFFORT":
-      return { ...state, reasoningEffort: action.effort };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        reasoningEffort: action.effort,
+      }));
     case "SET_MEMORY_ENABLED":
-      return { ...state, memoryEnabled: action.enabled };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        memoryEnabled: action.enabled,
+      }));
     case "SET_CONNECTION_TYPE":
       return { ...state, connectionType: action.connection };
     case "SET_STATUS_DETAIL":
-      return { ...state, statusDetail: action.detail };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        statusDetail: action.detail,
+      }));
     case "SET_ACTIVE_WORKSPACE":
       return { ...state, activeWorkspaceId: action.workspaceId ?? "default" };
     case "TOGGLE_WORKSPACE": {
@@ -462,17 +604,24 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
       return { ...state, expandedWorkspaces: next };
     }
     case "LOAD_HISTORY":
-      return { ...state, messages: action.messages, isProcessing: false };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        messages: action.messages,
+        isProcessing: false,
+      }));
     case "SET_AVAILABLE_MODELS":
-      return {
-        ...state,
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
         availableModels: action.models,
-        availableModelRoutes: action.routes ?? state.availableModelRoutes,
-        providerName: action.providerName ?? state.providerName,
-        providerModel: action.providerModel ?? state.providerModel,
-      };
+        availableModelRoutes: action.routes ?? data.availableModelRoutes,
+        providerName: action.providerName ?? data.providerName,
+        providerModel: action.providerModel ?? data.providerModel,
+      }));
     case "SET_TOTAL_TOKENS":
-      return { ...state, totalTokens: action.tokens };
+      return updateSessionData(state, action.sessionId, (data) => ({
+        ...data,
+        totalTokens: action.tokens,
+      }));
     case "APPLY_SWARM_STATUS": {
       const sessions = applySwarmStatusToSessions(state.sessions, action.members);
       const currentMember = state.sessionId
@@ -523,7 +672,9 @@ export function useJcodeSession() {
     const unlisten = listen<Record<string, unknown>>(
       "server-event",
       (event) => {
-        processEvent(event.payload as unknown as ServerEvent, dispatch);
+        const payload = event.payload as unknown as ServerEvent & { session_id?: string };
+        const sessionId = payload.session_id;
+        processEvent(payload, dispatch, sessionId);
       },
     );
     return () => {
@@ -532,7 +683,7 @@ export function useJcodeSession() {
   }, []);
 
   const performSend = useCallback(
-    async (content: string, images?: [string, string][]) => {
+    async (content: string, images?: [string, string][], sessionId?: string) => {
       if (!content.trim() && (!images || images.length === 0)) return;
       dispatch({
         type: "ADD_USER_MESSAGE",
@@ -542,15 +693,17 @@ export function useJcodeSession() {
           mediaType: m,
           base64Data: d,
         })),
+        sessionId,
       });
       try {
         await invoke("send_message", {
           content,
           images: images || null,
           systemReminder: null,
+          sessionId,
         });
       } catch (e) {
-        dispatch({ type: "SET_ERROR", message: String(e) });
+        dispatch({ type: "SET_ERROR", message: String(e), sessionId });
       }
     },
     [],
@@ -584,46 +737,51 @@ export function useJcodeSession() {
     [],
   );
 
+  const switchSession = useCallback((sessionId: string) => {
+    dispatch({ type: "SET_SESSION_ID", sessionId });
+  }, []);
+
   const sendMessage = useCallback(
-    async (content: string, images?: [string, string][]) => {
-      await performSend(content, images);
+    async (content: string, images?: [string, string][], sessionId?: string) => {
+      await performSend(content, images, sessionId);
     },
     [performSend],
   );
 
-  const queueMessage = useCallback((content: string, images?: [string, string][]) => {
+  const queueMessage = useCallback((content: string, images?: [string, string][], sessionId?: string) => {
     if (!content.trim() && (!images || images.length === 0)) return;
     const draft = createQueuedDraft(content, images);
-    dispatch({ type: "QUEUE_DRAFT", draft });
+    dispatch({ type: "QUEUE_DRAFT", draft, sessionId });
     dispatch({
       type: "ADD_SYSTEM_MESSAGE",
       content: `📝 Queued prompt (${state.queuedDrafts.length + 1} pending)`,
+      sessionId,
     });
   }, [state.queuedDrafts.length]);
 
-  const cancel = useCallback(async () => {
+  const cancel = useCallback(async (sessionId?: string) => {
     try {
-      await invoke("cancel");
-      dispatch({ type: "INTERRUPTED" });
+      await invoke("cancel", { sessionId });
+      dispatch({ type: "INTERRUPTED", sessionId });
     } catch (e) {
-      dispatch({ type: "SET_ERROR", message: String(e) });
+      dispatch({ type: "SET_ERROR", message: String(e), sessionId });
     }
   }, []);
 
-  const setModel = useCallback(async (model: string, profileId?: string) => {
+  const setModel = useCallback(async (model: string, profileId?: string, sessionId?: string) => {
     try {
-      await invoke("set_model", { model, profileId: profileId || null });
+      await invoke("set_model", { model, profileId: profileId || null, sessionId });
     } catch (e) {
-      dispatch({ type: "SET_ERROR", message: String(e) });
+      dispatch({ type: "SET_ERROR", message: String(e), sessionId });
     }
   }, []);
 
-  const setMemoryEnabled = useCallback(async (enabled: boolean) => {
+  const setMemoryEnabled = useCallback(async (enabled: boolean, sessionId?: string) => {
     try {
-      await invoke("set_memory_enabled", { enabled });
-      dispatch({ type: "SET_MEMORY_ENABLED", enabled });
+      await invoke("set_memory_enabled", { enabled, sessionId });
+      dispatch({ type: "SET_MEMORY_ENABLED", enabled, sessionId });
     } catch (e) {
-      dispatch({ type: "SET_ERROR", message: String(e) });
+      dispatch({ type: "SET_ERROR", message: String(e), sessionId });
     }
   }, []);
 
@@ -775,20 +933,22 @@ export function useJcodeSession() {
   }, [state.sessionId]);
 
   const sendStdinResponse = useCallback(
-    async (requestId: string, input: string) => {
+    async (requestId: string, input: string, sessionId?: string) => {
       dispatch({
         type: "ADD_SYSTEM_MESSAGE",
         content: "⌨️ Sending interactive input",
+        sessionId,
       });
       try {
-        await invoke("send_stdin_response", { requestId, input });
-        dispatch({ type: "STDIN_DONE" });
+        await invoke("send_stdin_response", { requestId, input, sessionId });
+        dispatch({ type: "STDIN_DONE", sessionId });
         dispatch({
           type: "ADD_SYSTEM_MESSAGE",
           content: "⌨️ Interactive input sent",
+          sessionId,
         });
       } catch (e) {
-        dispatch({ type: "SET_ERROR", message: String(e) });
+        dispatch({ type: "SET_ERROR", message: String(e), sessionId });
       }
     },
     [],
@@ -818,37 +978,37 @@ export function useJcodeSession() {
     }
   }, [listSessions]);
 
-  const clearChat = useCallback(async () => {
+  const clearChat = useCallback(async (sessionId?: string) => {
     try {
-      await invoke("clear_chat");
-      dispatch({ type: "CLEAR_CHAT" });
+      await invoke("clear_chat", { sessionId });
+      dispatch({ type: "CLEAR_CHAT", sessionId });
     } catch (e) {
-      dispatch({ type: "SET_ERROR", message: String(e) });
+      dispatch({ type: "SET_ERROR", message: String(e), sessionId });
     }
   }, []);
 
-  const rewindChat = useCallback(async (messageIndex: number) => {
+  const rewindChat = useCallback(async (messageIndex: number, sessionId?: string) => {
     try {
-      await invoke("rewind_chat", { messageIndex });
-      dispatch({ type: "REWIND_CHAT", messageIndex });
+      await invoke("rewind_chat", { messageIndex, sessionId });
+      dispatch({ type: "REWIND_CHAT", messageIndex, sessionId });
     } catch (e) {
-      dispatch({ type: "SET_ERROR", message: String(e) });
+      dispatch({ type: "SET_ERROR", message: String(e), sessionId });
     }
   }, []);
 
-  const setReasoningEffort = useCallback(async (effort: string) => {
+  const setReasoningEffort = useCallback(async (effort: string, sessionId?: string) => {
     try {
-      await invoke("set_reasoning_effort", { effort });
+      await invoke("set_reasoning_effort", { effort, sessionId });
     } catch (e) {
-      dispatch({ type: "SET_ERROR", message: String(e) });
+      dispatch({ type: "SET_ERROR", message: String(e), sessionId });
     }
   }, []);
 
-  const compactContext = useCallback(async () => {
+  const compactContext = useCallback(async (sessionId?: string) => {
     try {
-      await invoke("compact_context");
+      await invoke("compact_context", { sessionId });
     } catch (e) {
-      dispatch({ type: "SET_ERROR", message: String(e) });
+      dispatch({ type: "SET_ERROR", message: String(e), sessionId });
     }
   }, []);
 
@@ -873,24 +1033,27 @@ export function useJcodeSession() {
     const nextDraft = state.queuedDrafts[0];
     if (!nextDraft) return;
 
-    dispatch({ type: "DEQUEUE_DRAFT", draftId: nextDraft.id });
+    dispatch({ type: "DEQUEUE_DRAFT", draftId: nextDraft.id, sessionId: state.sessionId || undefined });
     dispatch({
       type: "ADD_SYSTEM_MESSAGE",
       content: `▶ Sending queued prompt (${state.queuedDrafts.length - 1} remaining)`,
+      sessionId: state.sessionId || undefined,
     });
-    void performSend(nextDraft.content, nextDraft.images);
+    void performSend(nextDraft.content, nextDraft.images, state.sessionId || undefined);
   }, [
     state.isProcessing,
     state.connected,
     state.stdinPrompt,
     state.queuedDrafts,
     performSend,
+    state.sessionId,
   ]);
 
   return {
     state,
     connect,
     resumeSession,
+    switchSession,
     sendMessage,
     queueMessage,
     cancel,
@@ -910,30 +1073,37 @@ export function useJcodeSession() {
   };
 }
 
-function processEvent(event: ServerEvent, dispatch: React.Dispatch<Action>) {
+function processEvent(
+  event: ServerEvent,
+  dispatch: React.Dispatch<Action>,
+  sessionId?: string,
+) {
   for (const desktopEvent of rawServerEventToDesktopEvents(event)) {
+    const sid = sessionId;
     switch (desktopEvent.type) {
       case "append-text":
-        dispatch({ type: "APPEND_TEXT", text: desktopEvent.text });
+        dispatch({ type: "APPEND_TEXT", text: desktopEvent.text, sessionId: sid });
         break;
       case "replace-text":
-        dispatch({ type: "REPLACE_TEXT", text: desktopEvent.text });
+        dispatch({ type: "REPLACE_TEXT", text: desktopEvent.text, sessionId: sid });
         break;
       case "tool-start":
         dispatch({
           type: "TOOL_START",
           id: desktopEvent.id,
           name: desktopEvent.name,
+          sessionId: sid,
         });
         break;
       case "tool-input":
-        dispatch({ type: "TOOL_INPUT", id: "", delta: desktopEvent.delta });
+        dispatch({ type: "TOOL_INPUT", id: "", delta: desktopEvent.delta, sessionId: sid });
         break;
       case "tool-exec":
         dispatch({
           type: "TOOL_EXEC",
           id: desktopEvent.id,
           name: desktopEvent.name,
+          sessionId: sid,
         });
         break;
       case "tool-done":
@@ -942,6 +1112,7 @@ function processEvent(event: ServerEvent, dispatch: React.Dispatch<Action>) {
           id: desktopEvent.id,
           output: desktopEvent.output,
           error: desktopEvent.error,
+          sessionId: sid,
         });
         break;
       case "assistant-message":
@@ -949,6 +1120,7 @@ function processEvent(event: ServerEvent, dispatch: React.Dispatch<Action>) {
           type: "ADD_ASSISTANT_MESSAGE",
           content: desktopEvent.content,
           images: desktopEvent.images,
+          sessionId: sid,
         });
         break;
       case "token-usage":
@@ -956,28 +1128,29 @@ function processEvent(event: ServerEvent, dispatch: React.Dispatch<Action>) {
           type: "SET_TOKEN_USAGE",
           input: desktopEvent.input,
           output: desktopEvent.output,
+          sessionId: sid,
         });
         break;
       case "done":
-        dispatch({ type: "DONE" });
+        dispatch({ type: "DONE", sessionId: sid });
         break;
       case "error":
-        dispatch({ type: "SET_ERROR", message: desktopEvent.message });
+        dispatch({ type: "SET_ERROR", message: desktopEvent.message, sessionId: sid });
         break;
       case "session-id":
         dispatch({ type: "SET_SESSION_ID", sessionId: desktopEvent.sessionId });
         break;
       case "interrupted":
-        dispatch({ type: "INTERRUPTED" });
+        dispatch({ type: "INTERRUPTED", sessionId: sid });
         break;
       case "connection-phase":
-        dispatch({ type: "SET_PHASE", phase: desktopEvent.phase });
+        dispatch({ type: "SET_PHASE", phase: desktopEvent.phase, sessionId: sid });
         if (desktopEvent.phase === "connected") {
-          dispatch({ type: "SET_CONNECTED" });
+          dispatch({ type: "SET_CONNECTED", sessionId: sid });
         }
         break;
       case "model-changed":
-        dispatch({ type: "MODEL_CHANGED", model: desktopEvent.model });
+        dispatch({ type: "MODEL_CHANGED", model: desktopEvent.model, sessionId: sid });
         break;
       case "available-models":
         dispatch({
@@ -986,55 +1159,57 @@ function processEvent(event: ServerEvent, dispatch: React.Dispatch<Action>) {
           routes: desktopEvent.routes,
           providerName: desktopEvent.providerName,
           providerModel: desktopEvent.providerModel,
+          sessionId: sid,
         });
         break;
       case "stdin-request":
-        dispatch({ type: "STDIN_REQUEST", prompt: desktopEvent.prompt });
+        dispatch({ type: "STDIN_REQUEST", prompt: desktopEvent.prompt, sessionId: sid });
         break;
       case "system-message":
-        dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.content });
+        dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.content, sessionId: sid });
         break;
       case "clear-chat":
-        dispatch({ type: "CLEAR_CHAT" });
+        dispatch({ type: "CLEAR_CHAT", sessionId: sid });
         break;
       case "rewind-chat":
-        dispatch({ type: "REWIND_CHAT", messageIndex: desktopEvent.messageIndex });
+        dispatch({ type: "REWIND_CHAT", messageIndex: desktopEvent.messageIndex, sessionId: sid });
         if (desktopEvent.notice) {
-          dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.notice });
+          dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.notice, sessionId: sid });
         }
         break;
       case "reasoning-effort":
-        dispatch({ type: "SET_REASONING_EFFORT", effort: desktopEvent.effort });
+        dispatch({ type: "SET_REASONING_EFFORT", effort: desktopEvent.effort, sessionId: sid });
         if (desktopEvent.notice) {
-          dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.notice });
+          dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.notice, sessionId: sid });
         }
         break;
       case "memory-feature":
-        dispatch({ type: "SET_MEMORY_ENABLED", enabled: desktopEvent.enabled });
+        dispatch({ type: "SET_MEMORY_ENABLED", enabled: desktopEvent.enabled, sessionId: sid });
         if (desktopEvent.notice) {
-          dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.notice });
+          dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.notice, sessionId: sid });
         }
         break;
       case "connection-type":
         dispatch({
           type: "SET_CONNECTION_TYPE",
           connection: desktopEvent.connection,
+          sessionId: sid,
         });
         if (desktopEvent.notice) {
-          dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.notice });
+          dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.notice, sessionId: sid });
         }
         break;
       case "status-detail":
-        dispatch({ type: "SET_STATUS_DETAIL", detail: desktopEvent.detail });
+        dispatch({ type: "SET_STATUS_DETAIL", detail: desktopEvent.detail, sessionId: sid });
         if (desktopEvent.notice) {
-          dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.notice });
+          dispatch({ type: "ADD_SYSTEM_MESSAGE", content: desktopEvent.notice, sessionId: sid });
         }
         break;
       case "total-tokens":
-        dispatch({ type: "SET_TOTAL_TOKENS", tokens: desktopEvent.tokens });
+        dispatch({ type: "SET_TOTAL_TOKENS", tokens: desktopEvent.tokens, sessionId: sid });
         break;
       case "history-loaded":
-        dispatch({ type: "LOAD_HISTORY", messages: desktopEvent.messages });
+        dispatch({ type: "LOAD_HISTORY", messages: desktopEvent.messages, sessionId: sid });
         break;
       case "swarm-status":
         dispatch({ type: "APPLY_SWARM_STATUS", members: desktopEvent.members });

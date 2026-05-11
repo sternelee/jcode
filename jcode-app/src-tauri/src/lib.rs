@@ -479,15 +479,27 @@ fn provider_entries_from_routes(
 async fn refresh_active_runtime_auth(
     app_handle: &AppHandle,
     state: &State<'_, AppState>,
+    session_id: Option<&str>,
 ) -> Result<(), String> {
-    let runtime = match active_runtime(state).await {
-        Ok(rt) => rt,
-        Err(_) => return Ok(()),
-    };
-    let provider = { runtime.agent.lock().await.provider_handle() };
-    provider.on_auth_changed();
-    let _ = provider.prefetch_models().await;
-    emit_runtime_snapshot(app_handle, &runtime).await
+    if let Some(sid) = session_id {
+        if let Ok(runtime) = get_runtime_by_session_id(state, sid).await {
+            let provider = { runtime.agent.lock().await.provider_handle() };
+            provider.on_auth_changed();
+            let _ = provider.prefetch_models().await;
+            emit_runtime_snapshot(app_handle, &runtime).await?;
+        }
+    } else {
+        let runtimes: Vec<Arc<SessionRuntime>> = {
+            state.runtimes.lock().await.values().cloned().collect()
+        };
+        for runtime in runtimes {
+            let provider = { runtime.agent.lock().await.provider_handle() };
+            provider.on_auth_changed();
+            let _ = provider.prefetch_models().await;
+            emit_runtime_snapshot(app_handle, &runtime).await.ok();
+        }
+    }
+    Ok(())
 }
 
 fn desktop_history_messages(session: &Session) -> Vec<serde_json::Value> {
@@ -939,7 +951,13 @@ fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Value>
     let effective_status = swarm_status
         .as_ref()
         .map(|(status, _, _, _)| status.clone())
-        .unwrap_or_else(|| status.clone());
+        .unwrap_or_else(|| {
+            if message_count == 0 && status.to_lowercase() == "active" {
+                "ready".to_string()
+            } else {
+                status.clone()
+            }
+        });
     let subtitle = format!("{effective_status} · {model}");
     let detail = match updated {
         Some(updated) => format!("{message_count} msgs · {updated} · {cwd}"),
@@ -1171,13 +1189,20 @@ async fn active_runtime(state: &State<'_, AppState>) -> Result<Arc<SessionRuntim
         .await
         .clone()
         .ok_or("No active session")?;
+    get_runtime_by_session_id(state, &active_session_id).await
+}
+
+async fn get_runtime_by_session_id(
+    state: &State<'_, AppState>,
+    session_id: &str,
+) -> Result<Arc<SessionRuntime>, String> {
     let runtime = state
         .runtimes
         .lock()
         .await
-        .get(&active_session_id)
+        .get(session_id)
         .cloned()
-        .ok_or("Active session runtime not found")?;
+        .ok_or_else(|| format!("Session runtime not found: {session_id}"))?;
     Ok(runtime)
 }
 
@@ -1398,11 +1423,12 @@ async fn resume_session(
 async fn send_message(
     app_handle: AppHandle,
     state: State<'_, AppState>,
+    session_id: String,
     content: String,
     images: Option<Vec<(String, String)>>,
     system_reminder: Option<String>,
 ) -> Result<(), String> {
-    let runtime = active_runtime(&state).await?;
+    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     {
         let mut processing = runtime.is_processing.lock().await;
         *processing = true;
@@ -1413,15 +1439,15 @@ async fn send_message(
     }
 
     let handle = app_handle.clone();
-    let active_session_id = state.active_session_id.clone();
     let live_swarm_members = state.live_swarm_members.clone();
     let live_swarm_plans = state.live_swarm_plans.clone();
     let live_swarm_proposals = state.live_swarm_proposals.clone();
+    let session_id_for_spawn = session_id.clone();
     tokio::spawn(async move {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ServerEvent>();
         let runtime_for_reader = runtime.clone();
         let rh = handle.clone();
-        let active_for_reader = active_session_id.clone();
+        let sid = session_id_for_spawn.clone();
         let live_swarm_members_for_reader = live_swarm_members.clone();
         let live_swarm_plans_for_reader = live_swarm_plans.clone();
         let live_swarm_proposals_for_reader = live_swarm_proposals.clone();
@@ -1550,11 +1576,13 @@ async fn send_message(
                     _ => {}
                 }
 
-                let is_active = active_for_reader.lock().await.as_deref() == Some(&runtime_for_reader.session_id);
-                if is_active {
-                    let payload = serde_json::to_value(&event).unwrap_or_default();
-                    rh.emit("server-event", &payload).ok();
+                // Emit all events with session_id so the frontend can route them
+                // to the correct session state.
+                let mut payload = serde_json::to_value(&event).unwrap_or_default();
+                if let Some(obj) = payload.as_object_mut() {
+                    obj.insert("session_id".to_string(), serde_json::json!(sid));
                 }
+                rh.emit("server-event", &payload).ok();
             }
         });
 
@@ -1569,32 +1597,27 @@ async fn send_message(
         *runtime.is_processing.lock().await = false;
         *runtime.current_tool_name.lock().await = None;
 
-        let is_active = active_session_id.lock().await.as_deref() == Some(&runtime.session_id);
         if let Err(e) = result {
-            if is_active {
-                handle
-                    .emit(
-                        "server-event",
-                        &serde_json::json!({ "type": "error", "id": 0, "message": format!("{e:#}") }),
-                    )
-                    .ok();
-            }
-        }
-        if is_active {
             handle
                 .emit(
                     "server-event",
-                    &serde_json::json!({ "type": "done", "id": 0 }),
+                    &serde_json::json!({ "type": "error", "session_id": session_id_for_spawn, "id": 0, "message": format!("{e:#}") }),
                 )
                 .ok();
         }
+        handle
+            .emit(
+                "server-event",
+                &serde_json::json!({ "type": "done", "session_id": session_id_for_spawn, "id": 0 }),
+            )
+            .ok();
     });
     Ok(())
 }
 
 #[tauri::command]
-async fn cancel(state: State<'_, AppState>) -> Result<(), String> {
-    let runtime = active_runtime(&state).await?;
+async fn cancel(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     runtime.cancel_signal.fire();
     Ok(())
 }
@@ -1603,10 +1626,11 @@ async fn cancel(state: State<'_, AppState>) -> Result<(), String> {
 async fn set_model(
     app_handle: AppHandle,
     state: State<'_, AppState>,
+    session_id: String,
     model: String,
     profile_id: Option<String>,
 ) -> Result<(), String> {
-    let runtime = active_runtime(&state).await?;
+    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     let model_arg = if let Some(pid) = profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         format!("{}:{}", pid, model)
@@ -1621,7 +1645,7 @@ async fn set_model(
     app_handle
         .emit(
             "server-event",
-            &serde_json::json!({ "type": "model_changed", "id": 0, "model": current }),
+            &serde_json::json!({ "type": "model_changed", "id": 0, "model": current, "session_id": session_id }),
         )
         .ok();
     Ok(())
@@ -1631,16 +1655,17 @@ async fn set_model(
 async fn set_memory_enabled(
     app_handle: AppHandle,
     state: State<'_, AppState>,
+    session_id: String,
     enabled: bool,
 ) -> Result<(), String> {
-    let runtime = active_runtime(&state).await?;
+    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     guard.set_memory_enabled(enabled);
     drop(guard);
     app_handle
         .emit(
             "server-event",
-            &serde_json::json!({ "type": "memory_feature_changed", "enabled": enabled }),
+            &serde_json::json!({ "type": "memory_feature_changed", "enabled": enabled, "session_id": session_id }),
         )
         .ok();
     Ok(())
@@ -1955,11 +1980,15 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
                                 "thinking" => "running · thinking".to_string(),
                                 _ => "running".to_string(),
                             });
-                        } else if swarm_peer_count >= 2 {
-                            summary["subtitle"] = serde_json::json!(match live_phase {
-                                "waiting" => "swarm · waiting".to_string(),
-                                _ => summary.get("subtitle").and_then(Value::as_str).unwrap_or("ready").to_string(),
-                            });
+                        } else {
+                            // Not processing — override stale "active" status from session file
+                            summary["status"] = serde_json::json!("ready");
+                            if swarm_peer_count >= 2 {
+                                summary["subtitle"] = serde_json::json!(match live_phase {
+                                    "waiting" => "swarm · waiting".to_string(),
+                                    _ => summary.get("subtitle").and_then(Value::as_str).unwrap_or("ready").to_string(),
+                                });
+                            }
                         }
                         if let Some(detail) = status_detail.filter(|value| !value.trim().is_empty()) {
                             let current_detail = summary
@@ -2051,6 +2080,7 @@ async fn get_models(state: State<'_, AppState>) -> Result<serde_json::Value, Str
 async fn save_provider_api_key(
     app_handle: AppHandle,
     state: State<'_, AppState>,
+    session_id: Option<String>,
     provider_id: String,
     api_key: String,
     region: Option<String>,
@@ -2135,7 +2165,7 @@ async fn save_provider_api_key(
     }
 
     jcode::auth::AuthStatus::invalidate_cache();
-    refresh_active_runtime_auth(&app_handle, &state).await?;
+    refresh_active_runtime_auth(&app_handle, &state, session_id.as_deref()).await?;
     Ok(())
 }
 
@@ -2158,6 +2188,7 @@ async fn start_provider_auth_flow(provider_id: String) -> Result<serde_json::Val
 async fn complete_provider_auth_flow(
     app_handle: AppHandle,
     state: State<'_, AppState>,
+    session_id: Option<String>,
     provider_id: String,
     input_kind: String,
     input: Option<String>,
@@ -2206,20 +2237,24 @@ async fn complete_provider_auth_flow(
         .await
         .map_err(|e| e.to_string())?;
     jcode::auth::AuthStatus::invalidate_cache();
-    refresh_active_runtime_auth(&app_handle, &state).await?;
+    refresh_active_runtime_auth(&app_handle, &state, session_id.as_deref()).await?;
     serde_json::to_value(success).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn clear_chat(app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let runtime = active_runtime(&state).await?;
+async fn clear_chat(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     guard.clear();
     drop(guard);
     app_handle
         .emit(
             "server-event",
-            &serde_json::json!({ "type": "clear_chat" }),
+            &serde_json::json!({ "type": "clear_chat", "session_id": session_id }),
         )
         .ok();
     Ok(())
@@ -2229,9 +2264,10 @@ async fn clear_chat(app_handle: AppHandle, state: State<'_, AppState>) -> Result
 async fn rewind_chat(
     app_handle: AppHandle,
     state: State<'_, AppState>,
+    session_id: String,
     message_index: usize,
 ) -> Result<(), String> {
-    let runtime = active_runtime(&state).await?;
+    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     guard
         .rewind_to_message(message_index)
@@ -2240,7 +2276,7 @@ async fn rewind_chat(
     app_handle
         .emit(
             "server-event",
-            &serde_json::json!({ "type": "rewind_chat", "message_index": message_index }),
+            &serde_json::json!({ "type": "rewind_chat", "message_index": message_index, "session_id": session_id }),
         )
         .ok();
     Ok(())
@@ -2250,9 +2286,10 @@ async fn rewind_chat(
 async fn set_reasoning_effort(
     app_handle: AppHandle,
     state: State<'_, AppState>,
+    session_id: String,
     effort: String,
 ) -> Result<(), String> {
-    let runtime = active_runtime(&state).await?;
+    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     let current = guard
         .set_reasoning_effort(&effort)
@@ -2265,6 +2302,7 @@ async fn set_reasoning_effort(
                 "type": "reasoning_effort_changed",
                 "id": 0,
                 "effort": current,
+                "session_id": session_id,
             }),
         )
         .ok();
@@ -2272,8 +2310,12 @@ async fn set_reasoning_effort(
 }
 
 #[tauri::command]
-async fn compact_context(app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    let runtime = active_runtime(&state).await?;
+async fn compact_context(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), String> {
+    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     let provider = guard.provider_fork();
     let compaction = guard.registry().compaction();
@@ -2289,6 +2331,7 @@ async fn compact_context(app_handle: AppHandle, state: State<'_, AppState>) -> R
                     "id": 0,
                     "message": "Manual compaction is not available for this provider.",
                     "success": false,
+                    "session_id": session_id,
                 }),
             )
             .ok();
@@ -2324,12 +2367,14 @@ async fn compact_context(app_handle: AppHandle, state: State<'_, AppState>) -> R
                         status_msg
                     ),
                     "success": true,
+                    "session_id": &session_id,
                 }),
                 Err(reason) => serde_json::json!({
                     "type": "compact_result",
                     "id": 0,
                     "message": format!("{}\n\n⚠ **Cannot compact:** {}", status_msg, reason),
                     "success": false,
+                    "session_id": &session_id,
                 }),
             }
         }
@@ -2338,6 +2383,7 @@ async fn compact_context(app_handle: AppHandle, state: State<'_, AppState>) -> R
             "id": 0,
             "message": "⚠ Cannot access compaction manager (lock held)",
             "success": false,
+            "session_id": &session_id,
         }),
     };
 

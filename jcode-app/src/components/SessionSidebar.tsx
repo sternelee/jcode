@@ -452,30 +452,30 @@ export function SessionSidebar({
                               </span>
                             )}
 
-                            {/* Current session indicators */}
-                            {isCurrentSession && (
+                            {/* Session activity indicators - show for ALL active sessions */}
+                            {(isCurrentSession || s.liveProcessing) && (
                               <div className="mt-2 flex flex-wrap gap-1">
                                 <span className={cn(
                                   "inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full",
-                                  isProcessing
+                                  (isCurrentSession ? isProcessing : s.liveProcessing)
                                     ? "bg-primary text-primary-foreground"
                                     : "bg-secondary text-secondary-foreground"
                                 )}>
-                                  {isProcessing ? (
+                                  {(isCurrentSession ? isProcessing : s.liveProcessing) ? (
                                     <><LoaderCircle className="w-2.5 h-2.5 animate-spin" />running</>
                                   ) : "idle"}
                                 </span>
-                                {queuedDraftCount > 0 && (
+                                {isCurrentSession && queuedDraftCount > 0 && (
                                   <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
                                     <Layers3 className="w-2.5 h-2.5" />queued {queuedDraftCount}
                                   </span>
                                 )}
-                                {stdinPromptActive && (
+                                {isCurrentSession && stdinPromptActive && (
                                   <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
                                     <Keyboard className="w-2.5 h-2.5" />input pending
                                   </span>
                                 )}
-                                {availableRouteCount > 0 && (
+                                {isCurrentSession && availableRouteCount > 0 && (
                                   <span className="text-[9px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
                                     {availableRouteCount} routes
                                   </span>

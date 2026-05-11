@@ -493,6 +493,24 @@ export interface QueuedDraft {
   images?: [string, string][];
 }
 
+export interface PerSessionData {
+  sessionId: string;
+  messages: ChatMessage[];
+  isProcessing: boolean;
+  stdinPrompt: StdinPrompt | null;
+  error: string | null;
+  providerName: string | null;
+  providerModel: string | null;
+  availableModels: string[];
+  availableModelRoutes: ModelRoute[];
+  totalTokens: [number, number] | null;
+  connectionPhase: string | null;
+  reasoningEffort: string | null;
+  memoryEnabled: boolean;
+  statusDetail: string | null;
+  queuedDrafts: QueuedDraft[];
+}
+
 export interface SessionState {
   connected: boolean;
   connecting: boolean;
@@ -518,4 +536,5 @@ export interface SessionState {
   queuedDrafts: QueuedDraft[];
   activeWorkspaceId: string | null;
   expandedWorkspaces: Set<string>;
+  sessionData: Record<string, PerSessionData>;
 }
