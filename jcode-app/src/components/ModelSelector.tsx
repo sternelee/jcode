@@ -736,14 +736,20 @@ export function ModelSelector({
                     </button>
                   </div>
 
-                  {!collapsed && provider && hasConfigSurface && !configured && (
+                  {!collapsed && provider && hasConfigSurface && (!configured || (groupRoutes.length > 0 && groupRoutes.every((route) => route.available === false))) && (
                     <div className="px-3 py-3 border-b space-y-3 bg-muted/20">
                       <div className="flex items-start gap-2 text-xs text-muted-foreground">
                         <Link2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                         <div>
-                          <div className="font-medium text-foreground">{label} not configured</div>
+                          <div className="font-medium text-foreground">
+                            {configured ? `${label} authentication expired` : `${label} not configured`}
+                          </div>
                           <div>{provider.method_detail}</div>
-                          <div className="mt-1">Models stay hidden until credentials are available.</div>
+                          <div className="mt-1">
+                            {configured
+                              ? "Credentials are no longer valid. Re-authenticate below."
+                              : "Models stay hidden until credentials are available."}
+                          </div>
                         </div>
                       </div>
 

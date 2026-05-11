@@ -480,7 +480,10 @@ async fn refresh_active_runtime_auth(
     app_handle: &AppHandle,
     state: &State<'_, AppState>,
 ) -> Result<(), String> {
-    let runtime = active_runtime(state).await?;
+    let runtime = match active_runtime(state).await {
+        Ok(rt) => rt,
+        Err(_) => return Ok(()),
+    };
     let provider = { runtime.agent.lock().await.provider_handle() };
     provider.on_auth_changed();
     let _ = provider.prefetch_models().await;
@@ -1190,10 +1193,23 @@ async fn emit_runtime_snapshot(app_handle: &AppHandle, runtime: &Arc<SessionRunt
             .filter(|r| jcode::provider::is_listable_model_name(&r.model))
             .map(serialize_model_route)
             .collect();
+        // When an OpenAI-compatible profile (e.g. DeepSeek) is active, the
+        // underlying provider is OpenRouter but we want to show the profile id.
+        let provider_name = {
+            let name = provider.name().to_string();
+            if name.eq_ignore_ascii_case("openrouter") {
+                std::env::var("JCODE_OPENROUTER_CACHE_NAMESPACE")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(name)
+            } else {
+                name
+            }
+        };
         (
             serde_json::to_value(messages).unwrap_or(serde_json::json!([])),
             serde_json::to_value(images).unwrap_or(serde_json::json!([])),
-            Some(provider.name().to_string()),
+            Some(provider_name),
             Some(provider.model()),
             serde_json::to_value(available_models).unwrap_or(serde_json::json!([])),
             serde_json::to_value(available_model_routes).unwrap_or(serde_json::json!([])),
@@ -1997,7 +2013,17 @@ async fn get_models(state: State<'_, AppState>) -> Result<serde_json::Value, Str
             .into_iter()
             .filter(|r| jcode::provider::is_listable_model_name(&r.model))
             .collect::<Vec<_>>();
-        let current = guard.provider_handle().name().to_string();
+        let current = {
+            let name = guard.provider_handle().name().to_string();
+            if name.eq_ignore_ascii_case("openrouter") {
+                std::env::var("JCODE_OPENROUTER_CACHE_NAMESPACE")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(name)
+            } else {
+                name
+            }
+        };
         (raw_routes, Some(current))
     } else {
         // No active session — create a temporary provider so users can still
