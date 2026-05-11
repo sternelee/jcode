@@ -11,7 +11,7 @@ use crate::provider_catalog::{
 
 use super::provider_init::{ProviderChoice, login_provider_for_choice, save_named_api_key};
 
-mod scriptable;
+pub mod scriptable;
 use scriptable::*;
 
 #[derive(Debug, Clone, Default)]
@@ -55,13 +55,13 @@ impl LoginOptions {
 }
 
 #[derive(Debug, Clone)]
-enum ProvidedAuthInput {
+pub enum ProvidedAuthInput {
     CallbackUrl(String),
     AuthCode(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LoginFlowOutcome {
+pub enum LoginFlowOutcome {
     Completed,
     Deferred,
 }
@@ -131,7 +131,7 @@ impl PendingScriptableLogin {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct ScriptableAuthPrompt {
+pub struct ScriptableAuthPrompt {
     status: &'static str,
     provider: String,
     auth_url: String,
@@ -143,7 +143,7 @@ struct ScriptableAuthPrompt {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct ScriptableAuthSuccess {
+pub struct ScriptableAuthSuccess {
     status: &'static str,
     provider: String,
     account_label: Option<String>,

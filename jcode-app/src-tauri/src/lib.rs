@@ -1,18 +1,20 @@
 pub mod commands;
 
 use commands::{create_agent_with_session, create_provider, setup_stdin_channel, AppState, SessionRuntime};
+use jcode::cli::login::scriptable::{complete_scriptable_login_data, start_scriptable_login_data};
+use jcode::cli::login::LoginOptions;
 use jcode::message::{ContentBlock, Role, ToolCall};
 use jcode::protocol::ServerEvent;
 use jcode::provider::Provider;
+use jcode::provider_catalog::resolve_login_provider;
 use jcode::session::{Session, StoredDisplayRole, StoredMessage};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::time::SystemTime;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const DEFAULT_VISIBLE_COMPACTED_HISTORY_MESSAGES: usize = 64;
 const SESSION_PREVIEW_LINE_LIMIT: usize = 3;
@@ -399,6 +401,23 @@ fn provider_entries_from_routes(
         }
     }
 
+    // Ensure every login provider with a config surface appears in the catalog
+    // even when it has no model routes yet (e.g. unconfigured DeepSeek).
+    for provider in jcode::provider_catalog::login_providers() {
+        let provider_key = provider.id.to_string();
+        if seen.contains(&provider_key) {
+            continue;
+        }
+        if provider_config_options(&provider_key)
+            .map(|options| !options.is_empty())
+            .unwrap_or(false)
+        {
+            seen.insert(provider_key.clone());
+            ordered.push(provider_key.clone());
+            grouped.insert(provider_key, (0usize, None));
+        }
+    }
+
     let mut entries: Vec<serde_json::Value> = ordered
         .into_iter()
         .map(|provider_key| {
@@ -455,60 +474,6 @@ fn provider_entries_from_routes(
     });
 
     entries
-}
-
-fn jcode_cli_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-    if let Ok(path) = std::env::var("JCODE_DESKTOP_CLI_PATH") {
-        let trimmed = path.trim();
-        if !trimmed.is_empty() {
-            candidates.push(PathBuf::from(trimmed));
-        }
-    }
-    candidates.push(PathBuf::from("jcode"));
-    if let Ok(home) = std::env::var("HOME") {
-        let trimmed = home.trim();
-        if !trimmed.is_empty() {
-            candidates.push(PathBuf::from(trimmed).join(".local/bin/jcode"));
-        }
-    }
-    candidates
-}
-
-fn run_jcode_json_command(args: &[String]) -> Result<serde_json::Value, String> {
-    let mut last_error: Option<String> = None;
-
-    for candidate in jcode_cli_candidates() {
-        match Command::new(&candidate).args(args).output() {
-            Ok(output) => {
-                if !output.status.success() {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    let message = if !stderr.is_empty() { stderr } else { stdout };
-                    return Err(if message.is_empty() {
-                        format!("`{}` exited with {}", candidate.display(), output.status)
-                    } else {
-                        message
-                    });
-                }
-
-                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if stdout.is_empty() {
-                    return Err(format!("`{}` returned no JSON output", candidate.display()));
-                }
-                return serde_json::from_str::<serde_json::Value>(&stdout)
-                    .map_err(|err| format!("Failed to parse login JSON: {err}. Output: {stdout}"));
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                last_error = Some(format!("`{}` not found", candidate.display()));
-            }
-            Err(err) => {
-                return Err(format!("Failed to run `{}`: {err}", candidate.display()));
-            }
-        }
-    }
-
-    Err(last_error.unwrap_or_else(|| "Unable to find jcode CLI".to_string()))
 }
 
 async fn refresh_active_runtime_auth(
@@ -2023,22 +1988,36 @@ async fn send_stdin_response(
 
 #[tauri::command]
 async fn get_models(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
-    let runtime = active_runtime(&state).await?;
-    let provider = { runtime.agent.lock().await.provider_handle() };
-    let _ = provider.prefetch_models().await;
-    let guard = runtime.agent.lock().await;
-    let raw_routes = guard
-        .model_routes()
-        .into_iter()
-        .filter(|r| jcode::provider::is_listable_model_name(&r.model))
-        .collect::<Vec<_>>();
+    let (raw_routes, current_provider_name) = if let Ok(runtime) = active_runtime(&state).await {
+        let provider = { runtime.agent.lock().await.provider_handle() };
+        let _ = provider.prefetch_models().await;
+        let guard = runtime.agent.lock().await;
+        let raw_routes = guard
+            .model_routes()
+            .into_iter()
+            .filter(|r| jcode::provider::is_listable_model_name(&r.model))
+            .collect::<Vec<_>>();
+        let current = guard.provider_handle().name().to_string();
+        (raw_routes, Some(current))
+    } else {
+        // No active session — create a temporary provider so users can still
+        // browse and configure providers from the model picker.
+        let provider = jcode::provider::MultiProvider::new();
+        let _ = provider.prefetch_models().await;
+        let raw_routes = provider
+            .model_routes()
+            .into_iter()
+            .filter(|r| jcode::provider::is_listable_model_name(&r.model))
+            .collect::<Vec<_>>();
+        (raw_routes, None)
+    };
+
     let routes: Vec<serde_json::Value> = raw_routes.iter().cloned().map(serialize_model_route).collect();
-    let current_provider_name = guard.provider_handle().name().to_string();
-    let providers = provider_entries_from_routes(&raw_routes, Some(&current_provider_name));
+    let providers = provider_entries_from_routes(&raw_routes, current_provider_name.as_deref());
     Ok(serde_json::json!({
         "routes": routes,
         "providers": providers,
-        "current": guard.provider_handle().model(),
+        "current": current_provider_name.as_deref().unwrap_or(""),
     }))
 }
 
@@ -2111,7 +2090,22 @@ async fn save_provider_api_key(
             .map_err(|e| format!("Failed to save Bedrock region: {e}"))?;
             jcode::env::set_var(jcode::provider::bedrock::REGION_ENV, region);
         }
-        _ => return Err(format!("Inline API key save is not supported for provider `{provider_id}`")),
+        provider_id => {
+            // Generic handler for OpenAI-compatible providers (deepseek, togetherai, etc.)
+            let descriptor = jcode::provider_catalog::resolve_login_provider(provider_id)
+                .ok_or_else(|| format!("Inline API key save is not supported for provider `{provider_id}`"))?;
+            if let jcode::provider_catalog::LoginProviderTarget::OpenAiCompatible(profile) = descriptor.target {
+                let resolved = jcode::provider_catalog::resolve_openai_compatible_profile(profile);
+                jcode::cli::provider_init::save_named_api_key(
+                    &resolved.env_file,
+                    &resolved.api_key_env,
+                    trimmed_key,
+                )
+                .map_err(|e| format!("Failed to save {} API key: {e}", resolved.display_name))?;
+            } else {
+                return Err(format!("Inline API key save is not supported for provider `{provider_id}`"));
+            }
+        }
     }
 
     jcode::auth::AuthStatus::invalidate_cache();
@@ -2121,14 +2115,17 @@ async fn save_provider_api_key(
 
 #[tauri::command]
 async fn start_provider_auth_flow(provider_id: String) -> Result<serde_json::Value, String> {
-    let args = vec![
-        "login".to_string(),
-        "--provider".to_string(),
-        provider_id,
-        "--print-auth-url".to_string(),
-        "--json".to_string(),
-    ];
-    run_jcode_json_command(&args)
+    let provider = resolve_login_provider(&provider_id)
+        .ok_or_else(|| format!("Unknown provider: {provider_id}"))?;
+    let options = LoginOptions {
+        print_auth_url: true,
+        json: true,
+        ..Default::default()
+    };
+    let prompt = start_scriptable_login_data(provider, None, &options)
+        .await
+        .map_err(|e| e.to_string())?;
+    serde_json::to_value(prompt).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2139,23 +2136,15 @@ async fn complete_provider_auth_flow(
     input_kind: String,
     input: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    let mut args = vec![
-        "login".to_string(),
-        "--provider".to_string(),
-        provider_id.clone(),
-        "--json".to_string(),
-    ];
-
-    match input_kind.as_str() {
-        "complete" => args.push("--complete".to_string()),
+    let provided_input = match input_kind.as_str() {
+        "complete" => None,
         "callback_url" => {
             let value = input
                 .as_deref()
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "Callback URL is required".to_string())?;
-            args.push("--callback-url".to_string());
-            args.push(value.to_string());
+            Some(jcode::cli::login::ProvidedAuthInput::CallbackUrl(value.to_string()))
         }
         "auth_code" => {
             let value = input
@@ -2163,8 +2152,7 @@ async fn complete_provider_auth_flow(
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "Authorization code is required".to_string())?;
-            args.push("--auth-code".to_string());
-            args.push(value.to_string());
+            Some(jcode::cli::login::ProvidedAuthInput::AuthCode(value.to_string()))
         }
         "auth_code_or_callback_url" => {
             let value = input
@@ -2173,19 +2161,27 @@ async fn complete_provider_auth_flow(
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "Callback URL or authorization code is required".to_string())?;
             if value.contains("://") || value.contains("code=") || value.contains("state=") {
-                args.push("--callback-url".to_string());
+                Some(jcode::cli::login::ProvidedAuthInput::CallbackUrl(value.to_string()))
             } else {
-                args.push("--auth-code".to_string());
+                Some(jcode::cli::login::ProvidedAuthInput::AuthCode(value.to_string()))
             }
-            args.push(value.to_string());
         }
         other => return Err(format!("Unsupported auth completion kind `{other}`")),
-    }
+    };
 
-    let result = run_jcode_json_command(&args)?;
+    let provider = resolve_login_provider(&provider_id)
+        .ok_or_else(|| format!("Unknown provider: {provider_id}"))?;
+    let options = LoginOptions {
+        complete: input_kind == "complete",
+        json: true,
+        ..Default::default()
+    };
+    let (success, _) = complete_scriptable_login_data(provider, None, &options, provided_input)
+        .await
+        .map_err(|e| e.to_string())?;
     jcode::auth::AuthStatus::invalidate_cache();
     refresh_active_runtime_auth(&app_handle, &state).await?;
-    Ok(result)
+    serde_json::to_value(success).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2328,6 +2324,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
+        .setup(|app| {
+            if let Ok(app_data_dir) = app.path().app_data_dir() {
+                std::env::set_var("JCODE_HOME", app_data_dir);
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             begin_session,
             resume_session,

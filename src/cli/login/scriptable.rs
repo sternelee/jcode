@@ -31,7 +31,7 @@ pub(super) fn auto_scriptable_flow_reason(
     }
 }
 
-pub(super) async fn run_scriptable_login_provider(
+pub async fn run_scriptable_login_provider(
     provider: LoginProviderDescriptor,
     account_label: Option<&str>,
     options: &LoginOptions,
@@ -49,11 +49,11 @@ pub(super) async fn run_scriptable_login_provider(
     complete_scriptable_login(provider, account_label, options, input).await
 }
 
-pub(super) async fn start_scriptable_login(
+pub async fn start_scriptable_login_data(
     provider: LoginProviderDescriptor,
     account_label: Option<&str>,
     options: &LoginOptions,
-) -> Result<LoginFlowOutcome> {
+) -> Result<ScriptableAuthPrompt> {
     let (pending, auth_url, input_kind, user_code, expires_at_ms) = match provider.target {
         LoginProviderTarget::Claude => {
             let label = auth::claude::login_target_label(account_label)?;
@@ -210,19 +210,90 @@ pub(super) async fn start_scriptable_login(
         login: pending,
     };
     crate::storage::write_json_secret(&pending_path, &record)?;
-    emit_scriptable_auth_prompt(
+    let prompt = build_scriptable_auth_prompt(
         provider.id,
         &auth_url,
         input_kind,
         &pending_path,
         user_code.as_deref(),
         expires_at_ms,
+    );
+    Ok(prompt)
+}
+
+pub async fn start_scriptable_login(
+    provider: LoginProviderDescriptor,
+    account_label: Option<&str>,
+    options: &LoginOptions,
+) -> Result<LoginFlowOutcome> {
+    let prompt = start_scriptable_login_data(provider, account_label, options).await?;
+    emit_scriptable_auth_prompt(
+        &prompt.provider,
+        &prompt.auth_url,
+        &prompt.input_kind,
+        std::path::Path::new(&prompt.pending_path),
+        prompt.user_code.as_deref(),
+        prompt.expires_at_ms,
         options.json,
     )?;
     Ok(LoginFlowOutcome::Deferred)
 }
 
-pub(super) async fn complete_scriptable_login(
+pub async fn complete_scriptable_login_data(
+    provider: LoginProviderDescriptor,
+    account_label: Option<&str>,
+    options: &LoginOptions,
+    input: Option<ProvidedAuthInput>,
+) -> Result<(ScriptableAuthSuccess, LoginFlowOutcome)> {
+    if account_label.is_some() {
+        anyhow::bail!(
+            "Do not pass --account when completing a scriptable login. The pending login already stores the target account."
+        );
+    }
+
+    match provider.target {
+        LoginProviderTarget::Claude => {
+            complete_scriptable_claude_login_data(provider.id, options, require_scriptable_input(input)?)
+                .await
+        }
+        LoginProviderTarget::OpenAi => {
+            complete_scriptable_openai_login_data(provider.id, options, require_scriptable_input(input)?)
+                .await
+        }
+        LoginProviderTarget::Gemini => {
+            complete_scriptable_gemini_login_data(provider.id, options, require_scriptable_input(input)?)
+                .await
+        }
+        LoginProviderTarget::Antigravity => {
+            complete_scriptable_antigravity_login_data(
+                provider.id,
+                options,
+                require_scriptable_input(input)?,
+            )
+            .await
+        }
+        LoginProviderTarget::Google => {
+            complete_scriptable_google_login_data(provider.id, options, require_scriptable_input(input)?)
+                .await
+        }
+        LoginProviderTarget::Copilot => {
+            if input.is_some() {
+                anyhow::bail!(
+                    "Copilot completion uses `--complete` and does not accept --callback-url or --auth-code."
+                )
+            }
+            if !options.complete {
+                anyhow::bail!("Copilot completion requires `--complete`.")
+            }
+            complete_scriptable_copilot_login_data(provider.id, options).await
+        }
+        _ => anyhow::bail!(
+            "Scriptable completion is currently supported for: claude, openai, gemini, antigravity, google, copilot."
+        ),
+    }
+}
+
+pub async fn complete_scriptable_login(
     provider: LoginProviderDescriptor,
     account_label: Option<&str>,
     options: &LoginOptions,
@@ -276,11 +347,11 @@ pub(super) async fn complete_scriptable_login(
     }
 }
 
-pub(super) async fn complete_scriptable_claude_login(
+pub async fn complete_scriptable_claude_login_data(
     provider_id: &str,
-    options: &LoginOptions,
+    _options: &LoginOptions,
     input: ProvidedAuthInput,
-) -> Result<LoginFlowOutcome> {
+) -> Result<(ScriptableAuthSuccess, LoginFlowOutcome)> {
     let pending_path = pending_login_path("claude")?;
     let PendingScriptableLogin::Claude {
         account_label,
@@ -305,35 +376,42 @@ pub(super) async fn complete_scriptable_claude_login(
             .unwrap_or(None);
     clear_pending_login(&pending_path);
     crate::telemetry::record_auth_success(provider_id, "oauth");
-    emit_scriptable_auth_success(
-        options.json,
-        ScriptableAuthSuccess {
-            status: "authenticated",
-            provider: provider_id.to_string(),
-            account_label: Some(account_label.clone()),
-            credentials_path: Some(auth::claude::jcode_path()?.display().to_string()),
-            email: profile_email.clone(),
-        },
-    )?;
-    if !options.json {
-        eprintln!("Successfully logged in to Claude!");
-        eprintln!(
-            "Account '{}' stored at {}",
-            account_label,
-            auth::claude::jcode_path()?.display()
-        );
-        if let Some(email) = profile_email {
-            eprintln!("Profile email: {}", email);
-        }
-    }
-    Ok(LoginFlowOutcome::Completed)
+    let success = ScriptableAuthSuccess {
+        status: "authenticated",
+        provider: provider_id.to_string(),
+        account_label: Some(account_label.clone()),
+        credentials_path: Some(auth::claude::jcode_path()?.display().to_string()),
+        email: profile_email.clone(),
+    };
+    Ok((success, LoginFlowOutcome::Completed))
 }
 
-pub(super) async fn complete_scriptable_openai_login(
+pub(super) async fn complete_scriptable_claude_login(
     provider_id: &str,
     options: &LoginOptions,
     input: ProvidedAuthInput,
 ) -> Result<LoginFlowOutcome> {
+    let (success, outcome) = complete_scriptable_claude_login_data(provider_id, options, input).await?;
+    emit_scriptable_auth_success(options.json, success.clone())?;
+    if !options.json {
+        eprintln!("Successfully logged in to Claude!");
+        eprintln!(
+            "Account '{}' stored at {}",
+            success.account_label.unwrap_or_default(),
+            auth::claude::jcode_path()?.display()
+        );
+        if let Some(email) = success.email {
+            eprintln!("Profile email: {}", email);
+        }
+    }
+    Ok(outcome)
+}
+
+pub async fn complete_scriptable_openai_login_data(
+    provider_id: &str,
+    _options: &LoginOptions,
+    input: ProvidedAuthInput,
+) -> Result<(ScriptableAuthSuccess, LoginFlowOutcome)> {
     let pending_path = pending_login_path("openai")?;
     let PendingScriptableLogin::Openai {
         account_label,
@@ -364,31 +442,39 @@ pub(super) async fn complete_scriptable_openai_login(
     clear_pending_login(&pending_path);
     crate::telemetry::record_auth_success(provider_id, "oauth");
     let credentials_path = crate::storage::jcode_dir()?.join("openai-auth.json");
-    emit_scriptable_auth_success(
-        options.json,
-        ScriptableAuthSuccess {
-            status: "authenticated",
-            provider: provider_id.to_string(),
-            account_label: Some(account_label.clone()),
-            credentials_path: Some(credentials_path.display().to_string()),
-            email: None,
-        },
-    )?;
-    if !options.json {
-        eprintln!(
-            "Successfully logged in to OpenAI! Account '{}' saved to {}",
-            account_label,
-            credentials_path.display()
-        );
-    }
-    Ok(LoginFlowOutcome::Completed)
+    let success = ScriptableAuthSuccess {
+        status: "authenticated",
+        provider: provider_id.to_string(),
+        account_label: Some(account_label.clone()),
+        credentials_path: Some(credentials_path.display().to_string()),
+        email: None,
+    };
+    Ok((success, LoginFlowOutcome::Completed))
 }
 
-pub(super) async fn complete_scriptable_gemini_login(
+pub(super) async fn complete_scriptable_openai_login(
     provider_id: &str,
     options: &LoginOptions,
     input: ProvidedAuthInput,
 ) -> Result<LoginFlowOutcome> {
+    let (success, outcome) = complete_scriptable_openai_login_data(provider_id, options, input).await?;
+    let credentials_path = crate::storage::jcode_dir()?.join("openai-auth.json");
+    emit_scriptable_auth_success(options.json, success.clone())?;
+    if !options.json {
+        eprintln!(
+            "Successfully logged in to OpenAI! Account '{}' saved to {}",
+            success.account_label.unwrap_or_default(),
+            credentials_path.display()
+        );
+    }
+    Ok(outcome)
+}
+
+pub async fn complete_scriptable_gemini_login_data(
+    provider_id: &str,
+    _options: &LoginOptions,
+    input: ProvidedAuthInput,
+) -> Result<(ScriptableAuthSuccess, LoginFlowOutcome)> {
     let pending_path = pending_login_path("gemini")?;
     let PendingScriptableLogin::Gemini {
         verifier,
@@ -407,31 +493,38 @@ pub(super) async fn complete_scriptable_gemini_login(
     let tokens = auth::gemini::exchange_callback_code(&auth_code, &verifier, &redirect_uri).await?;
     clear_pending_login(&pending_path);
     crate::telemetry::record_auth_success(provider_id, "oauth");
-    emit_scriptable_auth_success(
-        options.json,
-        ScriptableAuthSuccess {
-            status: "authenticated",
-            provider: provider_id.to_string(),
-            account_label: None,
-            credentials_path: Some(auth::gemini::tokens_path()?.display().to_string()),
-            email: tokens.email.clone(),
-        },
-    )?;
-    if !options.json {
-        eprintln!("Successfully logged in to Gemini!");
-        eprintln!("Tokens saved to {}", auth::gemini::tokens_path()?.display());
-        if let Some(email) = tokens.email.as_deref() {
-            eprintln!("Google account: {}", email);
-        }
-    }
-    Ok(LoginFlowOutcome::Completed)
+    let success = ScriptableAuthSuccess {
+        status: "authenticated",
+        provider: provider_id.to_string(),
+        account_label: None,
+        credentials_path: Some(auth::gemini::tokens_path()?.display().to_string()),
+        email: tokens.email.clone(),
+    };
+    Ok((success, LoginFlowOutcome::Completed))
 }
 
-pub(super) async fn complete_scriptable_antigravity_login(
+pub(super) async fn complete_scriptable_gemini_login(
     provider_id: &str,
     options: &LoginOptions,
     input: ProvidedAuthInput,
 ) -> Result<LoginFlowOutcome> {
+    let (success, outcome) = complete_scriptable_gemini_login_data(provider_id, options, input).await?;
+    emit_scriptable_auth_success(options.json, success.clone())?;
+    if !options.json {
+        eprintln!("Successfully logged in to Gemini!");
+        eprintln!("Tokens saved to {}", auth::gemini::tokens_path()?.display());
+        if let Some(email) = success.email.as_deref() {
+            eprintln!("Google account: {}", email);
+        }
+    }
+    Ok(outcome)
+}
+
+pub async fn complete_scriptable_antigravity_login_data(
+    provider_id: &str,
+    _options: &LoginOptions,
+    input: ProvidedAuthInput,
+) -> Result<(ScriptableAuthSuccess, LoginFlowOutcome)> {
     let pending_path = pending_login_path("antigravity")?;
     let PendingScriptableLogin::Antigravity {
         verifier,
@@ -457,37 +550,41 @@ pub(super) async fn complete_scriptable_antigravity_login(
     .await?;
     clear_pending_login(&pending_path);
     crate::telemetry::record_auth_success(provider_id, "oauth");
-    emit_scriptable_auth_success(
-        options.json,
-        ScriptableAuthSuccess {
-            status: "authenticated",
-            provider: provider_id.to_string(),
-            account_label: None,
-            credentials_path: Some(auth::antigravity::tokens_path()?.display().to_string()),
-            email: tokens.email.clone(),
-        },
-    )?;
+    let success = ScriptableAuthSuccess {
+        status: "authenticated",
+        provider: provider_id.to_string(),
+        account_label: None,
+        credentials_path: Some(auth::antigravity::tokens_path()?.display().to_string()),
+        email: tokens.email.clone(),
+    };
+    Ok((success, LoginFlowOutcome::Completed))
+}
+
+pub(super) async fn complete_scriptable_antigravity_login(
+    provider_id: &str,
+    options: &LoginOptions,
+    input: ProvidedAuthInput,
+) -> Result<LoginFlowOutcome> {
+    let (success, outcome) = complete_scriptable_antigravity_login_data(provider_id, options, input).await?;
+    emit_scriptable_auth_success(options.json, success.clone())?;
     if !options.json {
         eprintln!("Successfully logged in to Antigravity!");
         eprintln!(
             "Tokens saved to {}",
             auth::antigravity::tokens_path()?.display()
         );
-        if let Some(email) = tokens.email.as_deref() {
+        if let Some(email) = success.email.as_deref() {
             eprintln!("Google account: {}", email);
         }
-        if let Some(project_id) = tokens.project_id.as_deref() {
-            eprintln!("Resolved Antigravity project: {}", project_id);
-        }
     }
-    Ok(LoginFlowOutcome::Completed)
+    Ok(outcome)
 }
 
-pub(super) async fn complete_scriptable_google_login(
+pub async fn complete_scriptable_google_login_data(
     provider_id: &str,
-    options: &LoginOptions,
+    _options: &LoginOptions,
     input: ProvidedAuthInput,
-) -> Result<LoginFlowOutcome> {
+) -> Result<(ScriptableAuthSuccess, LoginFlowOutcome)> {
     let pending_path = pending_login_path("google")?;
     let PendingScriptableLogin::Google {
         verifier,
@@ -519,31 +616,37 @@ pub(super) async fn complete_scriptable_google_login(
     .await?;
     clear_pending_login(&pending_path);
     crate::telemetry::record_auth_success(provider_id, "oauth");
-    emit_scriptable_auth_success(
-        options.json,
-        ScriptableAuthSuccess {
-            status: "authenticated",
-            provider: provider_id.to_string(),
-            account_label: None,
-            credentials_path: Some(auth::google::tokens_path()?.display().to_string()),
-            email: tokens.email.clone(),
-        },
-    )?;
-    if !options.json {
-        eprintln!("Successfully logged in to Google/Gmail!");
-        if let Some(email) = tokens.email.as_deref() {
-            eprintln!("Account: {}", email);
-        }
-        eprintln!("Access tier: {}", tokens.tier.label());
-        eprintln!("Tokens saved to {}", auth::google::tokens_path()?.display());
-    }
-    Ok(LoginFlowOutcome::Completed)
+    let success = ScriptableAuthSuccess {
+        status: "authenticated",
+        provider: provider_id.to_string(),
+        account_label: None,
+        credentials_path: Some(auth::google::tokens_path()?.display().to_string()),
+        email: tokens.email.clone(),
+    };
+    Ok((success, LoginFlowOutcome::Completed))
 }
 
-pub(super) async fn complete_scriptable_copilot_login(
+pub(super) async fn complete_scriptable_google_login(
     provider_id: &str,
     options: &LoginOptions,
+    input: ProvidedAuthInput,
 ) -> Result<LoginFlowOutcome> {
+    let (success, outcome) = complete_scriptable_google_login_data(provider_id, options, input).await?;
+    emit_scriptable_auth_success(options.json, success.clone())?;
+    if !options.json {
+        eprintln!("Successfully logged in to Google/Gmail!");
+        if let Some(email) = success.email.as_deref() {
+            eprintln!("Account: {}", email);
+        }
+        eprintln!("Tokens saved to {}", auth::google::tokens_path()?.display());
+    }
+    Ok(outcome)
+}
+
+pub async fn complete_scriptable_copilot_login_data(
+    provider_id: &str,
+    _options: &LoginOptions,
+) -> Result<(ScriptableAuthSuccess, LoginFlowOutcome)> {
     let pending_path = pending_login_path("copilot")?;
     let PendingScriptableLogin::Copilot {
         device_code,
@@ -562,21 +665,27 @@ pub(super) async fn complete_scriptable_copilot_login(
     auth::copilot::save_github_token(&token, &username)?;
     clear_pending_login(&pending_path);
     crate::telemetry::record_auth_success(provider_id, "oauth_device_code");
-    emit_scriptable_auth_success(
-        options.json,
-        ScriptableAuthSuccess {
-            status: "authenticated",
-            provider: provider_id.to_string(),
-            account_label: Some(username.clone()),
-            credentials_path: Some(auth::copilot::saved_hosts_path().display().to_string()),
-            email: None,
-        },
-    )?;
+    let success = ScriptableAuthSuccess {
+        status: "authenticated",
+        provider: provider_id.to_string(),
+        account_label: Some(username.clone()),
+        credentials_path: Some(auth::copilot::saved_hosts_path().display().to_string()),
+        email: None,
+    };
+    Ok((success, LoginFlowOutcome::Completed))
+}
+
+pub(super) async fn complete_scriptable_copilot_login(
+    provider_id: &str,
+    options: &LoginOptions,
+) -> Result<LoginFlowOutcome> {
+    let (success, outcome) = complete_scriptable_copilot_login_data(provider_id, options).await?;
+    emit_scriptable_auth_success(options.json, success.clone())?;
     if !options.json {
-        eprintln!("✓ Authenticated as {} via GitHub Copilot", username);
+        eprintln!("✓ Authenticated as {} via GitHub Copilot", success.account_label.unwrap_or_default());
         eprintln!("Saved at {}", auth::copilot::saved_hosts_path().display());
     }
-    Ok(LoginFlowOutcome::Completed)
+    Ok(outcome)
 }
 
 pub(super) fn pending_login_path(key: &str) -> Result<PathBuf> {
@@ -589,7 +698,7 @@ pub(super) fn pending_login_dir() -> Result<PathBuf> {
     Ok(crate::storage::jcode_dir()?.join("pending-login"))
 }
 
-pub(super) fn require_scriptable_input(
+pub fn require_scriptable_input(
     input: Option<ProvidedAuthInput>,
 ) -> Result<ProvidedAuthInput> {
     input.ok_or_else(|| anyhow::anyhow!("No scriptable auth input was provided."))
@@ -685,6 +794,27 @@ pub(super) fn resolve_auth_input(value: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
+pub fn build_scriptable_auth_prompt(
+    provider: &str,
+    auth_url: &str,
+    input_kind: &str,
+    pending_path: &Path,
+    user_code: Option<&str>,
+    expires_at_ms: i64,
+) -> ScriptableAuthPrompt {
+    let resume_command = scriptable_resume_command(provider, input_kind);
+    ScriptableAuthPrompt {
+        status: "pending",
+        provider: provider.to_string(),
+        auth_url: auth_url.to_string(),
+        input_kind: input_kind.to_string(),
+        pending_path: pending_path.display().to_string(),
+        user_code: user_code.map(str::to_string),
+        expires_at_ms,
+        resume_command,
+    }
+}
+
 pub(super) fn emit_scriptable_auth_prompt(
     provider: &str,
     auth_url: &str,
@@ -694,17 +824,7 @@ pub(super) fn emit_scriptable_auth_prompt(
     expires_at_ms: i64,
     json: bool,
 ) -> Result<()> {
-    let resume_command = scriptable_resume_command(provider, input_kind);
-    let prompt = ScriptableAuthPrompt {
-        status: "pending",
-        provider: provider.to_string(),
-        auth_url: auth_url.to_string(),
-        input_kind: input_kind.to_string(),
-        pending_path: pending_path.display().to_string(),
-        user_code: user_code.map(str::to_string),
-        expires_at_ms,
-        resume_command: resume_command.clone(),
-    };
+    let prompt = build_scriptable_auth_prompt(provider, auth_url, input_kind, pending_path, user_code, expires_at_ms);
     if json {
         println!("{}", serde_json::to_string(&prompt)?);
     } else {
@@ -713,7 +833,7 @@ pub(super) fn emit_scriptable_auth_prompt(
             eprintln!("User code: {}", user_code);
         }
         eprintln!("Auth URL printed to stdout.");
-        eprintln!("Complete this login later with `{}`.", resume_command);
+        eprintln!("Complete this login later with `{}`.", prompt.resume_command);
         eprintln!(
             "This pending login expires at {} ms since epoch.",
             expires_at_ms

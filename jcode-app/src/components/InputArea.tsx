@@ -90,7 +90,11 @@ export function InputArea({
           {images.map((img) => (
             <div key={img.id} className="relative">
               <img
-                src={img.base64Data ? `data:${img.mediaType};base64,${img.base64Data}` : ""}
+                src={
+                  img.base64Data
+                    ? `data:${img.mediaType};base64,${img.base64Data}`
+                    : ""
+                }
                 className="w-14 h-14 rounded-lg object-cover border"
               />
               <button
@@ -121,7 +125,7 @@ export function InputArea({
           />
         </PromptInputBody>
         <PromptInputFooter>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1">
             <Button
               variant="outline"
               size="icon"
@@ -139,7 +143,7 @@ export function InputArea({
                   size="icon"
                   onClick={handleSubmit}
                   disabled={!text.trim() && images.length === 0}
-                  className="h-10 w-10 shrink-0"
+                  className="h-10 w-10 shrink-0 ml-auto"
                   title={`Queue prompt${queuedDraftCount > 0 ? ` (${queuedDraftCount} pending)` : ""}`}
                 >
                   <ListPlus className="w-4 h-4" />
@@ -158,7 +162,7 @@ export function InputArea({
               <PromptInputSubmit
                 status="ready"
                 disabled={!text.trim() && images.length === 0}
-                className="h-10 w-10 shrink-0"
+                className="h-10 w-10 shrink-0 ml-auto"
               />
             )}
           </div>
