@@ -25,6 +25,7 @@ use crate::build;
 use crate::bus::{Bus, BusEvent, SubagentStatus, ToolEvent, ToolStatus};
 use crate::cache_tracker::CacheTracker;
 use crate::compaction::CompactionEvent;
+use crate::prefix_cache_stable;
 use crate::id;
 use crate::logging;
 use crate::message::{
@@ -522,6 +523,19 @@ impl Agent {
                         self.note_compaction_applied();
                         self.persist_session_best_effort("compaction completion");
                     }
+                    let messages = if prefix_cache_stable::is_prefix_cache_stable_mode() {
+                        let (truncated, truncate_count) =
+                            prefix_cache_stable::truncate_tool_results_for_api(&messages);
+                        if truncate_count > 0 {
+                            logging::info(&format!(
+                                "Prefix-cache mode: truncated {} tool results for API",
+                                truncate_count
+                            ));
+                        }
+                        truncated
+                    } else {
+                        messages
+                    };
                     let user_count = messages
                         .iter()
                         .filter(|message| matches!(message.role, Role::User))
@@ -543,6 +557,19 @@ impl Agent {
 
         let all_messages = self.session.provider_messages();
         let messages = all_messages.to_vec();
+        let messages = if prefix_cache_stable::is_prefix_cache_stable_mode() {
+            let (truncated, truncate_count) =
+                prefix_cache_stable::truncate_tool_results_for_api(&messages);
+            if truncate_count > 0 {
+                logging::info(&format!(
+                    "Prefix-cache mode: truncated {} tool results for API (session path)",
+                    truncate_count
+                ));
+            }
+            truncated
+        } else {
+            messages
+        };
         let user_count = messages
             .iter()
             .filter(|message| matches!(message.role, Role::User))

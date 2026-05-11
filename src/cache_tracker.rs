@@ -26,6 +26,12 @@ pub struct CacheTracker {
     hash_history: VecDeque<u64>,
     /// Whether append-only was violated on the last request
     last_violation: Option<CacheViolation>,
+    /// Cumulative cache hit tokens (from provider-reported usage)
+    cache_hit_tokens: u64,
+    /// Cumulative cache miss tokens (from provider-reported usage)
+    cache_miss_tokens: u64,
+    /// Number of turns with usage data recorded
+    usage_turns: u32,
 }
 
 /// Information about a cache violation
@@ -206,6 +212,59 @@ impl CacheTracker {
     /// Check if we detected a violation on the last request
     pub fn had_violation(&self) -> bool {
         self.last_violation.is_some()
+    }
+
+    /// Record provider-reported cache usage for cache-hit-rate tracking.
+    /// Call this after each successful API response when usage data is available.
+    pub fn record_usage(&mut self, cache_read_input_tokens: Option<u64>, input_tokens: u64) {
+        if let Some(hit) = cache_read_input_tokens {
+            self.cache_hit_tokens += hit;
+            // Miss tokens = total input minus cache hits
+            let miss = input_tokens.saturating_sub(hit);
+            self.cache_miss_tokens += miss;
+        } else {
+            // Provider doesn't report cache hits; count all as miss
+            self.cache_miss_tokens += input_tokens;
+        }
+        self.usage_turns += 1;
+    }
+
+    /// Cumulative cache hit tokens
+    pub fn cache_hit_tokens(&self) -> u64 {
+        self.cache_hit_tokens
+    }
+
+    /// Cumulative cache miss tokens
+    pub fn cache_miss_tokens(&self) -> u64 {
+        self.cache_miss_tokens
+    }
+
+    /// Number of turns with usage data recorded
+    pub fn usage_turn_count(&self) -> u32 {
+        self.usage_turns
+    }
+
+    /// Cache hit rate as a ratio (0.0–1.0), or None if no usage recorded
+    pub fn cache_hit_rate(&self) -> Option<f64> {
+        let total = self.cache_hit_tokens + self.cache_miss_tokens;
+        if total == 0 {
+            return None;
+        }
+        Some(self.cache_hit_tokens as f64 / total as f64)
+    }
+
+    /// Human-readable cache hit summary
+    pub fn cache_hit_summary(&self) -> String {
+        match self.cache_hit_rate() {
+            None => "no cache usage data yet".to_string(),
+            Some(rate) => format!(
+                "cache hit: {:.1}% ({} hit / {} miss tokens over {} turns)",
+                rate * 100.0,
+                self.cache_hit_tokens,
+                self.cache_miss_tokens,
+                self.usage_turns
+            ),
+        }
     }
 }
 

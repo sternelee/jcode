@@ -49,6 +49,29 @@ impl Agent {
             // false-positive violations every turn (prior turn's memory ≠ current history prefix).
             self.record_client_cache_request(&messages);
 
+            // Preflight check for DeepSeek prefix-cache stability mode.
+            // If the payload is near the context limit, warn early so compaction
+            // can fold history before the API returns a 400.
+            if prefix_cache_stable::is_prefix_cache_stable_mode() {
+                let preflight =
+                    prefix_cache_stable::preflight_check(&messages, &tools, &self.provider.model());
+                if preflight.needs_action {
+                    logging::warn(&format!(
+                        "Prefix-cache preflight: context at {:.1}% ({} / {} tokens) — emergency fold recommended",
+                        preflight.ratio * 100.0,
+                        preflight.estimate_tokens,
+                        preflight.ctx_max,
+                    ));
+                } else if preflight.ratio > 0.5 {
+                    logging::info(&format!(
+                        "Prefix-cache preflight: context at {:.1}% ({} / {} tokens)",
+                        preflight.ratio * 100.0,
+                        preflight.estimate_tokens,
+                        preflight.ctx_max,
+                    ));
+                }
+            }
+
             // Inject memory as a user message at the end (preserves cache prefix)
             let mut messages_with_memory: Vec<Message> = messages.iter().cloned().collect();
             if let Some(memory) = memory_pending.as_ref() {
@@ -503,6 +526,13 @@ impl Agent {
                     usage_cache_read,
                     usage_cache_creation,
                 );
+                // Record cache usage for prefix-cache hit-rate tracking
+                self.cache_tracker.record_usage(usage_cache_read, usage_input.unwrap_or(0));
+                if prefix_cache_stable::is_prefix_cache_stable_mode()
+                    && self.cache_tracker.usage_turn_count() % 5 == 0
+                {
+                    logging::info(&format!("Prefix-cache stats: {}", self.cache_tracker.cache_hit_summary()));
+                }
             }
 
             if print_output
