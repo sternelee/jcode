@@ -58,7 +58,7 @@ members = [
   "crates/jcode-tui-workspace",
   "crates/jcode-update-core",
   "crates/jcode-usage-types",
-  "desktop-app/src-tauri",
+  "jcode-app/src-tauri",
 ]
 
 [lib]
@@ -97,7 +97,7 @@ tikv-jemalloc-ctl = { version = "0.6", optional = true }
 tikv-jemalloc-sys = { version = "0.6", optional = true }
 # Memory allocator (reduces fragmentation for long-running server)
 tikv-jemallocator = { version = "0.6", features = [
-  "unprefixed_malloc_on_supported_platforms"
+  "unprefixed_malloc_on_supported_platforms",
 ], optional = true }
 
 async-trait = "0.1"
@@ -113,15 +113,17 @@ tokio = { version = "1", features = [
   "rt-multi-thread",
   "signal",
   "sync",
-  "time"
+  "time",
 ] }
 
 # HTTP client
 reqwest = { version = "0.12", features = ["blocking", "json", "stream"] }
-rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
+rustls = { version = "0.23", default-features = false, features = [
+  "aws_lc_rs",
+] }
 tokio-tungstenite = { version = "0.24", default-features = false, features = [
   "connect",
-  "rustls-tls-native-roots"
+  "rustls-tls-native-roots",
 ] }
 
 # Serialization
@@ -135,19 +137,19 @@ clap = { version = "4", features = ["derive"] }
 
 # File operations
 glob = "0.3"
-ignore = "0.4"  # gitignore-aware file walking
+ignore = "0.4" # gitignore-aware file walking
 similar = "2"  # diffing for edits
 walkdir = "2"
 
 anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 # Utilities
-dirs = "5"  # home directory
-libc = "0.2"  # Unix system calls (flock)
+dirs = "5"                                        # home directory
+libc = "0.2"                                      # Unix system calls (flock)
 proctitle = "0.1"
 regex = "1"
 thiserror = "1"
-urlencoding = "2"  # URL encoding for web search
+urlencoding = "2"                                 # URL encoding for web search
 uuid = { version = "1", features = ["v4", "v5"] }
 
 # Embeddings (local inference) - behind feature flag (163 crates, slow to compile)
@@ -182,7 +184,7 @@ jcode-tui-usage-overlay = { path = "crates/jcode-tui-usage-overlay" }
 jcode-tui-workspace = { path = "crates/jcode-tui-workspace" }
 jcode-update-core = { path = "crates/jcode-update-core" }
 jcode-usage-types = { path = "crates/jcode-usage-types" }
-open = "5"  # Open URLs in browser
+open = "5"                                                                # Open URLs in browser
 rand = "0.9.3"
 sha2 = "0.10"
 url = "2"
@@ -191,14 +193,17 @@ bytes = "1"
 # Streaming
 tokio-stream = "0.1"
 
-arboard = "3"  # Clipboard support
+arboard = "3" # Clipboard support
 crossterm = { version = "0.29", features = ["event-stream"] }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }  # Only PNG/JPEG (skip avif/rav1e, exr, gif, tiff, etc)
+image = { version = "0.25", default-features = false, features = [
+  "jpeg",
+  "png",
+] } # Only PNG/JPEG (skip avif/rav1e, exr, gif, tiff, etc)
 # TUI
 ratatui = "0.30"
 
 # Markdown & syntax highlighting
-unicode-width = "0.2"  # Unicode character display width
+unicode-width = "0.2" # Unicode character display width
 
 jcode-background-types = { path = "crates/jcode-background-types" }
 jcode-batch-types = { path = "crates/jcode-batch-types" }
@@ -247,7 +252,7 @@ global-hotkey = "0.7"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
-  "Win32_System_Threading"
+  "Win32_System_Threading",
 ] }
 
 [features]

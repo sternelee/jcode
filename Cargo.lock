@@ -1994,20 +1994,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "desktop-app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "jcode",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tokio",
-]
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4094,6 +4080,20 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "serde",
+]
+
+[[package]]
+name = "jcode-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jcode",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tokio",
 ]
 
 [[package]]

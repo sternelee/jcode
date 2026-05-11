@@ -1,15 +1,15 @@
 [package]
-name = "desktop-app"
+name = "jcode-app"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [lib]
 crate-type = ["cdylib", "rlib", "staticlib"]
-name = "jcode_desktop_tauri_lib"
+name = "jcode_app_lib"
 
 [[bin]]
-name = "desktop-app"
+name = "jcode-app"
 path = "src/main.rs"
 
 [dependencies]
@@ -24,7 +24,7 @@ tokio = { version = "1", features = [
   "macros",
   "net",
   "rt-multi-thread",
-  "sync"
+  "sync",
 ] }
 
 [build-dependencies]
