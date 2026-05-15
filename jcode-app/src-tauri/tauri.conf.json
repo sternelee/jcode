@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "JCode",
@@ -17,7 +18,9 @@
         "height": 800,
         "minWidth": 600,
         "minHeight": 400,
-        "resizable": true
+        "resizable": true,
+        "acceptFirstMouse": true,
+        "tabbingIdentifier": "JCode"
       }
     ],
     "security": {

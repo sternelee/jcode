@@ -22,6 +22,68 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ToolCard } from "./ToolCard";
 
+// --- 角色颜色系统 ---
+const ROLE_PALETTE = [
+  { dot: "bg-blue-500",    name: "text-blue-600 dark:text-blue-400",    bg: "bg-blue-50 dark:bg-blue-950/20" },
+  { dot: "bg-emerald-500", name: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/20" },
+  { dot: "bg-violet-500",  name: "text-violet-600 dark:text-violet-400",  bg: "bg-violet-50 dark:bg-violet-950/20" },
+  { dot: "bg-amber-500",   name: "text-amber-600 dark:text-amber-400",   bg: "bg-amber-50 dark:bg-amber-950/20" },
+  { dot: "bg-rose-500",    name: "text-rose-600 dark:text-rose-400",    bg: "bg-rose-50 dark:bg-rose-950/20" },
+  { dot: "bg-cyan-500",    name: "text-cyan-600 dark:text-cyan-400",    bg: "bg-cyan-50 dark:bg-cyan-950/20" },
+  { dot: "bg-orange-500",  name: "text-orange-600 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-950/20" },
+  { dot: "bg-pink-500",    name: "text-pink-600 dark:text-pink-400",    bg: "bg-pink-50 dark:bg-pink-950/20" },
+] as const;
+
+function roleColorIndex(roleName: string): number {
+  let h = 0;
+  for (let i = 0; i < roleName.length; i++) {
+    h = roleName.charCodeAt(i) + ((h << 5) - h);
+  }
+  return Math.abs(h) % ROLE_PALETTE.length;
+}
+
+function formatTime(timestamp?: number): string {
+  if (!timestamp) return "";
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// --- SkeletonMessage: AI 回复加载中占位 ---
+export function SkeletonMessage({ roleName }: { roleName?: string }) {
+  const palette = roleName ? ROLE_PALETTE[roleColorIndex(roleName)] : null;
+  const initial = roleName ? roleName.charAt(0).toUpperCase() : null;
+  return (
+    <div className="flex gap-3 px-3 py-2 rounded-xl">
+      {/* 头像 */}
+      <div
+        className={cn(
+          "mt-0.5 h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-sm font-bold text-white",
+          palette ? palette.dot : "bg-muted animate-pulse",
+        )}
+      >
+        {initial}
+      </div>
+      <div className="flex-1 min-w-0 py-0.5">
+        {/* 角色名 + 时间戳占位 */}
+        {roleName && (
+          <div className={cn("text-sm font-bold mb-2", palette?.name)}>{roleName}</div>
+        )}
+        {/* 文字骨架屏 */}
+        <div className="space-y-2">
+          <div className="flex gap-2 items-center">
+            <div className="h-2.5 rounded-full bg-muted animate-pulse w-1/2" />
+            <div className="h-2.5 rounded-full bg-muted animate-pulse w-1/4" />
+          </div>
+          <div className="h-2.5 rounded-full bg-muted animate-pulse w-3/4" />
+          <div className="h-2.5 rounded-full bg-muted animate-pulse w-2/5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface MessageBubbleProps {
   message: ChatMessage;
   isStreaming?: boolean;
@@ -165,6 +227,99 @@ export function MessageBubble({
 
   const isUser = message.role === "user";
 
+  // --- Slack 风格的角色消息 ---
+  if (!isUser && message.roleName) {
+    const palette = ROLE_PALETTE[roleColorIndex(message.roleName)];
+    const initial = message.roleName.charAt(0).toUpperCase();
+    return (
+      <div
+        data-message-id={message.id}
+        className={cn(
+          "group flex gap-3 px-3 py-2 rounded-xl transition-colors hover:bg-secondary/30",
+          isHighlighted && "bg-primary/5 ring-1 ring-primary/30",
+        )}
+      >
+        {/* 角色头像 */}
+        <div
+          className={cn(
+            "mt-0.5 h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-sm font-bold text-white shadow-sm",
+            palette.dot,
+          )}
+        >
+          {initial}
+        </div>
+
+        <div className="flex-1 min-w-0">
+          {/* 头部：角色名 + 时间戳 + token */}
+          <div className="flex items-baseline gap-2 mb-1.5">
+            <span className={cn("text-sm font-bold leading-none", palette.name)}>
+              {message.roleName}
+            </span>
+            {message.timestamp && (
+              <span className="text-[11px] text-muted-foreground leading-none">
+                {formatTime(message.timestamp)}
+              </span>
+            )}
+            {message.tokenUsage && (
+              <Badge variant="outline" className="text-[10px] font-mono ml-auto">
+                ↑{message.tokenUsage.input} ↓{message.tokenUsage.output}
+              </Badge>
+            )}
+          </div>
+
+          {/* 图片 */}
+          {message.images && message.images.length > 0 && (
+            <div className="flex gap-2 mb-3 flex-wrap">
+              {message.images.map((img) => (
+                <div key={img.id} className="space-y-1">
+                  <img
+                    src={imageSrc(img)}
+                    alt={img.label || "Attached"}
+                    className="w-16 h-16 rounded-lg object-cover border"
+                  />
+                  {img.label && (
+                    <div className="max-w-28 text-[10px] text-muted-foreground truncate">
+                      {img.label}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 消息内容 */}
+          {message.content && (
+            <div className="relative">
+              <MessageResponse>{message.content}</MessageResponse>
+              {isStreaming && (
+                <span className="text-primary animate-blink ml-0.5">▌</span>
+              )}
+            </div>
+          )}
+
+          {/* 工具调用 */}
+          {message.toolExecutions.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {message.toolExecutions.map((tool) => (
+                <ToolCard key={tool.id} tool={tool} />
+              ))}
+            </div>
+          )}
+
+          {/* 操作按钒（hover 时显示） */}
+          <MessageActions>
+            <MessageAction
+              onClick={() => navigator.clipboard.writeText(message.content)}
+              label="Copy"
+            >
+              <CopyIcon className="size-3" />
+            </MessageAction>
+          </MessageActions>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       data-message-id={message.id}
@@ -200,9 +355,16 @@ export function MessageBubble({
           ) : (
             <>
               <div className="flex flex-row items-center justify-between mb-1">
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  JCode
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {message.roleName || "JCode"}
+                  </span>
+                  {message.roleName && (
+                    <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
+                      {message.roleName}
+                    </Badge>
+                  )}
+                </div>
                 {message.tokenUsage && (
                   <Badge variant="outline" className="text-[10px] font-mono">
                     ↑{message.tokenUsage.input} ↓{message.tokenUsage.output}

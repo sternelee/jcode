@@ -4088,6 +4088,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "jcode",
+ "rustls 0.23.37",
  "serde",
  "serde_json",
  "tauri",

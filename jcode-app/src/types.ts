@@ -401,6 +401,10 @@ export interface ChatMessage {
   tokenUsage?: { input: number; output: number };
   images?: AttachedImage[];
   timestamp?: number;
+  /** Role name in slack-mode workspace threads */
+  roleName?: string;
+  /** Source session id in slack-mode workspace threads */
+  roleSessionId?: string;
 }
 
 export interface AttachedImage {
@@ -462,6 +466,8 @@ export interface SessionInfo {
   provider?: string;
   status?: string;
   workingDir?: string;
+  /** Role name when this session acts as a character in slack mode */
+  roleName?: string;
   swarmId?: string;
   swarmEnabled?: boolean;
   swarmPeerCount?: number;
@@ -472,6 +478,20 @@ export interface SessionInfo {
   liveToolName?: string;
   liveStatusDetail?: string;
   livePhase?: "thinking" | "tool" | "chunking" | "waiting" | "idle";
+}
+
+export interface RoleInfo {
+  sessionId: string;
+  roleName: string;
+  model?: string;
+  provider?: string;
+  isActive: boolean;
+}
+
+export interface WorkspaceThread {
+  workingDir: string;
+  messages: ChatMessage[];
+  roles: RoleInfo[];
 }
 
 export interface Workspace {
@@ -537,4 +557,6 @@ export interface SessionState {
   activeWorkspaceId: string | null;
   expandedWorkspaces: Set<string>;
   sessionData: Record<string, PerSessionData>;
+  /** Workspace display mode: workspaceId -> "normal" | "slack" */
+  workspaceModes: Record<string, "normal" | "slack">;
 }

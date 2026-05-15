@@ -985,6 +985,7 @@ fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Value>
         "provider": provider,
         "status": effective_status,
         "working_dir": working_dir,
+        "role_name": string_field(&value, "custom_title"),
     });
 
     if let Some(swarm_plan) = swarm_plan.clone() {
@@ -1206,6 +1207,91 @@ async fn get_runtime_by_session_id(
     Ok(runtime)
 }
 
+/// 静默把 session 从磁盘加载到内存。
+/// 与 `register_runtime_and_emit` 的区别：
+///   - 不更改 active_session_id
+///   - 不发送 connection_phase / history 事件（避免干扰 Slack 模式的 UI 返回图层）
+async fn load_session_runtime_silently(
+    app_handle: &AppHandle,
+    state: &State<'_, AppState>,
+    session_id: &str,
+) -> Result<Arc<SessionRuntime>, String> {
+    eprintln!("[load_silently] loading session={} from disk", session_id);
+    let session = Session::load(session_id)
+        .map_err(|e| format!("Session not found and cannot be auto-loaded: {session_id}: {e}"))?;
+    let provider = create_provider().await?;
+    if let Some(ref model) = session.model {
+        let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), model);
+    }
+    let working_dir = session.working_dir.clone();
+    let mut agent =
+        create_agent_with_session(provider, session, working_dir.as_deref()).await?;
+    let cancel_signal = agent.graceful_shutdown_signal();
+    let (_stdin_tx, mut stdin_rx) = setup_stdin_channel(&mut agent);
+    let runtime = Arc::new(SessionRuntime::new(
+        session_id.to_string(),
+        agent,
+        cancel_signal,
+    ));
+    {
+        state
+            .runtimes
+            .lock()
+            .await
+            .insert(session_id.to_string(), runtime.clone());
+    }
+    eprintln!("[load_silently] session={} registered in runtimes", session_id);
+    // 通知前端该 session 已连接（只更新 sessionData，不改 active session）
+    app_handle
+        .emit(
+            "server-event",
+            &serde_json::json!({
+                "type": "connection_phase",
+                "phase": "connected",
+                "session_id": session_id,
+            }),
+        )
+        .ok();
+    // stdin 转发（仅当 session 恰好是 active 时才弹出）
+    let handle = app_handle.clone();
+    let pending = state.pending_stdin.clone();
+    let active_session_id = state.active_session_id.clone();
+    let rt_for_stdin = runtime.clone();
+    tokio::spawn(async move {
+        while let Some(req) = stdin_rx.recv().await {
+            let rid = req.request_id.clone();
+            pending.lock().await.insert(rid.clone(), req.response_tx);
+            if active_session_id.lock().await.as_deref() == Some(&rt_for_stdin.session_id) {
+                handle
+                    .emit(
+                        "server-event",
+                        &serde_json::json!({
+                            "type": "stdin_request",
+                            "request_id": rid,
+                            "prompt": req.prompt,
+                            "is_password": req.is_password,
+                            "tool_call_id": "",
+                        }),
+                    )
+                    .ok();
+            }
+        }
+    });
+    Ok(runtime)
+}
+
+/// 获取内存中的 runtime，若不存在则从磁盘静默加载。
+async fn get_or_load_session_runtime(
+    app_handle: &AppHandle,
+    state: &State<'_, AppState>,
+    session_id: &str,
+) -> Result<Arc<SessionRuntime>, String> {
+    if let Ok(rt) = get_runtime_by_session_id(state, session_id).await {
+        return Ok(rt);
+    }
+    load_session_runtime_silently(app_handle, state, session_id).await
+}
+
 async fn emit_runtime_snapshot(app_handle: &AppHandle, runtime: &Arc<SessionRuntime>) -> Result<(), String> {
     let session_id = runtime.session_id.clone();
     let snapshot = if let Ok(agent) = runtime.agent.try_lock() {
@@ -1219,10 +1305,24 @@ async fn emit_runtime_snapshot(app_handle: &AppHandle, runtime: &Arc<SessionRunt
             .map(serialize_model_route)
             .collect();
         // When an OpenAI-compatible profile (e.g. DeepSeek) is active, the
-        // underlying provider is OpenRouter but we want to show the profile id.
+        // underlying provider is OpenRouter/OpenAI but we want to show the
+        // model family instead of the transport provider.
         let provider_name = {
             let name = provider.name().to_string();
-            if name.eq_ignore_ascii_case("openrouter") {
+            let model = provider.model().to_string().to_lowercase();
+            if model.starts_with("deepseek") {
+                "DeepSeek".to_string()
+            } else if model.starts_with("claude") || model.starts_with("anthropic") {
+                "Anthropic".to_string()
+            } else if model.starts_with("gemini") || model.starts_with("gemma") {
+                "Google".to_string()
+            } else if model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3") {
+                "OpenAI".to_string()
+            } else if model.starts_with("llama") || model.starts_with("codellama") {
+                "Meta".to_string()
+            } else if model.starts_with("qwen") || model.starts_with("qwq") {
+                "Alibaba".to_string()
+            } else if name.eq_ignore_ascii_case("openrouter") {
                 std::env::var("JCODE_OPENROUTER_CACHE_NAMESPACE")
                     .ok()
                     .filter(|s| !s.is_empty())
@@ -1365,6 +1465,7 @@ async fn begin_session(
     working_dir: Option<String>,
     model: Option<String>,
     memory_enabled: Option<bool>,
+    role_name: Option<String>,
 ) -> Result<(), String> {
     let provider = create_provider().await?;
     if let Some(ref model_name) = model {
@@ -1376,6 +1477,9 @@ async fn begin_session(
     session.working_dir = working_dir.clone();
     session.model = Some(provider.model());
     session.provider_key = jcode::session::derive_session_provider_key(provider.name());
+    if let Some(name) = role_name {
+        session.rename_title(Some(name));
+    }
 
     let mut agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
     let resolved_memory_enabled = memory_enabled.unwrap_or_else(|| {
@@ -1428,7 +1532,21 @@ async fn send_message(
     images: Option<Vec<(String, String)>>,
     system_reminder: Option<String>,
 ) -> Result<(), String> {
-    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
+    eprintln!("[send_message] → session={} content={:?}",
+        session_id,
+        content.chars().take(60).collect::<String>());
+
+    // 若 runtime 不在内存（Slack 模式下历史会话尚未加载），则静默从磁盘加载
+    let runtime = match get_or_load_session_runtime(&app_handle, &state, &session_id).await {
+        Ok(rt) => {
+            eprintln!("[send_message] runtime ready (session={})", session_id);
+            rt
+        }
+        Err(e) => {
+            eprintln!("[send_message] ERROR: runtime not found: {e}");
+            return Err(e);
+        }
+    };
     {
         let mut processing = runtime.is_processing.lock().await;
         *processing = true;
@@ -1582,6 +1700,9 @@ async fn send_message(
                 if let Some(obj) = payload.as_object_mut() {
                     obj.insert("session_id".to_string(), serde_json::json!(sid));
                 }
+                eprintln!("[send_message] emit event type={} session={}",
+                    payload.get("type").and_then(|v| v.as_str()).unwrap_or("?"),
+                    sid);
                 rh.emit("server-event", &payload).ok();
             }
         });
@@ -1592,12 +1713,15 @@ async fn send_message(
             .await
             .run_once_streaming_mpsc(&content, images.unwrap_or_default(), system_reminder, tx)
             .await;
+        eprintln!("[send_message] agent run finished session={} ok={}",
+            session_id_for_spawn, result.is_ok());
         reader.await.ok();
         runtime.cancel_signal.reset();
         *runtime.is_processing.lock().await = false;
         *runtime.current_tool_name.lock().await = None;
 
         if let Err(e) = result {
+            eprintln!("[send_message] agent ERROR session={}: {e:#}", session_id_for_spawn);
             handle
                 .emit(
                     "server-event",
@@ -1703,6 +1827,27 @@ fn delete_session_artifacts(session_id: &str) -> Result<(), String> {
         fs::remove_file(&journal_path)
             .map_err(|e| format!("Failed to remove {}: {e}", journal_path.display()))?;
     }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn rename_session(session_id: String, title: String) -> Result<(), String> {
+    let session_path = jcode::session::session_path(&session_id)
+        .map_err(|e| format!("Failed to resolve session path for {session_id}: {e}"))?;
+    if !session_path.exists() {
+        return Err(format!("Session file not found for {session_id}"));
+    }
+
+    let raw = fs::read_to_string(&session_path)
+        .map_err(|e| format!("failed to read {}: {e}", session_path.display()))?;
+    let mut value: Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("failed to parse {}: {e}", session_path.display()))?;
+
+    value["custom_title"] = serde_json::json!(title.trim());
+
+    fs::write(&session_path, serde_json::to_string_pretty(&value).unwrap_or_default())
+        .map_err(|e| format!("failed to write {}: {e}", session_path.display()))?;
 
     Ok(())
 }
@@ -2393,6 +2538,9 @@ async fn compact_context(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // rustls 0.23 当同时编译了多个 provider（ring + aws-lc-rs）时不能自动选择，
+    // 必须在任何 TLS 连接前显式安装。使用 ring（轻量、广泛支持）。
+    let _ = rustls::crypto::ring::default_provider().install_default();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
@@ -2423,6 +2571,7 @@ pub fn run() {
             rewind_chat,
             set_reasoning_effort,
             compact_context,
+            rename_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

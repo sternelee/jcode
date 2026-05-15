@@ -50,6 +50,12 @@ pub struct AppState {
     pub live_swarm_proposals: Arc<Mutex<HashMap<String, serde_json::Value>>>,
 }
 
+impl Default for AppState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AppState {
     pub fn new() -> Self {
         Self {
