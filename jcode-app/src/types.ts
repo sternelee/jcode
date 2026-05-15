@@ -607,6 +607,13 @@ export interface UsageProvider {
 	error?: string;
 }
 
+export interface PairedDeviceInfo {
+	id: string;
+	name: string;
+	paired_at: string;
+	last_seen: string;
+}
+
 export interface UsageInfo {
 	providers: UsageProvider[];
 }

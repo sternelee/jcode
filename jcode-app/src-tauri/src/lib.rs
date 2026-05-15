@@ -1963,6 +1963,40 @@ fn get_memory_stats() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+fn generate_pairing_code() -> Result<String, String> {
+    let mut registry = jcode::gateway::DeviceRegistry::load();
+    let code = registry.generate_pairing_code();
+    Ok(code)
+}
+
+#[tauri::command]
+fn list_paired_devices() -> Result<serde_json::Value, String> {
+    let registry = jcode::gateway::DeviceRegistry::load();
+    let devices: Vec<serde_json::Value> = registry
+        .devices
+        .into_iter()
+        .map(|d| {
+            serde_json::json!({
+                "id": d.id,
+                "name": d.name,
+                "paired_at": d.paired_at,
+                "last_seen": d.last_seen,
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({ "devices": devices }))
+}
+
+#[tauri::command]
+fn revoke_device(device_id: String) -> Result<(), String> {
+    let mut registry = jcode::gateway::DeviceRegistry::load();
+    registry.devices.retain(|d| d.id != device_id);
+    registry
+        .save()
+        .map_err(|e| format!("Failed to save device registry: {e}"))
+}
+
+#[tauri::command]
 fn get_version_info() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
         "version": option_env!("JCODE_VERSION").unwrap_or("unknown"),
@@ -2800,6 +2834,9 @@ pub fn run() {
             get_memory_list,
             search_memories,
             get_memory_stats,
+            generate_pairing_code,
+            list_paired_devices,
+            revoke_device,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
