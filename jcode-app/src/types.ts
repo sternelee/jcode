@@ -588,3 +588,21 @@ export interface AuthStatus {
   any_available: boolean;
   providers: AuthStatusProvider[];
 }
+
+export interface UsageLimit {
+  name: string;
+  usage_percent: number;
+  resets_at?: string;
+}
+
+export interface UsageProvider {
+  provider_name: string;
+  limits: UsageLimit[];
+  extra_info: [string, string][];
+  hard_limit_reached: boolean;
+  error?: string;
+}
+
+export interface UsageInfo {
+  providers: UsageProvider[];
+}

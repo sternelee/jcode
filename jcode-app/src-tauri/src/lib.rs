@@ -1860,6 +1860,28 @@ fn get_auth_status() -> Result<serde_json::Value, String> {
     }))
 }
 
+#[tauri::command]
+async fn get_usage_info() -> Result<serde_json::Value, String> {
+    let providers = jcode::usage::fetch_all_provider_usage().await;
+    let reports: Vec<serde_json::Value> = providers
+        .into_iter()
+        .map(|provider| {
+            serde_json::json!({
+                "provider_name": provider.provider_name,
+                "limits": provider.limits.into_iter().map(|limit| serde_json::json!({
+                    "name": limit.name,
+                    "usage_percent": limit.usage_percent,
+                    "resets_at": limit.resets_at,
+                })).collect::<Vec<_>>(),
+                "extra_info": provider.extra_info.into_iter().map(|(k, v)| serde_json::json!([k, v])).collect::<Vec<_>>(),
+                "hard_limit_reached": provider.hard_limit_reached,
+                "error": provider.error,
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({ "providers": reports }))
+}
+
 fn delete_session_artifacts(session_id: &str) -> Result<(), String> {
     let session_path = jcode::session::session_path(session_id)
         .map_err(|e| format!("Failed to resolve session path for {session_id}: {e}"))?;
@@ -2624,6 +2646,7 @@ pub fn run() {
             rename_session,
             get_version_info,
             get_auth_status,
+            get_usage_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
