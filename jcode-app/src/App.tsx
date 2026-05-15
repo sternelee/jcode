@@ -7,7 +7,6 @@ import { StdinInputModal } from "@/components/StdinInputModal";
 import { SessionSwitcherDialog } from "@/components/SessionSwitcherDialog";
 import { ActivityPanel } from "@/components/ActivityPanel";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useState, useEffect, useRef } from "react";
@@ -334,9 +333,10 @@ export default function App() {
 	};
 
 	// 自动连接：用户发送第一条消息时若未连接，先创建会话再发送
-	const pendingAutoSend = useRef<
-		{ content: string; images?: [string, string][] } | null
-	>(null);
+	const pendingAutoSend = useRef<{
+		content: string;
+		images?: [string, string][];
+	} | null>(null);
 	useEffect(() => {
 		if (state.connected && state.sessionId && pendingAutoSend.current) {
 			const { content, images } = pendingAutoSend.current;
@@ -427,45 +427,36 @@ export default function App() {
 						<FolderOpen className="w-3.5 h-3.5" />
 						{state.workingDir ? "Change" : "Select Workspace"}
 					</Button>
-					<Input
-						value={preferredModel}
-						onChange={(e) => setPreferredModel(e.target.value)}
-						placeholder="Model (optional)"
-						className="h-8 text-xs w-48"
-					/>
 					<Button
 						variant={effectiveMemoryEnabled ? "secondary" : "outline"}
 						size="sm"
-						onClick={() =>
-							void handleSetMemoryEnabled(!effectiveMemoryEnabled)
-						}
+						onClick={() => void handleSetMemoryEnabled(!effectiveMemoryEnabled)}
 						className="h-8 text-xs gap-1.5"
 					>
 						<Brain className="w-3.5 h-3.5" />
 						Memory default {effectiveMemoryEnabled ? "on" : "off"}
 					</Button>
-					{state.connected && (
-						<>
-							<ModelSelector
-								currentModel={state.providerModel}
-								currentProvider={state.providerName}
-								onSelectModel={(model, profileId) =>
-									setModel(model, profileId, state.sessionId || undefined)
-								}
-								disabled={state.isProcessing}
-							/>
-							{state.providerName && (
-								<Badge variant="outline" className="h-5 text-[10px] gap-1">
-									<Brain className="w-2.5 h-2.5" />
-									{state.providerName}
-								</Badge>
-							)}
-							{state.availableModelRoutes.length > 0 && (
-								<Badge variant="secondary" className="h-5 text-[10px]">
-									{state.availableModelRoutes.length} routes
-								</Badge>
-							)}
-						</>
+					<ModelSelector
+						currentModel={state.providerModel || preferredModel || null}
+						currentProvider={state.providerName}
+						onSelectModel={(model, profileId) => {
+							setPreferredModel(model);
+							if (state.sessionId) {
+								setModel(model, profileId, state.sessionId);
+							}
+						}}
+						disabled={false}
+					/>
+					{state.providerName && (
+						<Badge variant="outline" className="h-5 text-[10px] gap-1">
+							<Brain className="w-2.5 h-2.5" />
+							{state.providerName}
+						</Badge>
+					)}
+					{state.availableModelRoutes.length > 0 && (
+						<Badge variant="secondary" className="h-5 text-[10px]">
+							{state.availableModelRoutes.length} routes
+						</Badge>
 					)}
 					{state.isProcessing && (
 						<Badge variant="default" className="h-5 text-[10px] gap-1">
