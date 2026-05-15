@@ -1705,6 +1705,26 @@ export function useJcodeSession() {
 		[],
 	);
 
+	const triggerAmbient = useCallback(async () => {
+		try {
+			await invoke("trigger_ambient");
+			return true;
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return false;
+		}
+	}, []);
+
+	const stopAmbient = useCallback(async () => {
+		try {
+			await invoke("stop_ambient");
+			return true;
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return false;
+		}
+	}, []);
+
 	return {
 		state,
 		connect,
@@ -1740,6 +1760,8 @@ export function useJcodeSession() {
 		runAuthTest,
 		getPermissionRequests,
 		respondToPermission,
+		triggerAmbient,
+		stopAmbient,
 		setError,
 	};
 }

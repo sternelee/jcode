@@ -56,6 +56,8 @@ export default function App() {
 		runAuthDoctor,
 		getPermissionRequests,
 		respondToPermission,
+		triggerAmbient,
+		stopAmbient,
 		setError,
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
@@ -710,6 +712,8 @@ export default function App() {
 					runAuthDoctor={runAuthDoctor}
 					getPermissionRequests={getPermissionRequests}
 					respondToPermission={respondToPermission}
+					triggerAmbient={triggerAmbient}
+					stopAmbient={stopAmbient}
 				/>
 			</div>
 		</div>

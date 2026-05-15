@@ -86,6 +86,8 @@ interface ActivityPanelProps {
 		approved: boolean,
 		message?: string,
 	) => Promise<boolean>;
+	triggerAmbient?: () => Promise<boolean>;
+	stopAmbient?: () => Promise<boolean>;
 }
 
 type SegmentKind =
@@ -535,6 +537,8 @@ export function ActivityPanel({
 	runAuthDoctor,
 	getPermissionRequests,
 	respondToPermission,
+	triggerAmbient,
+	stopAmbient,
 }: ActivityPanelProps) {
 	const [expandedTurnIds, setExpandedTurnIds] = useState<string[]>([]);
 	const [selectedSwarmTaskId, setSelectedSwarmTaskId] = useState<string | null>(
@@ -3744,6 +3748,45 @@ export function ActivityPanel({
 									<RotateCcw className="w-3 h-3 mr-1" />
 									Refresh
 								</Button>
+								{triggerAmbient && (
+									<Button
+										variant="secondary"
+										size="sm"
+										className="h-6 px-2 text-[10px]"
+										disabled={
+											ambientStatus?.status === "running" ||
+											ambientStatus?.status === "disabled"
+										}
+										onClick={() => {
+											void triggerAmbient().then((ok: boolean) => {
+												if (ok) {
+													void refreshAmbient();
+													void refreshAmbientTranscripts();
+												}
+											});
+										}}
+									>
+										Trigger
+									</Button>
+								)}
+								{stopAmbient && (
+									<Button
+										variant="outline"
+										size="sm"
+										className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
+										disabled={ambientStatus?.status === "disabled"}
+										onClick={() => {
+											void stopAmbient().then((ok: boolean) => {
+												if (ok) {
+													void refreshAmbient();
+													void refreshAmbientTranscripts();
+												}
+											});
+										}}
+									>
+										Stop
+									</Button>
+								)}
 							</div>
 						</div>
 						{ambientStatus ? (

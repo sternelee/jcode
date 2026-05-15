@@ -3117,6 +3117,25 @@ async fn respond_to_permission(
         .map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn trigger_ambient() -> Result<(), String> {
+    let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
+    if matches!(
+        state.status,
+        jcode::ambient::AmbientStatus::Scheduled { .. } | jcode::ambient::AmbientStatus::Idle
+    ) {
+        state.status = jcode::ambient::AmbientStatus::Idle;
+    }
+    state.save().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn stop_ambient() -> Result<(), String> {
+    let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
+    state.status = jcode::ambient::AmbientStatus::Disabled;
+    state.save().map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // rustls 0.23 当同时编译了多个 provider（ring + aws-lc-rs）时不能自动选择，
@@ -3173,6 +3192,8 @@ pub fn run() {
             cancel_background_task,
             get_permission_requests,
             respond_to_permission,
+            trigger_ambient,
+            stop_ambient,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

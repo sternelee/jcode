@@ -34,7 +34,7 @@ jcode CLI/TUI 有大量功能是 jcode-app 没有的，需要逐一迁移并适�
 
 - [x] Ambient status：展示 ambient 模式运行状态（ActivityPanel Ambient section，状态/最后运行/总周期/scheduled items）
 - [x] Ambient log：展示最近 ambient 活动日志（ActivityPanel 显示最近 5 条 transcripts）
-- [ ] Ambient trigger/stop：提供手动触发和停止按钮
+- [x] Ambient trigger/stop：提供手动触发和停止按钮（ActivityPanel Ambient section Trigger/Stop 按钮）
 
 ### Phase 5: 配置与系统工具
 
