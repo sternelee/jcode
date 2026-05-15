@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, Square, AtSign } from "lucide-react";
+import { Plus, Square, AtSign, Pause } from "lucide-react";
 import type { AttachedImage } from "@/types";
 import { cn } from "@/lib/utils";
 import {
@@ -23,6 +23,8 @@ interface InputAreaProps {
     targetRole?: string,
   ) => void;
   onCancel: () => void;
+  /** Send a soft-interrupt message to the running agent */
+  onSoftInterrupt?: (content: string) => void;
   isProcessing: boolean;
   disabled?: boolean;
   queuedDraftCount?: number;
@@ -35,6 +37,7 @@ export function InputArea({
   onSend,
   onQueueSend,
   onCancel,
+  onSoftInterrupt,
   isProcessing,
   disabled = false,
   queuedDraftCount = 0,
@@ -288,6 +291,23 @@ export function InputArea({
                   ? `responding · ${queuedDraftCount} queued`
                   : "responding"}
               </div>
+            )}
+
+            {/* 软中断 / 暂停按钒 */}
+            {isProcessing && onSoftInterrupt && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  const content = text.trim() || "Pause execution to review the current state and respond to user input.";
+                  onSoftInterrupt(content);
+                  setText("");
+                }}
+                className="h-10 w-10 shrink-0 text-muted-foreground hover:text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-900/20"
+                title="Soft interrupt — pause agent and inject message"
+              >
+                <Pause className="w-4 h-4" />
+              </Button>
             )}
 
             {/* 取消按钒（独立 ghost） */}

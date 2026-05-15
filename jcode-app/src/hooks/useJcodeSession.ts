@@ -1219,6 +1219,21 @@ export function useJcodeSession() {
 		[state.queuedDrafts.length],
 	);
 
+	const sendSoftInterrupt = useCallback(
+		async (content: string, sessionId?: string) => {
+			try {
+				await invoke("send_soft_interrupt", {
+					sessionId,
+					content,
+					urgent: false,
+				});
+			} catch (e) {
+				dispatch({ type: "SET_ERROR", message: String(e), sessionId });
+			}
+		},
+		[],
+	);
+
 	const cancel = useCallback(async (sessionId?: string) => {
 		try {
 			await invoke("cancel", { sessionId });
@@ -1599,6 +1614,7 @@ export function useJcodeSession() {
 		sendMessage,
 		queueMessage,
 		cancel,
+		sendSoftInterrupt,
 		setModel,
 		listSessions,
 		sendStdinResponse,

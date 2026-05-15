@@ -1747,6 +1747,22 @@ async fn cancel(state: State<'_, AppState>, session_id: String) -> Result<(), St
 }
 
 #[tauri::command]
+async fn send_soft_interrupt(
+    state: State<'_, AppState>,
+    session_id: String,
+    content: String,
+    urgent: bool,
+) -> Result<(), String> {
+    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
+    runtime
+        .agent
+        .lock()
+        .await
+        .queue_soft_interrupt(content, urgent, jcode::agent::SoftInterruptSource::User);
+    Ok(())
+}
+
+#[tauri::command]
 async fn set_model(
     app_handle: AppHandle,
     state: State<'_, AppState>,
@@ -2627,6 +2643,7 @@ pub fn run() {
             resume_session,
             send_message,
             cancel,
+            send_soft_interrupt,
             set_model,
             set_memory_enabled,
             get_workspace_memory_preferences,

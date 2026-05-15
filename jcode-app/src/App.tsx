@@ -34,6 +34,7 @@ export default function App() {
 		switchSession,
 		sendMessage,
 		cancel,
+		sendSoftInterrupt,
 		setModel,
 		listSessions,
 		sendStdinResponse,
@@ -643,6 +644,15 @@ export default function App() {
 								.forEach((s) => void cancel(s.sessionId));
 						} else {
 							void cancel(state.sessionId || undefined);
+						}
+					}}
+					onSoftInterrupt={(content) => {
+						if (isSlackMode) {
+							workspaceSessions
+								.filter((s) => state.sessionData[s.sessionId]?.isProcessing)
+								.forEach((s) => void sendSoftInterrupt(content, s.sessionId));
+						} else {
+							void sendSoftInterrupt(content, state.sessionId || undefined);
 						}
 					}}
 					onClearChat={() => clearChat(state.sessionId || undefined)}

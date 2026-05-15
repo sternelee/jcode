@@ -63,6 +63,8 @@ interface ChatViewProps {
 		targetRole?: string,
 	) => void;
 	onCancel: () => void;
+	/** Send a soft-interrupt message to the running agent */
+	onSoftInterrupt?: (content: string) => void;
 	onClearChat: () => void;
 	onRewindChat: () => void;
 	onSetReasoningEffort: (effort: string) => void;
@@ -192,6 +194,7 @@ export function ChatView({
 	onSend,
 	onQueueSend,
 	onCancel,
+	onSoftInterrupt,
 	onClearChat,
 	onRewindChat,
 	onSetReasoningEffort,
@@ -552,6 +555,7 @@ export function ChatView({
 				onSend={onSend}
 				onQueueSend={onQueueSend}
 				onCancel={onCancel}
+				onSoftInterrupt={onSoftInterrupt}
 				isProcessing={isProcessing}
 				queuedDraftCount={queuedDraftCount}
 				availableRoles={availableRoles}
