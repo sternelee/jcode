@@ -1656,7 +1656,20 @@ export function useJcodeSession() {
 
 	const runAuthDoctor = useCallback(async () => {
 		try {
-			return await invoke<import("@/types").AuthDoctorReport>("run_auth_doctor");
+			return await invoke<import("@/types").AuthDoctorReport>(
+				"run_auth_doctor",
+			);
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return null;
+		}
+	}, []);
+
+	const runAuthTest = useCallback(async (providerId?: string) => {
+		try {
+			return await invoke<import("@/types").AuthTestResult>("run_auth_test", {
+				providerId: providerId || null,
+			});
 		} catch (e) {
 			dispatch({ type: "SET_ERROR", message: String(e) });
 			return null;
@@ -1695,6 +1708,7 @@ export function useJcodeSession() {
 		listBackgroundTasks,
 		cancelBackgroundTask,
 		runAuthDoctor,
+		runAuthTest,
 		setError,
 	};
 }

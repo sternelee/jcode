@@ -2096,6 +2096,44 @@ fn revoke_device(device_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn run_auth_test(provider_id: Option<String>) -> Result<serde_json::Value, String> {
+    let provider = create_provider().await?;
+    
+    // If a specific provider_id is given, try to set a model from that provider
+    // to ensure we're testing the right provider.
+    if let Some(pid) = provider_id.as_deref().filter(|s| !s.is_empty()) {
+        let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), pid);
+    }
+
+    let prefetch_result = provider.prefetch_models().await;
+    let routes = provider.model_routes();
+    let available_count = routes.iter().filter(|r| r.available).count();
+    let total_count = routes.len();
+    let current_model = provider.model();
+    let provider_name = provider.name().to_string();
+
+    match prefetch_result {
+        Ok(()) => Ok(serde_json::json!({
+            "success": true,
+            "provider": provider_name,
+            "model": current_model,
+            "total_routes": total_count,
+            "available_routes": available_count,
+            "detail": format!("Provider '{}' prefetch succeeded. {}/{} routes available.", provider_name, available_count, total_count),
+        })),
+        Err(e) => Ok(serde_json::json!({
+            "success": false,
+            "provider": provider_name,
+            "model": current_model,
+            "total_routes": total_count,
+            "available_routes": available_count,
+            "error": format!("{e:#}"),
+            "detail": format!("Provider '{}' prefetch failed: {e:#}", provider_name),
+        })),
+    }
+}
+
+#[tauri::command]
 fn get_ambient_status() -> Result<serde_json::Value, String> {
     use jcode::ambient::{AmbientManager, AmbientStatus};
     let manager = AmbientManager::new().map_err(|e| format!("Failed to load ambient manager: {e}"))?;
@@ -3088,6 +3126,7 @@ pub fn run() {
             get_usage_info,
             get_ambient_status,
             get_ambient_transcripts,
+            run_auth_test,
             get_memory_list,
             search_memories,
             get_memory_stats,

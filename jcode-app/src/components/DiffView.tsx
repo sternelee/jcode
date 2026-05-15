@@ -238,7 +238,7 @@ function SideBySideDiff({ file }: SideBySideDiffProps) {
 								{row.left?.oldLineNum ?? ""}
 							</span>
 							<code className="break-all whitespace-pre-wrap min-w-0">
-								{row.left ? (row.left.content || " ") : " "}
+								{row.left ? row.left.content || " " : " "}
 							</code>
 						</div>
 					))}
@@ -258,7 +258,7 @@ function SideBySideDiff({ file }: SideBySideDiffProps) {
 								{row.right?.newLineNum ?? ""}
 							</span>
 							<code className="break-all whitespace-pre-wrap min-w-0">
-								{row.right ? (row.right.content || " ") : " "}
+								{row.right ? row.right.content || " " : " "}
 							</code>
 						</div>
 					))}
@@ -286,7 +286,9 @@ export function DiffView({ text, className }: DiffViewProps) {
 	}
 
 	return (
-		<div className={cn("rounded border border-border overflow-hidden", className)}>
+		<div
+			className={cn("rounded border border-border overflow-hidden", className)}
+		>
 			<div className="flex items-center justify-between px-2 py-1 border-b border-border bg-muted/20">
 				<span className="text-[10px] text-muted-foreground">
 					{files.length} file{files.length === 1 ? "" : "s"} changed
@@ -316,41 +318,48 @@ export function DiffView({ text, className }: DiffViewProps) {
 				{mode === "inline" ? (
 					<div className="space-y-0">
 						{files.map((file, fileIdx) => (
-							<div key={fileIdx} className="border-b border-border last:border-b-0">
+							<div
+								key={fileIdx}
+								className="border-b border-border last:border-b-0"
+							>
 								{file.oldFile && file.newFile && (
 									<div className="text-[10px] text-muted-foreground px-2 py-1 bg-muted/20 truncate">
 										{file.oldFile} → {file.newFile}
 									</div>
-									)}
-									{file.hunks.map((hunk, hunkIdx) => (
-										<div key={hunkIdx}>
-											<div className="text-[10px] text-muted-foreground px-2 py-0.5 bg-muted/10 font-mono">
-												@@ -{hunk.oldStart},{hunk.oldCount} +{hunk.newStart},{hunk.newCount} @@
-											</div>
-											{hunk.lines.map((line, lineIdx) => (
-												<InlineDiffRow
-													key={`${fileIdx}-${hunkIdx}-${lineIdx}`}
-													line={line}
-												/>
-											))}
+								)}
+								{file.hunks.map((hunk, hunkIdx) => (
+									<div key={hunkIdx}>
+										<div className="text-[10px] text-muted-foreground px-2 py-0.5 bg-muted/10 font-mono">
+											@@ -{hunk.oldStart},{hunk.oldCount} +{hunk.newStart},
+											{hunk.newCount} @@
 										</div>
-									))}
-								</div>
-							))}
-						</div>
-					) : (
-						<div className="space-y-0">
-							{files.map((file, fileIdx) => (
-								<div key={fileIdx} className="border-b border-border last:border-b-0">
-									<SideBySideDiff file={file} />
-								</div>
-							))}
-						</div>
-					)}
-				</div>
+										{hunk.lines.map((line, lineIdx) => (
+											<InlineDiffRow
+												key={`${fileIdx}-${hunkIdx}-${lineIdx}`}
+												line={line}
+											/>
+										))}
+									</div>
+								))}
+							</div>
+						))}
+					</div>
+				) : (
+					<div className="space-y-0">
+						{files.map((file, fileIdx) => (
+							<div
+								key={fileIdx}
+								className="border-b border-border last:border-b-0"
+							>
+								<SideBySideDiff file={file} />
+							</div>
+						))}
+					</div>
+				)}
 			</div>
-		);
-	}
+		</div>
+	);
+}
 
 export function maybeRenderDiff(text: string): React.ReactNode | null {
 	if (!looksLikeDiff(text)) return null;

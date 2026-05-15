@@ -694,6 +694,16 @@ export interface AuthDoctorReport {
 	providers: AuthDoctorProvider[];
 }
 
+export interface AuthTestResult {
+	success: boolean;
+	provider: string;
+	model: string;
+	total_routes: number;
+	available_routes: number;
+	error?: string;
+	detail: string;
+}
+
 export interface AmbientScheduleItem {
 	id: string;
 	scheduled_for: string;

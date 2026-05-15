@@ -579,8 +579,12 @@ export function ActivityPanel({
 		import("@/types").BackgroundTask[] | null
 	>(null);
 	const [authDoctor, setAuthDoctor] = useState<AuthDoctorReport | null>(null);
-	const [ambientStatus, setAmbientStatus] = useState<AmbientStatusInfo | null>(null);
-	const [ambientTranscripts, setAmbientTranscripts] = useState<AmbientTranscript[] | null>(null);
+	const [ambientStatus, setAmbientStatus] = useState<AmbientStatusInfo | null>(
+		null,
+	);
+	const [ambientTranscripts, setAmbientTranscripts] = useState<
+		AmbientTranscript[] | null
+	>(null);
 
 	const segments = useMemo(() => buildSegments(messages), [messages]);
 	const turns = useMemo(() => buildTimeline(segments), [segments]);
@@ -982,7 +986,9 @@ export function ActivityPanel({
 
 	const refreshAmbientTranscripts = async () => {
 		try {
-			const result = await invoke<{ transcripts: AmbientTranscript[] }>("get_ambient_transcripts");
+			const result = await invoke<{ transcripts: AmbientTranscript[] }>(
+				"get_ambient_transcripts",
+			);
 			setAmbientTranscripts(result.transcripts);
 		} catch {
 			// ignore
@@ -2995,111 +3001,119 @@ export function ActivityPanel({
 						)}
 					</section>
 
-				<Separator />
+					<Separator />
 
-				<section className="space-y-2">
-					<div className="flex items-center justify-between">
-						<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-							Auth doctor
-						</div>
-						<div className="flex items-center gap-2">
-							<Badge variant="outline" className="text-[10px]">
-								{authDoctor?.needs_attention_count ?? "–"}
-							</Badge>
-							<Button
-								variant="ghost"
-								size="sm"
-								className="h-6 px-2 text-[10px]"
-								onClick={() => void refreshAuthDoctor()}
-							>
-								<Wrench className="w-3 h-3 mr-1" />
-								Run
-							</Button>
-						</div>
-					</div>
-					{authDoctor ? (
-						<div className="space-y-2">
-							{authDoctor.needs_attention_count > 0 && (
-								<div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs">
-									<div className="flex items-center gap-2">
-										<TriangleAlert className="w-3.5 h-3.5 text-destructive" />
-										<span className="font-medium">
-											{authDoctor.needs_attention_count} provider{authDoctor.needs_attention_count === 1 ? "" : "s"} need attention
-										</span>
-									</div>
-								</div>
-							)}
-							{authDoctor.providers.map((provider) => (
-								<div
-									key={provider.id}
-									className="rounded-lg border bg-card p-3 space-y-1.5 text-xs"
+					<section className="space-y-2">
+						<div className="flex items-center justify-between">
+							<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+								Auth doctor
+							</div>
+							<div className="flex items-center gap-2">
+								<Badge variant="outline" className="text-[10px]">
+									{authDoctor?.needs_attention_count ?? "–"}
+								</Badge>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="h-6 px-2 text-[10px]"
+									onClick={() => void refreshAuthDoctor()}
 								>
-									<div className="flex items-center justify-between gap-2">
-										<div className="flex items-center gap-1.5">
-											{provider.configured ? (
-												<ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-											) : (
-												<Shield className="w-3.5 h-3.5 text-muted-foreground" />
-											)}
-											<span className="font-medium">{provider.display_name}</span>
+									<Wrench className="w-3 h-3 mr-1" />
+									Run
+								</Button>
+							</div>
+						</div>
+						{authDoctor ? (
+							<div className="space-y-2">
+								{authDoctor.needs_attention_count > 0 && (
+									<div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs">
+										<div className="flex items-center gap-2">
+											<TriangleAlert className="w-3.5 h-3.5 text-destructive" />
+											<span className="font-medium">
+												{authDoctor.needs_attention_count} provider
+												{authDoctor.needs_attention_count === 1 ? "" : "s"} need
+												attention
+											</span>
 										</div>
-										<Badge
-											variant={
-												provider.needs_attention ? "destructive" : provider.configured ? "secondary" : "outline"
-											}
-											className="text-[10px]"
-										>
-											{provider.status}
-										</Badge>
 									</div>
-									{provider.diagnostics.length > 0 && (
-										<div className="space-y-1">
-											{provider.diagnostics.map((diag, i) => (
-												<div
-													key={i}
-													className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"
-												>
-													<TriangleAlert className="w-3 h-3 mt-0.5 shrink-0" />
-													<span>{diag}</span>
-												</div>
-											))}
-										</div>
-									)}
-									{provider.recommended_actions.length > 0 && (
-										<div className="space-y-1 pt-1">
-											<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-												Recommended actions
+								)}
+								{authDoctor.providers.map((provider) => (
+									<div
+										key={provider.id}
+										className="rounded-lg border bg-card p-3 space-y-1.5 text-xs"
+									>
+										<div className="flex items-center justify-between gap-2">
+											<div className="flex items-center gap-1.5">
+												{provider.configured ? (
+													<ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+												) : (
+													<Shield className="w-3.5 h-3.5 text-muted-foreground" />
+												)}
+												<span className="font-medium">
+													{provider.display_name}
+												</span>
 											</div>
-											{provider.recommended_actions.map((action, i) => (
-												<div
-													key={i}
-													className="text-[11px] text-muted-foreground font-mono bg-secondary px-2 py-1 rounded"
-												>
-													{action}
-												</div>
-											))}
+											<Badge
+												variant={
+													provider.needs_attention
+														? "destructive"
+														: provider.configured
+															? "secondary"
+															: "outline"
+												}
+												className="text-[10px]"
+											>
+												{provider.status}
+											</Badge>
 										</div>
-									)}
-									<div className="flex flex-wrap gap-1 pt-1">
-										<Badge variant="outline" className="text-[10px]">
-											{provider.credential_source}
-										</Badge>
-										<Badge variant="outline" className="text-[10px]">
-											{provider.refresh_support}
-										</Badge>
-										<Badge variant="outline" className="text-[10px]">
-											{provider.validation_method}
-										</Badge>
+										{provider.diagnostics.length > 0 && (
+											<div className="space-y-1">
+												{provider.diagnostics.map((diag, i) => (
+													<div
+														key={i}
+														className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400"
+													>
+														<TriangleAlert className="w-3 h-3 mt-0.5 shrink-0" />
+														<span>{diag}</span>
+													</div>
+												))}
+											</div>
+										)}
+										{provider.recommended_actions.length > 0 && (
+											<div className="space-y-1 pt-1">
+												<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+													Recommended actions
+												</div>
+												{provider.recommended_actions.map((action, i) => (
+													<div
+														key={i}
+														className="text-[11px] text-muted-foreground font-mono bg-secondary px-2 py-1 rounded"
+													>
+														{action}
+													</div>
+												))}
+											</div>
+										)}
+										<div className="flex flex-wrap gap-1 pt-1">
+											<Badge variant="outline" className="text-[10px]">
+												{provider.credential_source}
+											</Badge>
+											<Badge variant="outline" className="text-[10px]">
+												{provider.refresh_support}
+											</Badge>
+											<Badge variant="outline" className="text-[10px]">
+												{provider.validation_method}
+											</Badge>
+										</div>
 									</div>
-								</div>
-							))}
-						</div>
-					) : (
-						<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
-							Click “Run” to generate an auth diagnostic report.
-						</div>
-					)}
-				</section>
+								))}
+							</div>
+						) : (
+							<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
+								Click “Run” to generate an auth diagnostic report.
+							</div>
+						)}
+					</section>
 
 					<Separator />
 
@@ -3581,189 +3595,204 @@ export function ActivityPanel({
 						)}
 					</section>
 
-				<Separator />
+					<Separator />
 
-				<section className="space-y-2">
-					<div className="flex items-center justify-between">
-						<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-							Ambient
-						</div>
-						<div className="flex items-center gap-2">
-							<Badge variant="outline" className="text-[10px]">
-								{ambientStatus?.scheduled_count ?? "–"}
-							</Badge>
-							<Button
-								variant="ghost"
-								size="sm"
-								className="h-6 px-2 text-[10px]"
-								onClick={() => {
-									void refreshAmbient();
-									void refreshAmbientTranscripts();
-								}}
-							>
-								<RotateCcw className="w-3 h-3 mr-1" />
-								Refresh
-							</Button>
-						</div>
-					</div>
-					{ambientStatus ? (
-						<div className="space-y-2">
-							<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
-								<div className="flex items-center justify-between gap-2">
-									<div className="flex items-center gap-1.5">
-										<Moon className="w-3.5 h-3.5 text-muted-foreground" />
-										<span className="font-medium">Status</span>
-									</div>
-									<Badge
-										variant={
-											ambientStatus.status === "running"
-												? "default"
-												: ambientStatus.status === "scheduled"
-													? "secondary"
-													: "outline"
-										}
-										className="text-[10px] uppercase"
-									>
-										{ambientStatus.status}
-									</Badge>
-								</div>
-								{!ambientStatus.enabled && (
-									<div className="text-[11px] text-muted-foreground">
-										Ambient mode is disabled in configuration.
-									</div>
-								)}
-								{ambientStatus.last_run && (
-									<div className="flex items-center justify-between gap-2">
-										<span className="text-muted-foreground">Last run</span>
-										<span className="font-mono">{new Date(ambientStatus.last_run).toLocaleString()}</span>
-									</div>
-								)}
-								{ambientStatus.total_cycles > 0 && (
-									<div className="flex items-center justify-between gap-2">
-										<span className="text-muted-foreground">Total cycles</span>
-										<span className="font-mono">{ambientStatus.total_cycles}</span>
-									</div>
-								)}
-								{ambientStatus.last_summary && (
-									<div className="rounded border bg-secondary px-2 py-1.5 text-[11px] text-muted-foreground">
-										{ambientStatus.last_summary}
-									</div>
-								)}
-								{ambientStatus.next_wake && (
-									<div className="flex items-center justify-between gap-2">
-										<span className="inline-flex items-center gap-1.5 text-muted-foreground">
-											<Timer className="w-3.5 h-3.5" />
-											Next wake
-										</span>
-										<span className="font-mono">{new Date(ambientStatus.next_wake).toLocaleString()}</span>
-									</div>
-								)}
-								<div className="flex flex-wrap gap-1 pt-1">
-									{ambientStatus.last_compactions !== undefined && (
-										<Badge variant="outline" className="text-[10px]">
-											compactions {ambientStatus.last_compactions}
-										</Badge>
-									)}
-									{ambientStatus.last_memories_modified !== undefined && (
-										<Badge variant="outline" className="text-[10px]">
-											memories {ambientStatus.last_memories_modified}
-										</Badge>
-									)}
-								</div>
+					<section className="space-y-2">
+						<div className="flex items-center justify-between">
+							<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+								Ambient
 							</div>
-							{ambientStatus.scheduled_items.length > 0 && (
+							<div className="flex items-center gap-2">
+								<Badge variant="outline" className="text-[10px]">
+									{ambientStatus?.scheduled_count ?? "–"}
+								</Badge>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="h-6 px-2 text-[10px]"
+									onClick={() => {
+										void refreshAmbient();
+										void refreshAmbientTranscripts();
+									}}
+								>
+									<RotateCcw className="w-3 h-3 mr-1" />
+									Refresh
+								</Button>
+							</div>
+						</div>
+						{ambientStatus ? (
+							<div className="space-y-2">
 								<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
-									<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-										Scheduled items
+									<div className="flex items-center justify-between gap-2">
+										<div className="flex items-center gap-1.5">
+											<Moon className="w-3.5 h-3.5 text-muted-foreground" />
+											<span className="font-medium">Status</span>
+										</div>
+										<Badge
+											variant={
+												ambientStatus.status === "running"
+													? "default"
+													: ambientStatus.status === "scheduled"
+														? "secondary"
+														: "outline"
+											}
+											className="text-[10px] uppercase"
+										>
+											{ambientStatus.status}
+										</Badge>
 									</div>
-									<div className="space-y-2">
-										{ambientStatus.scheduled_items.map((item) => (
-											<div
-												key={item.id}
-												className="rounded border bg-secondary px-2 py-2 space-y-1"
-											>
-												<div className="flex items-start justify-between gap-2">
-													<div className="min-w-0">
-														<div className="font-medium break-words">
-															{item.task_description || item.context}
+									{!ambientStatus.enabled && (
+										<div className="text-[11px] text-muted-foreground">
+											Ambient mode is disabled in configuration.
+										</div>
+									)}
+									{ambientStatus.last_run && (
+										<div className="flex items-center justify-between gap-2">
+											<span className="text-muted-foreground">Last run</span>
+											<span className="font-mono">
+												{new Date(ambientStatus.last_run).toLocaleString()}
+											</span>
+										</div>
+									)}
+									{ambientStatus.total_cycles > 0 && (
+										<div className="flex items-center justify-between gap-2">
+											<span className="text-muted-foreground">
+												Total cycles
+											</span>
+											<span className="font-mono">
+												{ambientStatus.total_cycles}
+											</span>
+										</div>
+									)}
+									{ambientStatus.last_summary && (
+										<div className="rounded border bg-secondary px-2 py-1.5 text-[11px] text-muted-foreground">
+											{ambientStatus.last_summary}
+										</div>
+									)}
+									{ambientStatus.next_wake && (
+										<div className="flex items-center justify-between gap-2">
+											<span className="inline-flex items-center gap-1.5 text-muted-foreground">
+												<Timer className="w-3.5 h-3.5" />
+												Next wake
+											</span>
+											<span className="font-mono">
+												{new Date(ambientStatus.next_wake).toLocaleString()}
+											</span>
+										</div>
+									)}
+									<div className="flex flex-wrap gap-1 pt-1">
+										{ambientStatus.last_compactions !== undefined && (
+											<Badge variant="outline" className="text-[10px]">
+												compactions {ambientStatus.last_compactions}
+											</Badge>
+										)}
+										{ambientStatus.last_memories_modified !== undefined && (
+											<Badge variant="outline" className="text-[10px]">
+												memories {ambientStatus.last_memories_modified}
+											</Badge>
+										)}
+									</div>
+								</div>
+								{ambientStatus.scheduled_items.length > 0 && (
+									<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
+										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+											Scheduled items
+										</div>
+										<div className="space-y-2">
+											{ambientStatus.scheduled_items.map((item) => (
+												<div
+													key={item.id}
+													className="rounded border bg-secondary px-2 py-2 space-y-1"
+												>
+													<div className="flex items-start justify-between gap-2">
+														<div className="min-w-0">
+															<div className="font-medium break-words">
+																{item.task_description || item.context}
+															</div>
+															<div className="text-[10px] text-muted-foreground font-mono">
+																{item.id}
+															</div>
 														</div>
-														<div className="text-[10px] text-muted-foreground font-mono">
-															{item.id}
+														<div className="flex flex-wrap gap-1">
+															<Badge
+																variant="outline"
+																className="text-[10px] uppercase"
+															>
+																{item.priority}
+															</Badge>
+															<Badge variant="outline" className="text-[10px]">
+																{item.target.kind}
+															</Badge>
 														</div>
 													</div>
+													<div className="text-[10px] text-muted-foreground">
+														{new Date(item.scheduled_for).toLocaleString()}
+													</div>
+												</div>
+											))}
+										</div>
+									</div>
+								)}
+								{ambientTranscripts && ambientTranscripts.length > 0 && (
+									<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
+										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+											Recent transcripts
+										</div>
+										<div className="space-y-2">
+											{ambientTranscripts.slice(0, 5).map((tx) => (
+												<div
+													key={tx.session_id + tx.started_at}
+													className="rounded border bg-secondary px-2 py-2 space-y-1"
+												>
+													<div className="flex items-center justify-between gap-2">
+														<span className="font-medium">
+															{tx.provider} · {tx.model}
+														</span>
+														<Badge
+															variant={
+																tx.status === "complete"
+																	? "secondary"
+																	: "outline"
+															}
+															className="text-[10px]"
+														>
+															{tx.status}
+														</Badge>
+													</div>
+													<div className="text-[10px] text-muted-foreground">
+														{new Date(tx.started_at).toLocaleString()}
+														{tx.ended_at
+															? ` – ${new Date(tx.ended_at).toLocaleString()}`
+															: ""}
+													</div>
+													{tx.summary && (
+														<div className="text-[11px] text-muted-foreground break-words">
+															{tx.summary}
+														</div>
+													)}
 													<div className="flex flex-wrap gap-1">
-														<Badge variant="outline" className="text-[10px] uppercase">
-															{item.priority}
+														<Badge variant="outline" className="text-[10px]">
+															{tx.compactions} compactions
 														</Badge>
 														<Badge variant="outline" className="text-[10px]">
-															{item.target.kind}
+															{tx.memories_modified} memories
+														</Badge>
+														<Badge variant="outline" className="text-[10px]">
+															{tx.pending_permissions} pending permissions
 														</Badge>
 													</div>
 												</div>
-												<div className="text-[10px] text-muted-foreground">
-													{new Date(item.scheduled_for).toLocaleString()}
-												</div>
-											</div>
-										))}
+											))}
+										</div>
 									</div>
-								</div>
-							)}
-							{ambientTranscripts && ambientTranscripts.length > 0 && (
-								<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
-									<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-										Recent transcripts
-									</div>
-									<div className="space-y-2">
-										{ambientTranscripts.slice(0, 5).map((tx) => (
-											<div
-												key={tx.session_id + tx.started_at}
-												className="rounded border bg-secondary px-2 py-2 space-y-1"
-											>
-												<div className="flex items-center justify-between gap-2">
-													<span className="font-medium">
-														{tx.provider} · {tx.model}
-													</span>
-													<Badge
-														variant={
-															tx.status === "complete" ? "secondary" : "outline"
-														}
-														className="text-[10px]"
-													>
-														{tx.status}
-													</Badge>
-												</div>
-												<div className="text-[10px] text-muted-foreground">
-													{new Date(tx.started_at).toLocaleString()}
-													{tx.ended_at ? ` – ${new Date(tx.ended_at).toLocaleString()}` : ""}
-												</div>
-												{tx.summary && (
-													<div className="text-[11px] text-muted-foreground break-words">
-														{tx.summary}
-													</div>
-												)}
-												<div className="flex flex-wrap gap-1">
-													<Badge variant="outline" className="text-[10px]">
-														{tx.compactions} compactions
-													</Badge>
-													<Badge variant="outline" className="text-[10px]">
-														{tx.memories_modified} memories
-													</Badge>
-													<Badge variant="outline" className="text-[10px]">
-														{tx.pending_permissions} pending permissions
-													</Badge>
-												</div>
-											</div>
-										))}
-									</div>
-								</div>
-							)}
-						</div>
-					) : (
-						<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
-							Ambient status unavailable.
-						</div>
-					)}
-				</section>
+								)}
+							</div>
+						) : (
+							<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
+								Ambient status unavailable.
+							</div>
+						)}
+					</section>
 
 					<section className="space-y-2">
 						<div className="flex items-center justify-between gap-2">
