@@ -1307,30 +1307,7 @@ async fn emit_runtime_snapshot(app_handle: &AppHandle, runtime: &Arc<SessionRunt
         // When an OpenAI-compatible profile (e.g. DeepSeek) is active, the
         // underlying provider is OpenRouter/OpenAI but we want to show the
         // model family instead of the transport provider.
-        let provider_name = {
-            let name = provider.name().to_string();
-            let model = provider.model().to_string().to_lowercase();
-            if model.starts_with("deepseek") {
-                "DeepSeek".to_string()
-            } else if model.starts_with("claude") || model.starts_with("anthropic") {
-                "Anthropic".to_string()
-            } else if model.starts_with("gemini") || model.starts_with("gemma") {
-                "Google".to_string()
-            } else if model.starts_with("gpt") || model.starts_with("o1") || model.starts_with("o3") {
-                "OpenAI".to_string()
-            } else if model.starts_with("llama") || model.starts_with("codellama") {
-                "Meta".to_string()
-            } else if model.starts_with("qwen") || model.starts_with("qwq") {
-                "Alibaba".to_string()
-            } else if name.eq_ignore_ascii_case("openrouter") {
-                std::env::var("JCODE_OPENROUTER_CACHE_NAMESPACE")
-                    .ok()
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or(name)
-            } else {
-                name
-            }
-        };
+        let provider_name = infer_provider_name_from_model(provider.name(), &provider.model());
         (
             serde_json::to_value(messages).unwrap_or(serde_json::json!([])),
             serde_json::to_value(images).unwrap_or(serde_json::json!([])),
@@ -1763,6 +1740,34 @@ async fn send_soft_interrupt(
 }
 
 #[tauri::command]
+/// Infer a display provider name from the model string, matching the logic
+/// used in emit_runtime_snapshot so the UI badge updates correctly.
+fn infer_provider_name_from_model(provider_name: &str, model: &str) -> String {
+    let name = provider_name.to_string();
+    let m = model.to_lowercase();
+    if m.starts_with("deepseek") {
+        "DeepSeek".to_string()
+    } else if m.starts_with("claude") || m.starts_with("anthropic") {
+        "Anthropic".to_string()
+    } else if m.starts_with("gemini") || m.starts_with("gemma") {
+        "Google".to_string()
+    } else if m.starts_with("gpt") || m.starts_with("o1") || m.starts_with("o3") {
+        "OpenAI".to_string()
+    } else if m.starts_with("llama") || m.starts_with("codellama") {
+        "Meta".to_string()
+    } else if m.starts_with("qwen") || m.starts_with("qwq") {
+        "Alibaba".to_string()
+    } else if name.eq_ignore_ascii_case("openrouter") {
+        std::env::var("JCODE_OPENROUTER_CACHE_NAMESPACE")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(name)
+    } else {
+        name
+    }
+}
+
+#[tauri::command]
 async fn set_model(
     app_handle: AppHandle,
     state: State<'_, AppState>,
@@ -1780,12 +1785,20 @@ async fn set_model(
     guard
         .set_model(&model_arg)
         .map_err(|e| format!("Failed to set model: {e}"))?;
-    let current = guard.provider_handle().model();
+    let provider = guard.provider_handle();
+    let current = provider.model();
+    let provider_name = infer_provider_name_from_model(provider.name(), &current);
     drop(guard);
     app_handle
         .emit(
             "server-event",
-            &serde_json::json!({ "type": "model_changed", "id": 0, "model": current, "session_id": session_id }),
+            &serde_json::json!({
+                "type": "model_changed",
+                "id": 0,
+                "model": current,
+                "provider_name": provider_name,
+                "session_id": session_id
+            }),
         )
         .ok();
     Ok(())

@@ -1781,25 +1781,32 @@ export function useJcodeSession() {
 
 	const runDictation = useCallback(async () => {
 		try {
-			return await invoke<{ text: string; mode: import("@/types").TranscriptMode }>(
-				"run_dictation",
-			);
+			return await invoke<{
+				text: string;
+				mode: import("@/types").TranscriptMode;
+			}>("run_dictation");
 		} catch (e) {
 			dispatch({ type: "SET_ERROR", message: String(e) });
 			return null;
 		}
 	}, []);
-	const saveSessionState = useCallback(async (sessionId: string, workingDir: string | null) => {
-		try {
-			await invoke("save_session_state", { sessionId, workingDir });
-		} catch {
-			// ignore
-		}
-	}, []);
+	const saveSessionState = useCallback(
+		async (sessionId: string, workingDir: string | null) => {
+			try {
+				await invoke("save_session_state", { sessionId, workingDir });
+			} catch {
+				// ignore
+			}
+		},
+		[],
+	);
 
 	const getLastSessionState = useCallback(async () => {
 		try {
-			return await invoke<{ session_id: string; working_dir: string | null } | null>("get_last_session_state");
+			return await invoke<{
+				session_id: string;
+				working_dir: string | null;
+			} | null>("get_last_session_state");
 		} catch {
 			return null;
 		}

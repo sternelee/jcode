@@ -71,9 +71,10 @@ interface ChatViewProps {
 	onSetMemoryEnabled: (enabled: boolean) => void | Promise<void>;
 	onCompactContext: () => void;
 	/** Run configured dictation command and return transcript */
-	onDictate?: () => Promise<
-		{ text: string; mode: import("@/types").TranscriptMode } | null
-	>;
+	onDictate?: () => Promise<{
+		text: string;
+		mode: import("@/types").TranscriptMode;
+	} | null>;
 }
 
 interface MessageSegment {

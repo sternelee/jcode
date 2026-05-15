@@ -102,7 +102,8 @@ export default function App() {
 			const saved = await getLastSessionState();
 			if (!saved) return;
 			const sessionId = (saved as { session_id?: string }).session_id;
-			const workingDir = (saved as { working_dir?: string | null }).working_dir ?? null;
+			const workingDir =
+				(saved as { working_dir?: string | null }).working_dir ?? null;
 			if (!sessionId) return;
 			const confirmed = window.confirm(
 				`Resume previous session "${sessionId.slice(-8)}"?`,
@@ -114,7 +115,13 @@ export default function App() {
 				await listSessions();
 			}
 		})();
-	}, [getLastSessionState, resumeSession, listSessions, setActiveWorkspace, setWorkingDir]);
+	}, [
+		getLastSessionState,
+		resumeSession,
+		listSessions,
+		setActiveWorkspace,
+		setWorkingDir,
+	]);
 
 	// Save session state when active session changes
 	useEffect(() => {
