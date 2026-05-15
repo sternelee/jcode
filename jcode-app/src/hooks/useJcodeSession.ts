@@ -92,6 +92,8 @@ type Action =
 			type: "SET_TOKEN_USAGE";
 			input: number;
 			output: number;
+			cacheReadInput?: number;
+			cacheCreationInput?: number;
 			sessionId?: string;
 			roleSessionId?: string;
 	  }
@@ -726,7 +728,12 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 				)
 					ms[targetIdx] = {
 						...l,
-						tokenUsage: { input: action.input, output: action.output },
+						tokenUsage: {
+							input: action.input,
+							output: action.output,
+							cacheReadInput: action.cacheReadInput,
+							cacheCreationInput: action.cacheCreationInput,
+						},
 					};
 				return {
 					...data,
@@ -1717,6 +1724,8 @@ function processEvent(
 					type: "SET_TOKEN_USAGE",
 					input: desktopEvent.input,
 					output: desktopEvent.output,
+					cacheReadInput: desktopEvent.cacheReadInput,
+					cacheCreationInput: desktopEvent.cacheCreationInput,
 					sessionId: sid,
 					roleSessionId,
 				});

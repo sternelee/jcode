@@ -17,7 +17,7 @@ export type DesktopSemanticEvent =
 	| { type: "tool-exec"; id: string; name: string }
 	| { type: "tool-done"; id: string; output: string; error?: string }
 	| { type: "assistant-message"; content: string; images?: AttachedImage[] }
-	| { type: "token-usage"; input: number; output: number }
+	| { type: "token-usage"; input: number; output: number; cacheReadInput?: number; cacheCreationInput?: number }
 	| { type: "done" }
 	| { type: "error"; message: string }
 	| { type: "session-id"; sessionId: string }
@@ -237,6 +237,8 @@ export function rawServerEventToDesktopEvents(
 					type: "token-usage",
 					input: event.input,
 					output: event.output,
+					cacheReadInput: event.cache_read_input,
+					cacheCreationInput: event.cache_creation_input,
 				},
 			];
 		case "done":

@@ -263,6 +263,16 @@ export function MessageBubble({
             {message.tokenUsage && (
               <Badge variant="outline" className="text-[10px] font-mono ml-auto">
                 ↑{message.tokenUsage.input} ↓{message.tokenUsage.output}
+                {message.tokenUsage.cacheReadInput !== undefined && message.tokenUsage.cacheReadInput > 0 && (
+                  <span className="text-emerald-600 dark:text-emerald-400 ml-1" title={`Cache read: ${message.tokenUsage.cacheReadInput}`}>
+                    cache↑{message.tokenUsage.cacheReadInput}
+                  </span>
+                )}
+                {message.tokenUsage.cacheCreationInput !== undefined && message.tokenUsage.cacheCreationInput > 0 && (
+                  <span className="text-amber-600 dark:text-amber-400 ml-1" title={`Cache write: ${message.tokenUsage.cacheCreationInput}`}>
+                    write↑{message.tokenUsage.cacheCreationInput}
+                  </span>
+                )}
               </Badge>
             )}
           </div>
@@ -368,6 +378,16 @@ export function MessageBubble({
                 {message.tokenUsage && (
                   <Badge variant="outline" className="text-[10px] font-mono">
                     ↑{message.tokenUsage.input} ↓{message.tokenUsage.output}
+                    {message.tokenUsage.cacheReadInput !== undefined && message.tokenUsage.cacheReadInput > 0 && (
+                      <span className="text-emerald-600 dark:text-emerald-400 ml-1" title={`Cache read: ${message.tokenUsage.cacheReadInput}`}>
+                        cache↑{message.tokenUsage.cacheReadInput}
+                      </span>
+                    )}
+                    {message.tokenUsage.cacheCreationInput !== undefined && message.tokenUsage.cacheCreationInput > 0 && (
+                      <span className="text-amber-600 dark:text-amber-400 ml-1" title={`Cache write: ${message.tokenUsage.cacheCreationInput}`}>
+                        write↑{message.tokenUsage.cacheCreationInput}
+                      </span>
+                    )}
                   </Badge>
                 )}
               </div>

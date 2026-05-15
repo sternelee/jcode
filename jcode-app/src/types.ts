@@ -402,7 +402,12 @@ export interface ChatMessage {
 	content: string;
 	toolExecutions: ToolExecution[];
 	isStreaming: boolean;
-	tokenUsage?: { input: number; output: number };
+	tokenUsage?: {
+		input: number;
+		output: number;
+		cacheReadInput?: number;
+		cacheCreationInput?: number;
+	};
 	images?: AttachedImage[];
 	timestamp?: number;
 	/** Role name in slack-mode workspace threads */

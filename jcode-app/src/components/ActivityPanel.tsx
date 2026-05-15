@@ -98,7 +98,12 @@ interface TurnActivity {
 	tools: ToolExecution[];
 	runningToolCount: number;
 	totalToolCount: number;
-	tokenUsage?: { input: number; output: number };
+	tokenUsage?: {
+		input: number;
+		output: number;
+		cacheReadInput?: number;
+		cacheCreationInput?: number;
+	};
 	timestamp: number;
 	segmentId: string;
 }
@@ -2119,6 +2124,12 @@ export function ActivityPanel({
 															className="text-[10px] font-mono"
 														>
 															↑{turn.tokenUsage.input} ↓{turn.tokenUsage.output}
+															{turn.tokenUsage.cacheReadInput !== undefined && turn.tokenUsage.cacheReadInput > 0 && (
+																<span className="text-emerald-600 dark:text-emerald-400 ml-1">cache↑{turn.tokenUsage.cacheReadInput}</span>
+															)}
+															{turn.tokenUsage.cacheCreationInput !== undefined && turn.tokenUsage.cacheCreationInput > 0 && (
+																<span className="text-amber-600 dark:text-amber-400 ml-1">write↑{turn.tokenUsage.cacheCreationInput}</span>
+															)}
 														</Badge>
 													)}
 												</div>
@@ -2486,6 +2497,12 @@ export function ActivityPanel({
 										<Badge variant="outline" className="text-[10px] font-mono">
 											↑{selectedMessage.tokenUsage.input} ↓
 											{selectedMessage.tokenUsage.output}
+											{selectedMessage.tokenUsage.cacheReadInput !== undefined && selectedMessage.tokenUsage.cacheReadInput > 0 && (
+												<span className="text-emerald-600 dark:text-emerald-400 ml-1">cache↑{selectedMessage.tokenUsage.cacheReadInput}</span>
+											)}
+											{selectedMessage.tokenUsage.cacheCreationInput !== undefined && selectedMessage.tokenUsage.cacheCreationInput > 0 && (
+												<span className="text-amber-600 dark:text-amber-400 ml-1">write↑{selectedMessage.tokenUsage.cacheCreationInput}</span>
+											)}
 										</Badge>
 									)}
 								</div>
