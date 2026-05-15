@@ -1963,6 +1963,87 @@ fn get_memory_stats() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+fn export_memories(path: String) -> Result<(), String> {
+    use jcode::memory::MemoryManager;
+    let manager = MemoryManager::new();
+
+    let project_graph = manager
+        .load_project_graph()
+        .map_err(|e| format!("Failed to load project memories: {e}"))?;
+    let global_graph = manager
+        .load_global_graph()
+        .map_err(|e| format!("Failed to load global memories: {e}"))?;
+
+    let export = serde_json::json!({
+        "version": 1,
+        "exported_at": chrono::Utc::now().to_rfc3339(),
+        "project_memories": project_graph.all_memories().collect::<Vec<_>>(),
+        "global_memories": global_graph.all_memories().collect::<Vec<_>>(),
+    });
+
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&export).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| format!("Failed to write export file: {e}"))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn import_memories(path: String) -> Result<serde_json::Value, String> {
+    use jcode::memory::MemoryManager;
+    let manager = MemoryManager::new();
+
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read import file: {e}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse import file: {e}"))?;
+
+    let mut project_count = 0usize;
+    let mut global_count = 0usize;
+
+    if let Some(entries) = value.get("project_memories").and_then(|v| v.as_array()) {
+        let mut graph = manager
+            .load_project_graph()
+            .map_err(|e| format!("Failed to load project graph: {e}"))?;
+        for entry_value in entries {
+            if let Ok(entry) =
+                serde_json::from_value::<jcode::memory_types::MemoryEntry>(entry_value.clone())
+            {
+                manager.upsert_memory_in_graph(&mut graph, entry);
+                project_count += 1;
+            }
+        }
+        manager
+            .save_project_graph(&graph)
+            .map_err(|e| format!("Failed to save project graph: {e}"))?;
+    }
+
+    if let Some(entries) = value.get("global_memories").and_then(|v| v.as_array()) {
+        let mut graph = manager
+            .load_global_graph()
+            .map_err(|e| format!("Failed to load global graph: {e}"))?;
+        for entry_value in entries {
+            if let Ok(entry) =
+                serde_json::from_value::<jcode::memory_types::MemoryEntry>(entry_value.clone())
+            {
+                manager.upsert_memory_in_graph(&mut graph, entry);
+                global_count += 1;
+            }
+        }
+        manager
+            .save_global_graph(&graph)
+            .map_err(|e| format!("Failed to save global graph: {e}"))?;
+    }
+
+    Ok(serde_json::json!({
+        "project_count": project_count,
+        "global_count": global_count,
+    }))
+}
+
+#[tauri::command]
 fn generate_pairing_code() -> Result<String, String> {
     let mut registry = jcode::gateway::DeviceRegistry::load();
     let code = registry.generate_pairing_code();
@@ -2834,6 +2915,8 @@ pub fn run() {
             get_memory_list,
             search_memories,
             get_memory_stats,
+            export_memories,
+            import_memories,
             generate_pairing_code,
             list_paired_devices,
             revoke_device,

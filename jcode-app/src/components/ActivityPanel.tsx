@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import type {
 	AttachedImage,
 	AuthStatus,
@@ -67,6 +68,8 @@ interface ActivityPanelProps {
 	onSelectSession?: (sessionId: string) => void;
 	selectedMessageId?: string | null;
 	onSelectMessage?: (messageId: string) => void;
+	exportMemories?: (path: string) => Promise<void>;
+	importMemories?: (path: string) => Promise<{ project_count: number; global_count: number } | null>;
 }
 
 type SegmentKind =
@@ -509,6 +512,8 @@ export function ActivityPanel({
 	onSelectSession,
 	selectedMessageId,
 	onSelectMessage,
+	exportMemories,
+	importMemories,
 }: ActivityPanelProps) {
 	const [expandedTurnIds, setExpandedTurnIds] = useState<string[]>([]);
 	const [selectedSwarmTaskId, setSelectedSwarmTaskId] = useState<string | null>(
@@ -547,9 +552,15 @@ export function ActivityPanel({
 	const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
 	const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null);
 	const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
-	const [memoryEntries, setMemoryEntries] = useState<MemoryEntry[] | null>(null);
-	const [memoryScope, setMemoryScope] = useState<"all" | "project" | "global">("all");
-	const [pairedDevices, setPairedDevices] = useState<PairedDeviceInfo[] | null>(null);
+	const [memoryEntries, setMemoryEntries] = useState<MemoryEntry[] | null>(
+		null,
+	);
+	const [memoryScope, setMemoryScope] = useState<"all" | "project" | "global">(
+		"all",
+	);
+	const [pairedDevices, setPairedDevices] = useState<PairedDeviceInfo[] | null>(
+		null,
+	);
 	const [pairingCode, setPairingCode] = useState<string | null>(null);
 
 	const segments = useMemo(() => buildSegments(messages), [messages]);
@@ -909,7 +920,10 @@ export function ActivityPanel({
 	useEffect(() => {
 		void (async () => {
 			try {
-				const result = await invoke<{ memories: MemoryEntry[] }>("get_memory_list", { scope: memoryScope });
+				const result = await invoke<{ memories: MemoryEntry[] }>(
+					"get_memory_list",
+					{ scope: memoryScope },
+				);
 				setMemoryEntries(result.memories.slice(0, 20));
 			} catch {
 				// ignore
@@ -919,7 +933,9 @@ export function ActivityPanel({
 
 	const refreshDevices = async () => {
 		try {
-			const result = await invoke<{ devices: PairedDeviceInfo[] }>("list_paired_devices");
+			const result = await invoke<{ devices: PairedDeviceInfo[] }>(
+				"list_paired_devices",
+			);
 			setPairedDevices(result.devices);
 		} catch {
 			// ignore
@@ -2124,12 +2140,19 @@ export function ActivityPanel({
 															className="text-[10px] font-mono"
 														>
 															↑{turn.tokenUsage.input} ↓{turn.tokenUsage.output}
-															{turn.tokenUsage.cacheReadInput !== undefined && turn.tokenUsage.cacheReadInput > 0 && (
-																<span className="text-emerald-600 dark:text-emerald-400 ml-1">cache↑{turn.tokenUsage.cacheReadInput}</span>
-															)}
-															{turn.tokenUsage.cacheCreationInput !== undefined && turn.tokenUsage.cacheCreationInput > 0 && (
-																<span className="text-amber-600 dark:text-amber-400 ml-1">write↑{turn.tokenUsage.cacheCreationInput}</span>
-															)}
+															{turn.tokenUsage.cacheReadInput !== undefined &&
+																turn.tokenUsage.cacheReadInput > 0 && (
+																	<span className="text-emerald-600 dark:text-emerald-400 ml-1">
+																		cache↑{turn.tokenUsage.cacheReadInput}
+																	</span>
+																)}
+															{turn.tokenUsage.cacheCreationInput !==
+																undefined &&
+																turn.tokenUsage.cacheCreationInput > 0 && (
+																	<span className="text-amber-600 dark:text-amber-400 ml-1">
+																		write↑{turn.tokenUsage.cacheCreationInput}
+																	</span>
+																)}
 														</Badge>
 													)}
 												</div>
@@ -2497,12 +2520,21 @@ export function ActivityPanel({
 										<Badge variant="outline" className="text-[10px] font-mono">
 											↑{selectedMessage.tokenUsage.input} ↓
 											{selectedMessage.tokenUsage.output}
-											{selectedMessage.tokenUsage.cacheReadInput !== undefined && selectedMessage.tokenUsage.cacheReadInput > 0 && (
-												<span className="text-emerald-600 dark:text-emerald-400 ml-1">cache↑{selectedMessage.tokenUsage.cacheReadInput}</span>
-											)}
-											{selectedMessage.tokenUsage.cacheCreationInput !== undefined && selectedMessage.tokenUsage.cacheCreationInput > 0 && (
-												<span className="text-amber-600 dark:text-amber-400 ml-1">write↑{selectedMessage.tokenUsage.cacheCreationInput}</span>
-											)}
+											{selectedMessage.tokenUsage.cacheReadInput !==
+												undefined &&
+												selectedMessage.tokenUsage.cacheReadInput > 0 && (
+													<span className="text-emerald-600 dark:text-emerald-400 ml-1">
+														cache↑{selectedMessage.tokenUsage.cacheReadInput}
+													</span>
+												)}
+											{selectedMessage.tokenUsage.cacheCreationInput !==
+												undefined &&
+												selectedMessage.tokenUsage.cacheCreationInput > 0 && (
+													<span className="text-amber-600 dark:text-amber-400 ml-1">
+														write↑
+														{selectedMessage.tokenUsage.cacheCreationInput}
+													</span>
+												)}
 										</Badge>
 									)}
 								</div>
@@ -3029,31 +3061,101 @@ export function ActivityPanel({
 								>
 									{scope}
 								</button>
-								))}
+							))}
+						</div>
+						<div className="flex items-center gap-2">
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-7 text-[10px]"
+								onClick={async () => {
+									try {
+										const path = await save({
+											filters: [{ name: "JSON", extensions: ["json"] }],
+											defaultPath: "jcode-memories.json",
+										});
+										if (path && exportMemories) {
+											await exportMemories(path);
+										}
+									} catch {
+										// ignore
+									}
+								}}
+							>
+								Export
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-7 text-[10px]"
+								onClick={async () => {
+									try {
+										const selected = await open({
+											filters: [{ name: "JSON", extensions: ["json"] }],
+											multiple: false,
+										});
+										if (selected && typeof selected === "string" && importMemories) {
+											const result = await importMemories(selected);
+											if (result) {
+												// Refresh stats and entries after import
+												const stats = await invoke<MemoryStats>("get_memory_stats");
+												setMemoryStats(stats);
+												const list = await invoke<{ memories: MemoryEntry[] }>(
+													"get_memory_list",
+													{ scope: memoryScope },
+												);
+												setMemoryEntries(list.memories.slice(0, 20));
+											}
+										}
+									} catch {
+										// ignore
+									}
+								}}
+							>
+								Import
+							</Button>
 						</div>
 						{memoryStats ? (
 							<div className="space-y-2">
 								<div className="grid grid-cols-3 gap-2">
 									<div className="rounded border bg-secondary px-2 py-2">
-										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">Project</div>
-										<div className="text-sm font-medium">{memoryStats.project_count}</div>
+										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+											Project
+										</div>
+										<div className="text-sm font-medium">
+											{memoryStats.project_count}
+										</div>
 									</div>
 									<div className="rounded border bg-secondary px-2 py-2">
-										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">Global</div>
-										<div className="text-sm font-medium">{memoryStats.global_count}</div>
+										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+											Global
+										</div>
+										<div className="text-sm font-medium">
+											{memoryStats.global_count}
+										</div>
 									</div>
 									<div className="rounded border bg-secondary px-2 py-2">
-										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">Tags</div>
-										<div className="text-sm font-medium">{memoryStats.unique_tags}</div>
+										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+											Tags
+										</div>
+										<div className="text-sm font-medium">
+											{memoryStats.unique_tags}
+										</div>
 									</div>
 								</div>
 								{Object.entries(memoryStats.categories).length > 0 && (
 									<div className="flex flex-wrap gap-1.5">
-										{Object.entries(memoryStats.categories).map(([cat, count]) => (
-											<Badge key={cat} variant="outline" className="text-[10px]">
-												{cat}: {count}
-											</Badge>
-											))}
+										{Object.entries(memoryStats.categories).map(
+											([cat, count]) => (
+												<Badge
+													key={cat}
+													variant="outline"
+													className="text-[10px]"
+												>
+													{cat}: {count}
+												</Badge>
+											),
+										)}
 									</div>
 								)}
 							</div>
@@ -3073,16 +3175,29 @@ export function ActivityPanel({
 										className="rounded border bg-secondary px-2 py-2 space-y-1 text-xs"
 									>
 										<div className="flex items-start justify-between gap-2">
-											<div className="font-medium break-words">{compactText(entry.content, 80)}</div>
-											<Badge variant="outline" className="text-[10px] shrink-0">{entry.category}</Badge>
+											<div className="font-medium break-words">
+												{compactText(entry.content, 80)}
+											</div>
+											<Badge variant="outline" className="text-[10px] shrink-0">
+												{entry.category}
+											</Badge>
 										</div>
 										<div className="flex flex-wrap gap-1">
 											{entry.tags.map((tag) => (
-												<Badge key={tag} variant="secondary" className="text-[10px]">{tag}</Badge>
+												<Badge
+													key={tag}
+													variant="secondary"
+													className="text-[10px]"
+												>
+													{tag}
+												</Badge>
 											))}
 										</div>
 										<div className="flex items-center justify-between text-[10px] text-muted-foreground">
-											<span>trust {entry.trust} · conf {Math.round(entry.effective_confidence * 100)}%</span>
+											<span>
+												trust {entry.trust} · conf{" "}
+												{Math.round(entry.effective_confidence * 100)}%
+											</span>
 											<span>{entry.access_count} reads</span>
 										</div>
 									</div>
@@ -3131,15 +3246,24 @@ export function ActivityPanel({
 						</div>
 						{pairingCode && (
 							<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
-								<div className="text-[10px] uppercase tracking-wide text-muted-foreground">Pairing code</div>
-								<div className="text-2xl font-mono font-bold tracking-widest text-center">{pairingCode}</div>
-								<div className="text-[10px] text-muted-foreground text-center">Valid for 5 minutes</div>
+								<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+									Pairing code
+								</div>
+								<div className="text-2xl font-mono font-bold tracking-widest text-center">
+									{pairingCode}
+								</div>
+								<div className="text-[10px] text-muted-foreground text-center">
+									Valid for 5 minutes
+								</div>
 							</div>
 						)}
 						{pairedDevices && pairedDevices.length > 0 ? (
 							<div className="space-y-2">
 								{pairedDevices.map((device) => (
-									<div key={device.id} className="rounded border bg-secondary px-2 py-2 space-y-1 text-xs">
+									<div
+										key={device.id}
+										className="rounded border bg-secondary px-2 py-2 space-y-1 text-xs"
+									>
 										<div className="flex items-start justify-between gap-2">
 											<div className="font-medium">{device.name}</div>
 											<Button
@@ -3148,7 +3272,9 @@ export function ActivityPanel({
 												className="h-5 px-1.5 text-[10px] text-destructive"
 												onClick={async () => {
 													try {
-														await invoke("revoke_device", { deviceId: device.id });
+														await invoke("revoke_device", {
+															deviceId: device.id,
+														});
 														void refreshDevices();
 													} catch {
 														// ignore
@@ -3158,8 +3284,12 @@ export function ActivityPanel({
 												Revoke
 											</Button>
 										</div>
-										<div className="text-[10px] text-muted-foreground font-mono">{device.id}</div>
-										<div className="text-[10px] text-muted-foreground">Last seen {device.last_seen}</div>
+										<div className="text-[10px] text-muted-foreground font-mono">
+											{device.id}
+										</div>
+										<div className="text-[10px] text-muted-foreground">
+											Last seen {device.last_seen}
+										</div>
 									</div>
 								))}
 							</div>

@@ -17,7 +17,13 @@ export type DesktopSemanticEvent =
 	| { type: "tool-exec"; id: string; name: string }
 	| { type: "tool-done"; id: string; output: string; error?: string }
 	| { type: "assistant-message"; content: string; images?: AttachedImage[] }
-	| { type: "token-usage"; input: number; output: number; cacheReadInput?: number; cacheCreationInput?: number }
+	| {
+			type: "token-usage";
+			input: number;
+			output: number;
+			cacheReadInput?: number;
+			cacheCreationInput?: number;
+	  }
 	| { type: "done" }
 	| { type: "error"; message: string }
 	| { type: "session-id"; sessionId: string }

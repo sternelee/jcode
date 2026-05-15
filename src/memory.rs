@@ -414,7 +414,7 @@ impl MemoryManager {
         Ok(id)
     }
 
-    fn upsert_memory_in_graph(
+    pub fn upsert_memory_in_graph(
         &self,
         graph: &mut crate::memory_graph::MemoryGraph,
         mut entry: MemoryEntry,

@@ -49,6 +49,8 @@ export default function App() {
 		setActiveWorkspace,
 		toggleWorkspace,
 		setWorkspaceMode,
+		exportMemories,
+		importMemories,
 		setError,
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
@@ -696,6 +698,8 @@ export default function App() {
 					}}
 					selectedMessageId={selectedMessageId}
 					onSelectMessage={setSelectedMessageId}
+					exportMemories={exportMemories}
+					importMemories={importMemories}
 				/>
 			</div>
 		</div>

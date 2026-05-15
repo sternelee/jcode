@@ -1241,6 +1241,26 @@ export function useJcodeSession() {
 		[],
 	);
 
+	const exportMemories = useCallback(async (path: string) => {
+		try {
+			await invoke("export_memories", { path });
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+		}
+	}, []);
+
+	const importMemories = useCallback(async (path: string) => {
+		try {
+			return (await invoke("import_memories", { path })) as {
+				project_count: number;
+				global_count: number;
+			};
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return null;
+		}
+	}, []);
+
 	const cancel = useCallback(async (sessionId?: string) => {
 		try {
 			await invoke("cancel", { sessionId });
@@ -1639,6 +1659,8 @@ export function useJcodeSession() {
 		setWorkspaceMode,
 		addWorkspaceMessage,
 		clearWorkspaceMessages,
+		exportMemories,
+		importMemories,
 		setError,
 	};
 }
