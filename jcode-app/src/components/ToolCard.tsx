@@ -1,6 +1,7 @@
 import type { ToolExecution } from "@/types";
 import { cn } from "@/lib/utils";
 import { Loader2, Check, X } from "lucide-react";
+import { DiffView, looksLikeDiff } from "./DiffView";
 
 interface ToolCardProps {
   tool: ToolExecution;
@@ -55,16 +56,20 @@ export function ToolCard({ tool }: ToolCardProps) {
         </details>
       )}
       {tool.output && (
-        <details className="mt-1">
+        <details className="mt-1" open={looksLikeDiff(tool.output)}>
           <summary className="cursor-pointer text-muted-foreground text-[11px] mb-1">
             output
           </summary>
-          <pre className="bg-black/30 p-2 rounded text-[10px] font-mono leading-relaxed overflow-x-auto max-h-32 overflow-y-auto text-muted-foreground">
-            {tool.output.length > 2000
-              ? tool.output.slice(0, 2000) +
-                `\n... (${tool.output.length - 2000} more)`
-              : tool.output}
-          </pre>
+          {looksLikeDiff(tool.output) ? (
+            <DiffView text={tool.output} />
+          ) : (
+            <pre className="bg-black/30 p-2 rounded text-[10px] font-mono leading-relaxed overflow-x-auto max-h-32 overflow-y-auto text-muted-foreground">
+              {tool.output.length > 2000
+                ? tool.output.slice(0, 2000) +
+                  `\n... (${tool.output.length - 2000} more)`
+                : tool.output}
+            </pre>
+          )}
         </details>
       )}
       {tool.error && (
