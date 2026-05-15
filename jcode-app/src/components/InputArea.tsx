@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Plus, Square, AtSign, Pause } from "lucide-react";
+import { Plus, Square, AtSign, Pause, Mic } from "lucide-react";
 import type { AttachedImage } from "@/types";
 import { cn } from "@/lib/utils";
 import {
@@ -31,6 +31,10 @@ interface InputAreaProps {
 	availableRoles?: string[];
 	/** roleName → current model display */
 	roleModels?: Record<string, string>;
+	/** Run configured dictation command and return transcript */
+	onDictate?: () => Promise<
+		{ text: string; mode: import("@/types").TranscriptMode } | null
+	>;
 }
 
 export function InputArea({
@@ -43,9 +47,11 @@ export function InputArea({
 	queuedDraftCount = 0,
 	availableRoles = [],
 	roleModels = {},
+	onDictate,
 }: InputAreaProps) {
 	const [text, setText] = useState("");
 	const [images, setImages] = useState<AttachedImage[]>([]);
+	const [dictating, setDictating] = useState(false);
 	const [mentionQuery, setMentionQuery] = useState("");
 	const [showMentions, setShowMentions] = useState(false);
 	const [selectedMentionIndex, setSelectedMentionIndex] = useState(0);
@@ -282,6 +288,86 @@ export function InputArea({
 						>
 							<Plus className="w-4 h-4" />
 						</Button>
+
+
+					{/* 语音输入按钒 */}
+					{onDictate && (
+						<Button
+							variant={dictating ? "default" : "outline"}
+							size="icon"
+							onClick={async () => {
+								if (dictating) return;
+								setDictating(true);
+								const result = await onDictate();
+								setDictating(false);
+								if (!result) return;
+								const { text: t, mode } = result;
+								if (mode === "replace") {
+									setText(t);
+								} else if (mode === "append") {
+									setText((prev) => (prev ? prev + " " + t : t));
+								} else if (mode === "insert") {
+									const cursorPos = textareaRef.current?.selectionStart || 0;
+									const before = text.slice(0, cursorPos);
+									const after = text.slice(cursorPos);
+									const spacer = before && !before.endsWith(" ") ? " " : "";
+									const newText = before + spacer + t + (after ? " " + after : "");
+									setText(newText);
+									setTimeout(() => {
+										if (textareaRef.current) {
+											const newPos = cursorPos + spacer.length + t.length + 1;
+											textareaRef.current.selectionStart = newPos;
+											textareaRef.current.selectionEnd = newPos;
+											textareaRef.current.focus();
+										}
+									}, 0);
+								} else if (mode === "send") {
+									setText(t);
+									// Auto-submit if mode is send
+									const content = t.trim();
+									if (content) {
+										const tuples: [string, string][] = images
+											.filter((i): i is AttachedImage & { base64Data: string } =>
+												Boolean(i.base64Data),
+											)
+											.map((i) => [i.mediaType, i.base64Data]);
+										const { targetRole, cleanContent } = parseTargetRole(content);
+										const finalContent = cleanContent.trim() || "(dictated)";
+										if (isProcessing) {
+											onQueueSend(
+												finalContent,
+												tuples.length > 0 ? tuples : undefined,
+												targetRole,
+											);
+										} else {
+											onSend(
+												finalContent,
+												tuples.length > 0 ? tuples : undefined,
+												targetRole,
+											);
+										}
+										setText("");
+										setImages([]);
+									}
+								}
+							}}
+							disabled={disabled || dictating}
+							className="h-10 w-10 shrink-0"
+							title={dictating ? "Dictating..." : "Dictate (run configured speech-to-text)"}
+						>
+							{dictating ? (
+								<span className="inline-block w-3 h-3 rounded-full bg-white animate-pulse" />
+							) : (
+								<Mic className="w-4 h-4" />
+							)}
+						</Button>
+					)}
+
+					{dictating && (
+						<span className="text-[11px] text-muted-foreground animate-pulse">
+							Dictating…
+						</span>
+					)}
 
 						{/* Responding 状态指示器 */}
 						{isProcessing && (

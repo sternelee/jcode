@@ -1779,6 +1779,17 @@ export function useJcodeSession() {
 		}
 	}, []);
 
+	const runDictation = useCallback(async () => {
+		try {
+			return await invoke<{ text: string; mode: import("@/types").TranscriptMode }>(
+				"run_dictation",
+			);
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return null;
+		}
+	}, []);
+
 	return {
 		state,
 		connect,
@@ -1820,6 +1831,7 @@ export function useJcodeSession() {
 		sendTranscript,
 		getBrowserStatus,
 		setupBrowser,
+		runDictation,
 		setError,
 	};
 }

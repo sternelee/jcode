@@ -70,6 +70,10 @@ interface ChatViewProps {
 	onSetReasoningEffort: (effort: string) => void;
 	onSetMemoryEnabled: (enabled: boolean) => void | Promise<void>;
 	onCompactContext: () => void;
+	/** Run configured dictation command and return transcript */
+	onDictate?: () => Promise<
+		{ text: string; mode: import("@/types").TranscriptMode } | null
+	>;
 }
 
 interface MessageSegment {
@@ -200,6 +204,7 @@ export function ChatView({
 	onSetReasoningEffort,
 	onSetMemoryEnabled,
 	onCompactContext,
+	onDictate,
 }: ChatViewProps) {
 	const [showEarlierMessages, setShowEarlierMessages] = useState(false);
 
@@ -560,6 +565,7 @@ export function ChatView({
 				queuedDraftCount={queuedDraftCount}
 				availableRoles={availableRoles}
 				roleModels={roleModels}
+				onDictate={onDictate}
 			/>
 		</div>
 	);

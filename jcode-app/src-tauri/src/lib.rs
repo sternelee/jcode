@@ -3246,6 +3246,23 @@ async fn setup_browser() -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn run_dictation() -> Result<serde_json::Value, String> {
+    let run = jcode::dictation::run_configured()
+        .await
+        .map_err(|e| e.to_string())?;
+    let mode_str = match run.mode {
+        jcode::protocol::TranscriptMode::Insert => "insert",
+        jcode::protocol::TranscriptMode::Append => "append",
+        jcode::protocol::TranscriptMode::Replace => "replace",
+        jcode::protocol::TranscriptMode::Send => "send",
+    };
+    Ok(serde_json::json!({
+        "text": run.text,
+        "mode": mode_str,
+    }))
+}
+
+#[tauri::command]
 async fn trigger_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     if matches!(
@@ -3326,6 +3343,7 @@ pub fn run() {
             get_browser_status,
             setup_browser,
             send_transcript,
+            run_dictation,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

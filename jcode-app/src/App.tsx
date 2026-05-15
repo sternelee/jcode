@@ -62,6 +62,7 @@ export default function App() {
 		sendTranscript,
 		getBrowserStatus,
 		setupBrowser,
+		runDictation,
 		setError,
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
@@ -682,6 +683,7 @@ export default function App() {
 					}
 					onSetMemoryEnabled={handleSetMemoryEnabled}
 					onCompactContext={() => compactContext(state.sessionId || undefined)}
+					onDictate={runDictation}
 				/>
 				<Separator orientation="vertical" className="hidden xl:flex" />
 				<ActivityPanel
