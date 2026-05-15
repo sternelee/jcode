@@ -1,0 +1,75 @@
+# 目标：将 jcode CLI/TUI 全部功能迁移到 jcode-app（Tauri 桌面端）
+
+## 背景
+jcode-app 当前已具备基础聊天、模型选择、工具执行、记忆开关、Slack 多角色模式。
+jcode CLI/TUI 有大量功能是 jcode-app 没有的，需要逐一迁移并适配桌面端 UI/UX。
+
+## 阶段规划（分批迁移，每批聚焦一组高相关性功能）
+
+### Phase 1: 会话管理增强
+- [ ] Session replay：在 ChatView 中回放会话历史，支持播放/暂停/速度控制
+- [ ] Soft interrupt：在输入区提供软中断按钮，发送 context-aware 中断消息
+- [ ] Session rename：完善已有 rename 功能，支持 inline editing
+- [ ] Clear / Rewind / Compact：在 UI 中提供更易用的操作入口（非仅命令）
+- [ ] Set reasoning effort：在控制栏提供下拉选择（none/low/medium/high/xhigh）
+
+### Phase 2: 记忆管理
+- [ ] Memory list：在 ActivityPanel 或独立面板展示记忆列表
+- [ ] Memory search：支持 keyword/semantic 搜索
+- [ ] Memory export/import：JSON 文件导入导出
+- [ ] Memory stats：展示记忆统计信息
+
+### Phase 3: 模型与提供商管理
+- [ ] Model list：增强 ModelSelector，支持更完整的模型信息展示
+- [ ] Provider add：UI 上支持添加 OpenAI-compatible provider profile
+- [ ] Provider current：展示当前 provider 选择链路
+- [ ] Auth status/doctor：在设置面板展示认证状态诊断
+- [ ] Login：完善 OAuth/API key 登录流程
+
+### Phase 4: Ambient 模式
+- [ ] Ambient status：展示 ambient 模式运行状态
+- [ ] Ambient log：展示最近 ambient 活动日志
+- [ ] Ambient trigger/stop：提供手动触发和停止按钮
+
+### Phase 5: 配置与系统工具
+- [ ] Version / Usage：在设置面板展示版本和用量信息
+- [ ] Auth test：认证端到端测试 UI
+- [ ] Pair device：生成配对码、列出/撤销已配对设备
+- [ ] Permissions：展示和处理 ambient 权限请求
+- [ ] Transcript：支持外部转录文本注入
+- [ ] Dictate：语音输入集成
+- [ ] Browser automation：浏览器自动化设置和状态
+
+### Phase 6: TUI 深度视觉功能
+- [ ] Mermaid 图表渲染：在消息气泡中渲染 mermaid 图表
+- [ ] Diff 视图：代码 diff 的 side-by-side 渲染
+- [ ] Token 用量浮层：hover/点击展示 token 用量详情
+- [ ] Background task progress：展示后台任务进度条
+
+### Phase 7: 全局集成
+- [ ] Setup hotkey：全局快捷键设置
+- [ ] Setup launcher：应用启动器集成
+- [ ] Restart save/restore：重启后恢复会话状态
+- [ ] SelfDev mode：canary 会话支持
+
+## 约束条件
+- TypeScript strict 模式，zero tsc errors
+- 保留现有 Tauri 事件流（server-event 监听 + useReducer）
+- Rust 后端命令尽量复用已有逻辑，新增命令需遵循已有模式
+- UI 适配桌面端原生体验（native-feel skill 已激活）
+- 每阶段完成后 `pnpm tsc --noEmit` 必须通过
+- 优先前端 UI/UX 适配，后端命令缺失时补充
+- 不需要一次性完成所有阶段，每阶段完成后可提交
+
+## 当前状态
+- jcode-app 核心架构稳定（React 19 + Tauri v2）
+- Slack 模式和多角色会话已可用
+- ModelSelector 已支持模型选择和 provider 认证
+- 已有后端命令：begin_session, resume_session, send_message, cancel, set_model, clear_chat, rewind_chat, compact_context, set_memory_enabled, set_reasoning_effort, delete_session, get_models, save_provider_api_key, start_provider_auth_flow, complete_provider_auth_flow, get_workspace_memory_preferences, set_workspace_memory_preference
+
+## 验收标准
+- 每个阶段的所有 checklist 项完成为该阶段完成
+- 每阶段 `pnpm tsc --noEmit` 零错误
+- 每阶段 Rust `cargo check` 零错误
+- 新增功能需有合理的 UI/UX（非简单命令行映射）
+- 不破坏已有功能（聊天、Slack 模式、模型选择等）

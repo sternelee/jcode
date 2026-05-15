@@ -1813,6 +1813,53 @@ async fn set_workspace_memory_preference(
         .map_err(|e| format!("Failed to save workspace memory preference: {e}"))
 }
 
+#[tauri::command]
+fn get_version_info() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({
+        "version": option_env!("JCODE_VERSION").unwrap_or("unknown"),
+        "semver": option_env!("JCODE_SEMVER").unwrap_or("unknown"),
+        "base_semver": option_env!("JCODE_BASE_SEMVER").unwrap_or("unknown"),
+        "update_semver": option_env!("JCODE_UPDATE_SEMVER").unwrap_or("unknown"),
+        "git_hash": option_env!("JCODE_GIT_HASH").unwrap_or("unknown"),
+        "git_tag": option_env!("JCODE_GIT_TAG").unwrap_or("unknown"),
+        "git_date": option_env!("JCODE_GIT_DATE").unwrap_or("unknown"),
+        "release_build": option_env!("JCODE_RELEASE_BUILD").is_some(),
+    }))
+}
+
+#[tauri::command]
+fn get_auth_status() -> Result<serde_json::Value, String> {
+    let status = jcode::auth::AuthStatus::check();
+    let validation = jcode::auth::validation::load_all();
+    let providers = jcode::provider_catalog::auth_status_login_providers();
+    let reports: Vec<serde_json::Value> = providers
+        .into_iter()
+        .map(|provider| {
+            let assessment = status.assessment_for_provider(provider);
+            let state_label = match assessment.state {
+                jcode::auth::AuthState::Available => "available",
+                jcode::auth::AuthState::Expired => "expired",
+                jcode::auth::AuthState::NotConfigured => "not_configured",
+            };
+            serde_json::json!({
+                "id": provider.id.to_string(),
+                "display_name": provider.display_name.to_string(),
+                "status": state_label,
+                "health": assessment.health_summary(),
+                "method": assessment.method_detail,
+                "configured": matches!(assessment.state, jcode::auth::AuthState::Available),
+                "auth_kind": provider.auth_kind.label(),
+                "recommended": provider.recommended,
+                "validation": validation.get(provider.id).map(|record| record.summary.clone()),
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({
+        "any_available": status.has_any_available(),
+        "providers": reports,
+    }))
+}
+
 fn delete_session_artifacts(session_id: &str) -> Result<(), String> {
     let session_path = jcode::session::session_path(session_id)
         .map_err(|e| format!("Failed to resolve session path for {session_id}: {e}"))?;
@@ -2575,6 +2622,8 @@ pub fn run() {
             set_reasoning_effort,
             compact_context,
             rename_session,
+            get_version_info,
+            get_auth_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

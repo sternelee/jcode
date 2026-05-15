@@ -560,3 +560,31 @@ export interface SessionState {
   /** Workspace display mode: workspaceId -> "normal" | "slack" */
   workspaceModes: Record<string, "normal" | "slack">;
 }
+
+export interface VersionInfo {
+  version: string;
+  semver: string;
+  base_semver: string;
+  update_semver: string;
+  git_hash: string;
+  git_tag: string;
+  git_date: string;
+  release_build: boolean;
+}
+
+export interface AuthStatusProvider {
+  id: string;
+  display_name: string;
+  status: string;
+  health: string;
+  method: string;
+  configured: boolean;
+  auth_kind: string;
+  recommended: boolean;
+  validation?: string;
+}
+
+export interface AuthStatus {
+  any_available: boolean;
+  providers: AuthStatusProvider[];
+}

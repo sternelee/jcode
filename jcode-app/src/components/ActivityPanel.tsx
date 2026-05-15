@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import type { AttachedImage, ChatMessage, ModelRoute, SessionInfo, StdinPrompt, ToolExecution } from "@/types";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import type { AttachedImage, AuthStatus, ChatMessage, ModelRoute, SessionInfo, StdinPrompt, ToolExecution, VersionInfo } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -24,6 +24,8 @@ import {
   MessageSquareText,
   RotateCcw,
   Search,
+  Shield,
+  ShieldCheck,
   Sparkles,
   TriangleAlert,
   Users,
@@ -469,6 +471,8 @@ export function ActivityPanel({
     const saved = localStorage.getItem("desktop-activity-runtime-filter");
     return (saved as "all" | RuntimeEventItem["kind"]) || "all";
   });
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
 
   const segments = useMemo(() => buildSegments(messages), [messages]);
   const turns = useMemo(() => buildTimeline(segments), [segments]);
@@ -676,6 +680,28 @@ export function ActivityPanel({
       setSelectedSwarmTaskId(null);
     }
   }, [selectedSwarmTaskId, activeSwarmPlan]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const version = await invoke<VersionInfo>("get_version_info");
+        setVersionInfo(version);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const status = await invoke<AuthStatus>("get_auth_status");
+        setAuthStatus(status);
+      } catch {
+        // ignore
+      }
+    })();
+  }, []);
 
   const toggleTurn = (messageId: string) => {
     setExpandedTurnIds((current) =>
@@ -2047,6 +2073,96 @@ export function ActivityPanel({
                 )}
               </div>
             ) : null}
+          </section>
+
+          <Separator />
+
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Version
+              </div>
+            </div>
+            {versionInfo ? (
+              <div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Version</span>
+                  <span className="font-mono">{versionInfo.version}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Semver</span>
+                  <span className="font-mono">{versionInfo.semver}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">Git</span>
+                  <span className="font-mono">{versionInfo.git_hash.slice(0, 8)}</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {versionInfo.release_build && (
+                    <Badge variant="secondary" className="text-[10px]">release</Badge>
+                  )}
+                  <Badge variant="outline" className="text-[10px] font-mono">{versionInfo.git_tag}</Badge>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-lg border border p-3 text-xs text-muted-foreground">
+                Version info unavailable.
+              </div>
+            )}
+          </section>
+
+          <Separator />
+
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Authentication
+              </div>
+              <Badge variant="outline" className="text-[10px]">
+                {authStatus?.providers.length ?? 0}
+              </Badge>
+            </div>
+            {authStatus ? (
+              <div className="space-y-2">
+                {authStatus.providers.map((provider) => (
+                  <div key={provider.id} className="rounded-lg border bg-card p-3 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {provider.configured ? (
+                          <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                        ) : (
+                          <Shield className="w-3.5 h-3.5 text-muted-foreground" />
+                        )}
+                        <span className="font-medium">{provider.display_name}</span>
+                      </div>
+                      <Badge
+                        variant={provider.configured ? "secondary" : "outline"}
+                        className="text-[10px]"
+                      >
+                        {provider.status}
+                      </Badge>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {provider.method}
+                    </div>
+                    {provider.health && provider.health !== "ok" && (
+                      <div className="text-[11px] text-amber-600 dark:text-amber-400">
+                        {provider.health}
+                      </div>
+                    )}
+                    {provider.validation && (
+                      <div className="text-[11px] text-muted-foreground">
+                        validated: {provider.validation}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border p-3 text-xs text-muted-foreground">
+                Auth status unavailable.
+              </div>
+            )}
           </section>
 
           <Separator />
