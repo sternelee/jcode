@@ -60,6 +60,8 @@ export default function App() {
 		stopAmbient,
 		addProviderProfile,
 		sendTranscript,
+		getBrowserStatus,
+		setupBrowser,
 		setError,
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
@@ -718,6 +720,8 @@ export default function App() {
 					stopAmbient={stopAmbient}
 					addProviderProfile={addProviderProfile}
 					sendTranscript={sendTranscript}
+					getBrowserStatus={getBrowserStatus}
+					setupBrowser={setupBrowser}
 				/>
 			</div>
 		</div>

@@ -3221,6 +3221,31 @@ async fn send_transcript(
 }
 
 #[tauri::command]
+async fn get_browser_status() -> Result<serde_json::Value, String> {
+    match jcode::browser::ensure_browser_ready_noninteractive().await {
+        Ok(status) => Ok(serde_json::json!({
+            "backend": status.backend,
+            "browser": status.browser,
+            "setup_complete": status.setup_complete,
+            "binary_installed": status.binary_installed,
+            "responding": status.responding,
+            "compatible": status.compatible,
+            "missing_actions": status.missing_actions,
+            "ready": status.ready,
+        })),
+        Err(e) => Err(format!("Browser status check failed: {e}")),
+    }
+}
+
+#[tauri::command]
+async fn setup_browser() -> Result<String, String> {
+    match jcode::browser::ensure_browser_setup().await {
+        Ok(log) => Ok(log),
+        Err(e) => Err(format!("Browser setup failed: {e}")),
+    }
+}
+
+#[tauri::command]
 async fn trigger_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     if matches!(
@@ -3298,6 +3323,8 @@ pub fn run() {
             trigger_ambient,
             stop_ambient,
             add_provider_profile,
+            get_browser_status,
+            setup_browser,
             send_transcript,
         ])
         .run(tauri::generate_context!())

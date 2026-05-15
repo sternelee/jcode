@@ -783,3 +783,14 @@ export interface ProviderSetupReport {
 }
 
 export type TranscriptMode = "send" | "insert" | "append" | "replace";
+
+export interface BrowserStatus {
+	backend: string;
+	browser: string;
+	setup_complete: boolean;
+	binary_installed: boolean;
+	responding: boolean;
+	compatible: boolean;
+	missing_actions: string[];
+	ready: boolean;
+}

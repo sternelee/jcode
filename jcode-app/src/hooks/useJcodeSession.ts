@@ -1759,6 +1759,26 @@ export function useJcodeSession() {
 		[],
 	);
 
+	const getBrowserStatus = useCallback(async () => {
+		try {
+			return await invoke<import("@/types").BrowserStatus>(
+				"get_browser_status",
+			);
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return null;
+		}
+	}, []);
+
+	const setupBrowser = useCallback(async () => {
+		try {
+			return await invoke<string>("setup_browser");
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return null;
+		}
+	}, []);
+
 	return {
 		state,
 		connect,
@@ -1798,6 +1818,8 @@ export function useJcodeSession() {
 		stopAmbient,
 		addProviderProfile,
 		sendTranscript,
+		getBrowserStatus,
+		setupBrowser,
 		setError,
 	};
 }
