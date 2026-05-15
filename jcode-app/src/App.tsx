@@ -58,6 +58,7 @@ export default function App() {
 		respondToPermission,
 		triggerAmbient,
 		stopAmbient,
+		addProviderProfile,
 		setError,
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
@@ -714,6 +715,7 @@ export default function App() {
 					respondToPermission={respondToPermission}
 					triggerAmbient={triggerAmbient}
 					stopAmbient={stopAmbient}
+					addProviderProfile={addProviderProfile}
 				/>
 			</div>
 		</div>

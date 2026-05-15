@@ -1725,6 +1725,27 @@ export function useJcodeSession() {
 		}
 	}, []);
 
+	const addProviderProfile = useCallback(
+		async (params: {
+			name: string;
+			base_url: string;
+			model: string;
+			api_key?: string;
+			auth?: string;
+		}) => {
+			try {
+				return await invoke<import("@/types").ProviderSetupReport>(
+					"add_provider_profile",
+					params,
+				);
+			} catch (e) {
+				dispatch({ type: "SET_ERROR", message: String(e) });
+				return null;
+			}
+		},
+		[],
+	);
+
 	return {
 		state,
 		connect,
@@ -1762,6 +1783,7 @@ export function useJcodeSession() {
 		respondToPermission,
 		triggerAmbient,
 		stopAmbient,
+		addProviderProfile,
 		setError,
 	};
 }

@@ -17,7 +17,7 @@ pub(crate) enum GoogleAccessTierArg {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, ValueEnum)]
-pub(crate) enum ProviderAuthArg {
+pub enum ProviderAuthArg {
     /// Send the API key as Authorization: Bearer <key> (OpenAI-compatible default)
     Bearer,
     /// Send the API key in an API-key header (defaults to api-key)

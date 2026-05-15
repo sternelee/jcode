@@ -3118,6 +3118,51 @@ async fn respond_to_permission(
 }
 
 #[tauri::command]
+async fn add_provider_profile(
+    name: String,
+    base_url: String,
+    model: String,
+    api_key: Option<String>,
+    auth: Option<String>,
+) -> Result<serde_json::Value, String> {
+    use jcode::cli::commands::provider_setup::{ProviderAddOptions, configure_provider_profile};
+    let auth_arg = auth.as_deref().and_then(|a| match a {
+        "bearer" => Some(jcode::cli::args::ProviderAuthArg::Bearer),
+        "api-key" => Some(jcode::cli::args::ProviderAuthArg::ApiKey),
+        "none" => Some(jcode::cli::args::ProviderAuthArg::None),
+        _ => None,
+    });
+    let options = ProviderAddOptions {
+        name,
+        base_url,
+        model,
+        context_window: None,
+        api_key_env: None,
+        api_key,
+        api_key_stdin: false,
+        no_api_key: false,
+        auth: auth_arg,
+        auth_header: None,
+        env_file: None,
+        set_default: false,
+        overwrite: false,
+        provider_routing: false,
+        model_catalog: false,
+        json: false,
+    };
+    let report = configure_provider_profile(options).map_err(|e: anyhow::Error| e.to_string())?;
+    Ok(serde_json::json!({
+        "profile": report.profile,
+        "config_path": report.config_path,
+        "api_base": report.api_base,
+        "model": report.model,
+        "api_key_stored": report.api_key_stored,
+        "auth": report.auth,
+        "default_set": report.default_set,
+    }))
+}
+
+#[tauri::command]
 async fn trigger_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     if matches!(
@@ -3194,6 +3239,7 @@ pub fn run() {
             respond_to_permission,
             trigger_ambient,
             stop_ambient,
+            add_provider_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

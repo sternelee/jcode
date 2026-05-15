@@ -771,3 +771,13 @@ export interface PermissionRequest {
 	created_at: string;
 	context?: unknown;
 }
+
+export interface ProviderSetupReport {
+	profile: string;
+	config_path: string;
+	api_base: string;
+	model: string;
+	api_key_stored: boolean;
+	auth: string;
+	default_set: boolean;
+}

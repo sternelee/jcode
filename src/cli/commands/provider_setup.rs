@@ -13,7 +13,7 @@ use crate::provider_catalog::{
 };
 
 #[derive(Debug)]
-pub(crate) struct ProviderAddOptions {
+pub struct ProviderAddOptions {
     pub name: String,
     pub base_url: String,
     pub model: String,
@@ -33,23 +33,23 @@ pub(crate) struct ProviderAddOptions {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ProviderSetupReport {
-    status: &'static str,
-    profile: String,
-    config_path: String,
-    api_base: String,
-    model: String,
-    api_key_env: Option<String>,
-    env_file: Option<String>,
-    env_file_path: Option<String>,
-    api_key_stored: bool,
-    auth: String,
-    default_set: bool,
-    run_command: String,
-    auth_test_command: String,
+pub struct ProviderSetupReport {
+    pub status: &'static str,
+    pub profile: String,
+    pub config_path: String,
+    pub api_base: String,
+    pub model: String,
+    pub api_key_env: Option<String>,
+    pub env_file: Option<String>,
+    pub env_file_path: Option<String>,
+    pub api_key_stored: bool,
+    pub auth: String,
+    pub default_set: bool,
+    pub run_command: String,
+    pub auth_test_command: String,
 }
 
-pub(crate) fn run_provider_add_command(options: ProviderAddOptions) -> Result<()> {
+pub fn run_provider_add_command(options: ProviderAddOptions) -> Result<()> {
     let emit_json = options.json;
     let report = configure_provider_profile(options)?;
 
@@ -89,7 +89,7 @@ pub(crate) fn run_provider_add_command(options: ProviderAddOptions) -> Result<()
     Ok(())
 }
 
-pub(crate) fn configure_provider_profile(
+pub fn configure_provider_profile(
     options: ProviderAddOptions,
 ) -> Result<ProviderSetupReport> {
     let name = validate_profile_name(&options.name)?;
