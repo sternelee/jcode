@@ -53,6 +53,7 @@ export default function App() {
 		importMemories,
 		listBackgroundTasks,
 		cancelBackgroundTask,
+		runAuthDoctor,
 		setError,
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
@@ -704,6 +705,7 @@ export default function App() {
 					importMemories={importMemories}
 					listBackgroundTasks={listBackgroundTasks}
 					cancelBackgroundTask={cancelBackgroundTask}
+					runAuthDoctor={runAuthDoctor}
 				/>
 			</div>
 		</div>

@@ -660,6 +660,40 @@ export interface BackgroundTaskProgress {
 	source: "reported" | "parsed_output" | "heuristic";
 }
 
+export interface AuthDoctorProvider {
+	id: string;
+	display_name: string;
+	status: string;
+	configured: boolean;
+	needs_attention: boolean;
+	method_detail: string;
+	credential_source: string;
+	credential_source_detail: string;
+	expiry_confidence: string;
+	refresh_support: string;
+	validation_method: string;
+	last_validation?: {
+		checked_at_ms: number;
+		success: boolean;
+		summary: string;
+		provider_smoke_ok?: boolean;
+		tool_smoke_ok?: boolean;
+	};
+	last_refresh?: {
+		last_attempt_ms: number;
+		last_success_ms?: number;
+		last_error?: string;
+	};
+	diagnostics: string[];
+	recommended_actions: string[];
+}
+
+export interface AuthDoctorReport {
+	needs_attention_count: number;
+	provider_count: number;
+	providers: AuthDoctorProvider[];
+}
+
 export interface BackgroundTask {
 	task_id: string;
 	tool_name: string;

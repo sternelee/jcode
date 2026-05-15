@@ -1634,7 +1634,11 @@ export function useJcodeSession() {
 
 	const listBackgroundTasks = useCallback(async () => {
 		try {
-			return (await invoke<import("@/types").BackgroundTask[]>("list_background_tasks")) || [];
+			return (
+				(await invoke<import("@/types").BackgroundTask[]>(
+					"list_background_tasks",
+				)) || []
+			);
 		} catch (e) {
 			dispatch({ type: "SET_ERROR", message: String(e) });
 			return [];
@@ -1647,6 +1651,15 @@ export function useJcodeSession() {
 		} catch (e) {
 			dispatch({ type: "SET_ERROR", message: String(e) });
 			return false;
+		}
+	}, []);
+
+	const runAuthDoctor = useCallback(async () => {
+		try {
+			return await invoke<import("@/types").AuthDoctorReport>("run_auth_doctor");
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return null;
 		}
 	}, []);
 
@@ -1681,6 +1694,7 @@ export function useJcodeSession() {
 		importMemories,
 		listBackgroundTasks,
 		cancelBackgroundTask,
+		runAuthDoctor,
 		setError,
 	};
 }

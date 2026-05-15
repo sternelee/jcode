@@ -2110,6 +2110,65 @@ fn get_version_info() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+fn run_auth_doctor() -> Result<serde_json::Value, String> {
+    let status = jcode::auth::AuthStatus::check();
+    let validation = jcode::auth::validation::load_all();
+    let providers = jcode::provider_catalog::auth_status_login_providers();
+
+    let mut provider_reports = Vec::new();
+    let mut needs_attention_count = 0usize;
+
+    for provider in providers {
+        let assessment = status.assessment_for_provider(provider);
+        let validation_result = validation.get(provider.id).map(|r| r.summary.as_str());
+        let needs_attn = jcode::auth::doctor::needs_attention(&assessment, validation_result);
+        if needs_attn {
+            needs_attention_count += 1;
+        }
+        let diagnostics = jcode::auth::doctor::diagnostics(provider, &assessment, validation_result);
+        let actions = jcode::auth::doctor::recommended_actions(provider, &assessment, validation_result);
+
+        provider_reports.push(serde_json::json!({
+            "id": provider.id,
+            "display_name": provider.display_name,
+            "status": match assessment.state {
+                jcode::auth::AuthState::Available => "available",
+                jcode::auth::AuthState::Expired => "expired",
+                jcode::auth::AuthState::NotConfigured => "not_configured",
+            },
+            "configured": matches!(assessment.state, jcode::auth::AuthState::Available),
+            "needs_attention": needs_attn,
+            "method_detail": assessment.method_detail,
+            "credential_source": assessment.credential_source.label(),
+            "credential_source_detail": assessment.credential_source_detail,
+            "expiry_confidence": assessment.expiry_confidence.label(),
+            "refresh_support": assessment.refresh_support.label(),
+            "validation_method": assessment.validation_method.label(),
+            "last_validation": assessment.last_validation.as_ref().map(|r| serde_json::json!({
+                "checked_at_ms": r.checked_at_ms,
+                "success": r.success,
+                "summary": r.summary,
+                "provider_smoke_ok": r.provider_smoke_ok,
+                "tool_smoke_ok": r.tool_smoke_ok,
+            })),
+            "last_refresh": assessment.last_refresh.as_ref().map(|r| serde_json::json!({
+                "last_attempt_ms": r.last_attempt_ms,
+                "last_success_ms": r.last_success_ms,
+                "last_error": r.last_error,
+            })),
+            "diagnostics": diagnostics,
+            "recommended_actions": actions,
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "needs_attention_count": needs_attention_count,
+        "provider_count": provider_reports.len(),
+        "providers": provider_reports,
+    }))
+}
+
+#[tauri::command]
 fn get_auth_status() -> Result<serde_json::Value, String> {
     let status = jcode::auth::AuthStatus::check();
     let validation = jcode::auth::validation::load_all();
@@ -2929,6 +2988,7 @@ pub fn run() {
             rename_session,
             get_version_info,
             get_auth_status,
+            run_auth_doctor,
             get_usage_info,
             get_memory_list,
             search_memories,
