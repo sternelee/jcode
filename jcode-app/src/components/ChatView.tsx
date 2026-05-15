@@ -7,7 +7,6 @@ import {
 	Undo2,
 	ArrowDownWideNarrow,
 	MessageSquare,
-	FolderOpen,
 	Keyboard,
 	ChevronDown,
 	ChevronUp,
@@ -40,8 +39,6 @@ const RECENT_SEGMENT_WINDOW = 3;
 interface ChatViewProps {
 	messages: ChatMessage[];
 	isProcessing: boolean;
-	connectionPhase: string | null;
-	connected: boolean;
 	reasoningEffort: string | null;
 	memoryEnabled: boolean;
 	connectionType: string | null;
@@ -71,8 +68,6 @@ interface ChatViewProps {
 	onSetReasoningEffort: (effort: string) => void;
 	onSetMemoryEnabled: (enabled: boolean) => void | Promise<void>;
 	onCompactContext: () => void;
-	onSelectWorkspace?: () => void;
-	onStartDefaultSession?: () => void;
 }
 
 interface MessageSegment {
@@ -183,8 +178,6 @@ function segmentSummary(segment: MessageSegment): string | null {
 export function ChatView({
 	messages,
 	isProcessing,
-	connectionPhase,
-	connected,
 	reasoningEffort,
 	memoryEnabled,
 	connectionType,
@@ -204,8 +197,6 @@ export function ChatView({
 	onSetReasoningEffort,
 	onSetMemoryEnabled,
 	onCompactContext,
-	onSelectWorkspace,
-	onStartDefaultSession,
 }: ChatViewProps) {
 	const [showEarlierMessages, setShowEarlierMessages] = useState(false);
 
@@ -356,8 +347,7 @@ export function ChatView({
 
 	return (
 		<div className="flex flex-col flex-1 overflow-hidden">
-			{connected && (
-				<div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
+			<div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
 					{isSlackMode ? (
 						/* Slack 模式头部：显示 workspace 线程标识和实时状态 */
 						<>
@@ -476,59 +466,10 @@ export function ChatView({
 							</div>
 						</>
 					)}
-				</div>
-			)}
+			</div>
 			<Conversation className="flex-1">
 				<ConversationContent>
-					{!connected && !connectionPhase ? (
-						<div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-6 text-muted-foreground">
-							<div className="flex flex-col items-center gap-2">
-								<div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mb-2">
-									<span className="text-primary-foreground font-black text-3xl">
-										J
-									</span>
-								</div>
-								<h1 className="text-2xl font-bold text-foreground tracking-tight">
-									JCode Desktop
-								</h1>
-								<p className="text-sm text-muted-foreground">
-									AI-powered coding assistant
-								</p>
-							</div>
-							<div className="flex items-center gap-3">
-								<Button
-									variant="outline"
-									size="lg"
-									className="gap-2 rounded-xl h-11 px-6"
-									onClick={onSelectWorkspace}
-								>
-									<FolderOpen className="w-5 h-5" />
-									Select Workspace
-								</Button>
-								<Button
-									variant="default"
-									size="lg"
-									className="gap-2 rounded-xl h-11 px-6"
-									onClick={onStartDefaultSession}
-								>
-									<MessageSquare className="w-5 h-5" />
-									Start Chatting
-								</Button>
-							</div>
-							<p className="text-xs text-muted-foreground/70">
-								Choose a folder or start directly in the default workspace
-							</p>
-						</div>
-					) : !connected ? (
-						<div className="flex flex-col items-center justify-center h-full min-h-[200px] gap-2 text-muted-foreground">
-							<p className="text-sm font-medium">
-								{connectionPhase || "Not connected"}
-							</p>
-							<p className="text-xs text-muted-foreground/70">
-								Select a workspace folder and start a session to begin.
-							</p>
-						</div>
-					) : messages.length === 0 ? (
+					{messages.length === 0 ? (
 						<ConversationEmptyState
 							icon={
 								<div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center">
@@ -612,7 +553,6 @@ export function ChatView({
 				onQueueSend={onQueueSend}
 				onCancel={onCancel}
 				isProcessing={isProcessing}
-				disabled={!connected}
 				queuedDraftCount={queuedDraftCount}
 				availableRoles={availableRoles}
 				roleModels={roleModels}

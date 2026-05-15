@@ -24,7 +24,7 @@ interface InputAreaProps {
   ) => void;
   onCancel: () => void;
   isProcessing: boolean;
-  disabled: boolean;
+  disabled?: boolean;
   queuedDraftCount?: number;
   availableRoles?: string[];
   /** roleName → current model display */
@@ -36,7 +36,7 @@ export function InputArea({
   onQueueSend,
   onCancel,
   isProcessing,
-  disabled,
+  disabled = false,
   queuedDraftCount = 0,
   availableRoles = [],
   roleModels = {},

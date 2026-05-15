@@ -34,7 +34,6 @@ export default function App() {
 		resumeSession,
 		switchSession,
 		sendMessage,
-		queueMessage,
 		cancel,
 		setModel,
 		listSessions,
@@ -241,7 +240,6 @@ export default function App() {
 		);
 	};
 
-	const canStartSession = !state.connected && !state.connecting;
 	const currentWorkspaceKey =
 		state.workingDir || state.activeWorkspaceId || "default";
 	const effectiveMemoryEnabled = state.connected
@@ -261,12 +259,6 @@ export default function App() {
 	const slackMessages = isSlackMode
 		? (state.sessionData[virtualSessionId]?.messages ?? [])
 		: [];
-	// 任意一个 workspace session connected 即认为 slack 已连接
-	const slackConnected = isSlackMode
-		? workspaceSessions.some(
-				(s) => state.sessionData[s.sessionId]?.connectionPhase === "connected",
-			)
-		: false;
 	const slackIsProcessing = isSlackMode
 		? workspaceSessions.some(
 				(s) => state.sessionData[s.sessionId]?.isProcessing,
@@ -341,21 +333,17 @@ export default function App() {
 		}
 	};
 
-	const handleStart = () => {
-		if (!canStartSession) return;
-		connect(
-			state.workingDir,
-			preferredModel || undefined,
-			effectiveMemoryEnabled,
-		);
-	};
-
-	const handleStartDefaultWorkspace = () => {
-		setActiveWorkspace("default");
-		setWorkingDir(null);
-		if (!canStartSession) return;
-		connect(null, preferredModel || undefined, defaultWorkspaceMemoryEnabled);
-	};
+	// 自动连接：用户发送第一条消息时若未连接，先创建会话再发送
+	const pendingAutoSend = useRef<
+		{ content: string; images?: [string, string][] } | null
+	>(null);
+	useEffect(() => {
+		if (state.connected && state.sessionId && pendingAutoSend.current) {
+			const { content, images } = pendingAutoSend.current;
+			pendingAutoSend.current = null;
+			sendMessage(content, images, state.sessionId);
+		}
+	}, [state.connected, state.sessionId]);
 
 	const handleResume = (session: SessionInfo) => {
 		setActiveWorkspace(session.workingDir || "default");
@@ -430,47 +418,33 @@ export default function App() {
 				</div>
 
 				<div className="flex items-center gap-2">
-					{!state.connected ? (
-						<>
-							<Button
-								variant="outline"
-								size="sm"
-								onClick={pickWorkspace}
-								className="gap-1.5 h-8 text-xs"
-							>
-								<FolderOpen className="w-3.5 h-3.5" />
-								{state.workingDir ? "Change" : "Select Workspace"}
-							</Button>
-							<>
-								<Input
-									value={preferredModel}
-									onChange={(e) => setPreferredModel(e.target.value)}
-									placeholder="Model (optional)"
-									className="h-8 text-xs w-48"
-									onKeyDown={(e) => e.key === "Enter" && handleStart()}
-								/>
-								<Button
-									variant={effectiveMemoryEnabled ? "secondary" : "outline"}
-									size="sm"
-									onClick={() =>
-										void handleSetMemoryEnabled(!effectiveMemoryEnabled)
-									}
-									className="h-8 text-xs gap-1.5"
-								>
-									<Brain className="w-3.5 h-3.5" />
-									Memory default {effectiveMemoryEnabled ? "on" : "off"}
-								</Button>
-								<Button
-									size="sm"
-									onClick={handleStart}
-									className="h-8 text-xs"
-									disabled={!canStartSession}
-								>
-									Start Session
-								</Button>
-							</>
-						</>
-					) : (
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={pickWorkspace}
+						className="gap-1.5 h-8 text-xs"
+					>
+						<FolderOpen className="w-3.5 h-3.5" />
+						{state.workingDir ? "Change" : "Select Workspace"}
+					</Button>
+					<Input
+						value={preferredModel}
+						onChange={(e) => setPreferredModel(e.target.value)}
+						placeholder="Model (optional)"
+						className="h-8 text-xs w-48"
+					/>
+					<Button
+						variant={effectiveMemoryEnabled ? "secondary" : "outline"}
+						size="sm"
+						onClick={() =>
+							void handleSetMemoryEnabled(!effectiveMemoryEnabled)
+						}
+						className="h-8 text-xs gap-1.5"
+					>
+						<Brain className="w-3.5 h-3.5" />
+						Memory default {effectiveMemoryEnabled ? "on" : "off"}
+					</Button>
+					{state.connected && (
 						<>
 							<ModelSelector
 								currentModel={state.providerModel}
@@ -491,13 +465,13 @@ export default function App() {
 									{state.availableModelRoutes.length} routes
 								</Badge>
 							)}
-							{state.isProcessing && (
-								<Badge variant="default" className="h-5 text-[10px] gap-1">
-									<Wrench className="w-2.5 h-2.5" />
-									running
-								</Badge>
-							)}
 						</>
+					)}
+					{state.isProcessing && (
+						<Badge variant="default" className="h-5 text-[10px] gap-1">
+							<Wrench className="w-2.5 h-2.5" />
+							running
+						</Badge>
 					)}
 				</div>
 
@@ -582,14 +556,6 @@ export default function App() {
 				<ChatView
 					messages={isSlackMode ? slackMessages : state.messages}
 					isProcessing={isSlackMode ? slackIsProcessing : state.isProcessing}
-					connectionPhase={
-						isSlackMode
-							? slackConnected
-								? "connected"
-								: state.connectionPhase
-							: state.connectionPhase
-					}
-					connected={isSlackMode ? slackConnected : state.connected}
 					isSlackMode={isSlackMode}
 					respondingRoles={respondingRoles}
 					reasoningEffort={state.reasoningEffort}
@@ -623,6 +589,16 @@ export default function App() {
 								sendMessage(content, images, targetSessionId);
 							})();
 						} else {
+							// 普通模式：没有会话时自动创建
+							if (!state.connected && !state.connecting) {
+								pendingAutoSend.current = { content, images };
+								void connect(
+									state.workingDir,
+									preferredModel || undefined,
+									effectiveMemoryEnabled,
+								);
+								return;
+							}
 							sendMessage(content, images, state.sessionId || undefined);
 						}
 					}}
@@ -647,7 +623,17 @@ export default function App() {
 								sendMessage(content, images, targetSessionId);
 							})();
 						} else {
-							queueMessage(content, images, state.sessionId || undefined);
+							// 普通模式：没有会话时自动创建
+							if (!state.connected && !state.connecting) {
+								pendingAutoSend.current = { content, images };
+								void connect(
+									state.workingDir,
+									preferredModel || undefined,
+									effectiveMemoryEnabled,
+								);
+								return;
+							}
+							sendMessage(content, images, state.sessionId || undefined);
 						}
 					}}
 					onCancel={() => {
@@ -674,8 +660,6 @@ export default function App() {
 					}
 					onSetMemoryEnabled={handleSetMemoryEnabled}
 					onCompactContext={() => compactContext(state.sessionId || undefined)}
-					onSelectWorkspace={pickWorkspace}
-					onStartDefaultSession={handleStartDefaultWorkspace}
 				/>
 				<Separator orientation="vertical" className="hidden xl:flex" />
 				<ActivityPanel
