@@ -694,6 +694,48 @@ export interface AuthDoctorReport {
 	providers: AuthDoctorProvider[];
 }
 
+export interface AmbientScheduleItem {
+	id: string;
+	scheduled_for: string;
+	context: string;
+	priority: "low" | "normal" | "high";
+	target: {
+		kind: "ambient" | "session" | "spawn";
+		session_id?: string;
+		parent_session_id?: string;
+	};
+	created_by_session: string;
+	task_description?: string;
+}
+
+export interface AmbientStatusInfo {
+	enabled: boolean;
+	status: "idle" | "running" | "scheduled" | "paused" | "disabled";
+	next_wake?: string;
+	last_run?: string;
+	last_summary?: string;
+	last_compactions?: number;
+	last_memories_modified?: number;
+	total_cycles: number;
+	scheduled_count: number;
+	scheduled_items: AmbientScheduleItem[];
+}
+
+export interface AmbientTranscript {
+	session_id: string;
+	started_at: string;
+	ended_at?: string;
+	status: "complete" | "interrupted" | "incomplete";
+	provider: string;
+	model: string;
+	actions: unknown[];
+	pending_permissions: number;
+	summary?: string;
+	compactions: number;
+	memories_modified: number;
+	conversation?: string;
+}
+
 export interface BackgroundTask {
 	task_id: string;
 	tool_name: string;

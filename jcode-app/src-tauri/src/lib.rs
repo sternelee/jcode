@@ -2096,6 +2096,102 @@ fn revoke_device(device_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_ambient_status() -> Result<serde_json::Value, String> {
+    use jcode::ambient::{AmbientManager, AmbientStatus};
+    let manager = AmbientManager::new().map_err(|e| format!("Failed to load ambient manager: {e}"))?;
+    let state = manager.state();
+    let queue = manager.queue();
+
+    let status_label = match &state.status {
+        AmbientStatus::Idle => "idle",
+        AmbientStatus::Running { .. } => "running",
+        AmbientStatus::Scheduled { .. } => "scheduled",
+        AmbientStatus::Paused { .. } => "paused",
+        AmbientStatus::Disabled => "disabled",
+    };
+
+    let next_wake = match &state.status {
+        AmbientStatus::Scheduled { next_wake } => Some(next_wake.to_rfc3339()),
+        _ => None,
+    };
+
+    let scheduled_items: Vec<serde_json::Value> = queue
+        .items()
+        .iter()
+        .map(|item| {
+            serde_json::json!({
+                "id": item.id,
+                "scheduled_for": item.scheduled_for.to_rfc3339(),
+                "context": item.context,
+                "priority": match item.priority {
+                    jcode::ambient::Priority::Low => "low",
+                    jcode::ambient::Priority::Normal => "normal",
+                    jcode::ambient::Priority::High => "high",
+                },
+                "target": match &item.target {
+                    jcode::ambient::ScheduleTarget::Ambient => serde_json::json!({"kind": "ambient"}),
+                    jcode::ambient::ScheduleTarget::Session { session_id } => serde_json::json!({"kind": "session", "session_id": session_id}),
+                    jcode::ambient::ScheduleTarget::Spawn { parent_session_id } => serde_json::json!({"kind": "spawn", "parent_session_id": parent_session_id}),
+                },
+                "created_by_session": item.created_by_session,
+                "task_description": item.task_description,
+            })
+        })
+        .collect();
+
+    Ok(serde_json::json!({
+        "enabled": AmbientManager::is_enabled(),
+        "status": status_label,
+        "next_wake": next_wake,
+        "last_run": state.last_run.as_ref().map(|dt| dt.to_rfc3339()),
+        "last_summary": state.last_summary,
+        "last_compactions": state.last_compactions,
+        "last_memories_modified": state.last_memories_modified,
+        "total_cycles": state.total_cycles,
+        "scheduled_count": scheduled_items.len(),
+        "scheduled_items": scheduled_items,
+    }))
+}
+
+#[tauri::command]
+fn get_ambient_transcripts() -> Result<serde_json::Value, String> {
+    use jcode::ambient::VisibleCycleContext;
+    let mut transcripts: Vec<serde_json::Value> = Vec::new();
+
+    let dir = jcode::storage::jcode_dir()
+        .map_err(|e| e.to_string())?
+        .join("ambient")
+        .join("transcripts");
+    if dir.exists() {
+        let mut entries: Vec<_> = std::fs::read_dir(&dir)
+            .map_err(|e| e.to_string())?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
+            })
+            .collect();
+        entries.sort_by_key(|a| std::cmp::Reverse(a.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH)));
+
+        for entry in entries.into_iter().take(10) {
+            let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+                transcripts.push(value);
+            }
+        }
+    }
+
+    let visible_cycle = VisibleCycleContext::load().ok();
+
+    Ok(serde_json::json!({
+        "transcripts": transcripts,
+        "visible_cycle": visible_cycle.map(|ctx| serde_json::json!({
+            "system_prompt": ctx.system_prompt,
+            "initial_message": ctx.initial_message,
+        })),
+    }))
+}
+
+#[tauri::command]
 fn get_version_info() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
         "version": option_env!("JCODE_VERSION").unwrap_or("unknown"),
@@ -2990,6 +3086,8 @@ pub fn run() {
             get_auth_status,
             run_auth_doctor,
             get_usage_info,
+            get_ambient_status,
+            get_ambient_transcripts,
             get_memory_list,
             search_memories,
             get_memory_stats,
