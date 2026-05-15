@@ -1632,6 +1632,24 @@ export function useJcodeSession() {
 		dispatch({ type: "SET_ERROR", message, sessionId });
 	}, []);
 
+	const listBackgroundTasks = useCallback(async () => {
+		try {
+			return (await invoke<import("@/types").BackgroundTask[]>("list_background_tasks")) || [];
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return [];
+		}
+	}, []);
+
+	const cancelBackgroundTask = useCallback(async (taskId: string) => {
+		try {
+			return await invoke<boolean>("cancel_background_task", { taskId });
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return false;
+		}
+	}, []);
+
 	return {
 		state,
 		connect,
@@ -1661,6 +1679,8 @@ export function useJcodeSession() {
 		clearWorkspaceMessages,
 		exportMemories,
 		importMemories,
+		listBackgroundTasks,
+		cancelBackgroundTask,
 		setError,
 	};
 }

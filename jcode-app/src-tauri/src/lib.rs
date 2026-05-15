@@ -2044,6 +2044,24 @@ fn import_memories(path: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+async fn list_background_tasks() -> Result<Vec<serde_json::Value>, String> {
+    use jcode::background::global;
+    let tasks = global().list().await;
+    tasks
+        .into_iter()
+        .map(|task| serde_json::to_value(task).map_err(|e| e.to_string()))
+        .collect()
+}
+
+#[tauri::command]
+async fn cancel_background_task(task_id: String) -> Result<bool, String> {
+    jcode::background::global()
+        .cancel(&task_id)
+        .await
+        .map_err(|e| format!("Failed to cancel task: {e}"))
+}
+
+#[tauri::command]
 fn generate_pairing_code() -> Result<String, String> {
     let mut registry = jcode::gateway::DeviceRegistry::load();
     let code = registry.generate_pairing_code();
@@ -2920,6 +2938,8 @@ pub fn run() {
             generate_pairing_code,
             list_paired_devices,
             revoke_device,
+            list_background_tasks,
+            cancel_background_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

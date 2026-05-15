@@ -648,3 +648,29 @@ export interface MemoryStats {
 	unique_tags: number;
 	categories: Record<string, number>;
 }
+
+export interface BackgroundTaskProgress {
+	kind: "determinate" | "indeterminate";
+	percent?: number;
+	message?: string;
+	current?: number;
+	total?: number;
+	unit?: string;
+	eta_seconds?: number;
+	source: "reported" | "parsed_output" | "heuristic";
+}
+
+export interface BackgroundTask {
+	task_id: string;
+	tool_name: string;
+	display_name?: string;
+	session_id: string;
+	status: "running" | "completed" | "superseded" | "failed";
+	exit_code?: number;
+	error?: string;
+	started_at: string;
+	completed_at?: string;
+	duration_secs?: number;
+	detached: boolean;
+	progress?: BackgroundTaskProgress;
+}

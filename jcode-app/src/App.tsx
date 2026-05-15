@@ -51,6 +51,8 @@ export default function App() {
 		setWorkspaceMode,
 		exportMemories,
 		importMemories,
+		listBackgroundTasks,
+		cancelBackgroundTask,
 		setError,
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
@@ -700,6 +702,8 @@ export default function App() {
 					onSelectMessage={setSelectedMessageId}
 					exportMemories={exportMemories}
 					importMemories={importMemories}
+					listBackgroundTasks={listBackgroundTasks}
+					cancelBackgroundTask={cancelBackgroundTask}
 				/>
 			</div>
 		</div>
