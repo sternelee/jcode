@@ -54,6 +54,8 @@ export default function App() {
 		listBackgroundTasks,
 		cancelBackgroundTask,
 		runAuthDoctor,
+		getPermissionRequests,
+		respondToPermission,
 		setError,
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
@@ -706,6 +708,8 @@ export default function App() {
 					listBackgroundTasks={listBackgroundTasks}
 					cancelBackgroundTask={cancelBackgroundTask}
 					runAuthDoctor={runAuthDoctor}
+					getPermissionRequests={getPermissionRequests}
+					respondToPermission={respondToPermission}
 				/>
 			</div>
 		</div>

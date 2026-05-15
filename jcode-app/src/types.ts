@@ -760,3 +760,14 @@ export interface BackgroundTask {
 	detached: boolean;
 	progress?: BackgroundTaskProgress;
 }
+
+export interface PermissionRequest {
+	id: string;
+	action: string;
+	description: string;
+	rationale: string;
+	urgency: "low" | "normal" | "high";
+	wait: boolean;
+	created_at: string;
+	context?: unknown;
+}

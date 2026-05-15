@@ -1676,6 +1676,35 @@ export function useJcodeSession() {
 		}
 	}, []);
 
+	const getPermissionRequests = useCallback(async () => {
+		try {
+			const result = await invoke<{ requests: import("@/types").PermissionRequest[] }>(
+				"get_permission_requests",
+			);
+			return result.requests || [];
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return [];
+		}
+	}, []);
+
+	const respondToPermission = useCallback(
+		async (requestId: string, approved: boolean, message?: string) => {
+			try {
+				await invoke("respond_to_permission", {
+					requestId,
+					approved,
+					message: message || null,
+				});
+				return true;
+			} catch (e) {
+				dispatch({ type: "SET_ERROR", message: String(e) });
+				return false;
+			}
+		},
+		[],
+	);
+
 	return {
 		state,
 		connect,
@@ -1709,6 +1738,8 @@ export function useJcodeSession() {
 		cancelBackgroundTask,
 		runAuthDoctor,
 		runAuthTest,
+		getPermissionRequests,
+		respondToPermission,
 		setError,
 	};
 }

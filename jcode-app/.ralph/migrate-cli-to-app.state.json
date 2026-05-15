@@ -1,7 +1,7 @@
 {
   "name": "migrate-cli-to-app",
   "taskFile": ".ralph/migrate-cli-to-app.md",
-  "iteration": 10,
+  "iteration": 11,
   "maxIterations": 50,
   "itemsPerIteration": 0,
   "reflectEvery": 0,

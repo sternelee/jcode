@@ -3083,6 +3083,40 @@ async fn compact_context(
     Ok(())
 }
 
+#[tauri::command]
+async fn get_permission_requests() -> Result<serde_json::Value, String> {
+    let safety = jcode::safety::SafetySystem::new();
+    let requests = safety.pending_requests();
+    let items: Vec<serde_json::Value> = requests
+        .iter()
+        .map(|req| {
+            serde_json::json!({
+                "id": req.id,
+                "action": req.action,
+                "description": req.description,
+                "rationale": req.rationale,
+                "urgency": format!("{:?}", req.urgency).to_lowercase(),
+                "wait": req.wait,
+                "created_at": req.created_at.to_rfc3339(),
+                "context": req.context,
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({ "requests": items }))
+}
+
+#[tauri::command]
+async fn respond_to_permission(
+    request_id: String,
+    approved: bool,
+    message: Option<String>,
+) -> Result<(), String> {
+    let safety = jcode::safety::SafetySystem::new();
+    safety
+        .record_decision(&request_id, approved, "desktop", message)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // rustls 0.23 当同时编译了多个 provider（ring + aws-lc-rs）时不能自动选择，
@@ -3137,6 +3171,8 @@ pub fn run() {
             revoke_device,
             list_background_tasks,
             cancel_background_task,
+            get_permission_requests,
+            respond_to_permission,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
