@@ -1789,6 +1789,29 @@ export function useJcodeSession() {
 			return null;
 		}
 	}, []);
+	const saveSessionState = useCallback(async (sessionId: string, workingDir: string | null) => {
+		try {
+			await invoke("save_session_state", { sessionId, workingDir });
+		} catch {
+			// ignore
+		}
+	}, []);
+
+	const getLastSessionState = useCallback(async () => {
+		try {
+			return await invoke<{ session_id: string; working_dir: string | null } | null>("get_last_session_state");
+		} catch {
+			return null;
+		}
+	}, []);
+
+	const clearSessionState = useCallback(async () => {
+		try {
+			await invoke("clear_session_state");
+		} catch {
+			// ignore
+		}
+	}, []);
 
 	return {
 		state,
@@ -1832,6 +1855,9 @@ export function useJcodeSession() {
 		getBrowserStatus,
 		setupBrowser,
 		runDictation,
+		saveSessionState,
+		getLastSessionState,
+		clearSessionState,
 		setError,
 	};
 }

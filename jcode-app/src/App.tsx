@@ -63,6 +63,8 @@ export default function App() {
 		getBrowserStatus,
 		setupBrowser,
 		runDictation,
+		saveSessionState,
+		getLastSessionState,
 		setError,
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
@@ -90,6 +92,36 @@ export default function App() {
 			hasPolledOnConnect.current = false;
 		}
 	}, [state.connected, listSessions]);
+
+	// Restore last session on startup
+	const hasRestored = useRef(false);
+	useEffect(() => {
+		if (hasRestored.current) return;
+		hasRestored.current = true;
+		void (async () => {
+			const saved = await getLastSessionState();
+			if (!saved) return;
+			const sessionId = (saved as { session_id?: string }).session_id;
+			const workingDir = (saved as { working_dir?: string | null }).working_dir ?? null;
+			if (!sessionId) return;
+			const confirmed = window.confirm(
+				`Resume previous session "${sessionId.slice(-8)}"?`,
+			);
+			if (confirmed) {
+				setActiveWorkspace(workingDir || "default");
+				setWorkingDir(workingDir);
+				await resumeSession(sessionId, workingDir);
+				await listSessions();
+			}
+		})();
+	}, [getLastSessionState, resumeSession, listSessions, setActiveWorkspace, setWorkingDir]);
+
+	// Save session state when active session changes
+	useEffect(() => {
+		if (state.sessionId) {
+			void saveSessionState(state.sessionId, state.workingDir);
+		}
+	}, [state.sessionId, state.workingDir, saveSessionState]);
 
 	useEffect(() => {
 		const loadMemoryPreferences = async () => {

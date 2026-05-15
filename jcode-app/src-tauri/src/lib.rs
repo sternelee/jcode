@@ -3246,6 +3246,44 @@ async fn setup_browser() -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn save_session_state(session_id: String, working_dir: Option<String>) -> Result<(), String> {
+    let state = serde_json::json!({
+        "session_id": session_id,
+        "working_dir": working_dir,
+        "saved_at": chrono::Utc::now().to_rfc3339(),
+    });
+    let path = jcode::storage::jcode_dir()
+        .map_err(|e| e.to_string())?
+        .join("desktop_app_state.json");
+    std::fs::write(&path, serde_json::to_string_pretty(&state).unwrap_or_default())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_last_session_state() -> Result<Option<serde_json::Value>, String> {
+    let path = jcode::storage::jcode_dir()
+        .map_err(|e| e.to_string())?
+        .join("desktop_app_state.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let state: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    Ok(Some(state))
+}
+
+#[tauri::command]
+async fn clear_session_state() -> Result<(), String> {
+    let path = jcode::storage::jcode_dir()
+        .map_err(|e| e.to_string())?
+        .join("desktop_app_state.json");
+    if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn run_dictation() -> Result<serde_json::Value, String> {
     let run = jcode::dictation::run_configured()
         .await
@@ -3344,6 +3382,9 @@ pub fn run() {
             setup_browser,
             send_transcript,
             run_dictation,
+            save_session_state,
+            get_last_session_state,
+            clear_session_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
