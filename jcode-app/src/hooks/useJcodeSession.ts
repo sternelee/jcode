@@ -1130,6 +1130,7 @@ export function useJcodeSession() {
 			model?: string,
 			memoryEnabled?: boolean,
 			roleName?: string,
+			profileId?: string,
 		) => {
 			dispatch({ type: "SET_CONNECTING" });
 			try {
@@ -1138,6 +1139,7 @@ export function useJcodeSession() {
 					model: model || null,
 					memoryEnabled: memoryEnabled ?? true,
 					roleName: roleName || null,
+					profileId: profileId || null,
 				});
 			} catch (e) {
 				dispatch({ type: "SET_ERROR", message: String(e) });
@@ -1152,6 +1154,7 @@ export function useJcodeSession() {
 			roleName: string,
 			model?: string,
 			memoryEnabled?: boolean,
+			profileId?: string,
 		) => {
 			dispatch({ type: "SET_CONNECTING" });
 			try {
@@ -1160,6 +1163,7 @@ export function useJcodeSession() {
 					model: model || null,
 					memoryEnabled: memoryEnabled ?? true,
 					roleName,
+					profileId: profileId || null,
 				});
 			} catch (e) {
 				dispatch({ type: "SET_ERROR", message: String(e) });

@@ -649,6 +649,8 @@ export default function App() {
 									state.workingDir,
 									preferredModel || undefined,
 									effectiveMemoryEnabled,
+									undefined,
+									preferredProfileId || undefined,
 								);
 								return;
 							}
@@ -683,6 +685,8 @@ export default function App() {
 									state.workingDir,
 									preferredModel || undefined,
 									effectiveMemoryEnabled,
+									undefined,
+									preferredProfileId || undefined,
 								);
 								return;
 							}

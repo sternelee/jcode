@@ -1443,10 +1443,16 @@ async fn begin_session(
     model: Option<String>,
     memory_enabled: Option<bool>,
     role_name: Option<String>,
+    profile_id: Option<String>,
 ) -> Result<(), String> {
     let provider = create_provider().await?;
     if let Some(ref model_name) = model {
-        jcode::provider::set_model_with_auth_refresh(provider.as_ref(), model_name)
+        let model_arg = if let Some(pid) = profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+            format!("{}:{}", pid, model_name)
+        } else {
+            model_name.clone()
+        };
+        jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg)
             .map_err(|e| format!("Failed to set model: {e}"))?;
     }
 
