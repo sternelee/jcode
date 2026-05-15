@@ -59,6 +59,7 @@ export default function App() {
 		triggerAmbient,
 		stopAmbient,
 		addProviderProfile,
+		sendTranscript,
 		setError,
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
@@ -716,6 +717,7 @@ export default function App() {
 					triggerAmbient={triggerAmbient}
 					stopAmbient={stopAmbient}
 					addProviderProfile={addProviderProfile}
+					sendTranscript={sendTranscript}
 				/>
 			</div>
 		</div>

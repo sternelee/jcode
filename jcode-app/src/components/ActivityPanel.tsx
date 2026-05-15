@@ -95,6 +95,10 @@ interface ActivityPanelProps {
 		api_key?: string;
 		auth?: string;
 	}) => Promise<import("@/types").ProviderSetupReport | null>;
+	sendTranscript?: (
+		text: string,
+		mode: import("@/types").TranscriptMode,
+	) => Promise<boolean>;
 }
 
 type SegmentKind =
@@ -547,6 +551,7 @@ export function ActivityPanel({
 	triggerAmbient,
 	stopAmbient,
 	addProviderProfile,
+	sendTranscript,
 }: ActivityPanelProps) {
 	const [expandedTurnIds, setExpandedTurnIds] = useState<string[]>([]);
 	const [selectedSwarmTaskId, setSelectedSwarmTaskId] = useState<string | null>(
@@ -620,6 +625,10 @@ export function ActivityPanel({
 		api_key: "",
 		auth: "bearer",
 	});
+
+	const [transcriptText, setTranscriptText] = useState("");
+	const [transcriptMode, setTranscriptMode] = useState<import("@/types").TranscriptMode>("send");
+	const [transcriptBusy, setTranscriptBusy] = useState(false);
 
 	const segments = useMemo(() => buildSegments(messages), [messages]);
 	const turns = useMemo(() => buildTimeline(segments), [segments]);
@@ -3065,7 +3074,9 @@ export function ActivityPanel({
 						{providerAddOpen && (
 							<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
 								<div className="space-y-1">
-									<label className="text-[10px] text-muted-foreground">Name</label>
+									<label className="text-[10px] text-muted-foreground">
+										Name
+									</label>
 									<input
 										className="w-full rounded border bg-background px-2 py-1 text-xs"
 										value={providerAddForm.name}
@@ -3079,7 +3090,9 @@ export function ActivityPanel({
 									/>
 								</div>
 								<div className="space-y-1">
-									<label className="text-[10px] text-muted-foreground">Base URL</label>
+									<label className="text-[10px] text-muted-foreground">
+										Base URL
+									</label>
 									<input
 										className="w-full rounded border bg-background px-2 py-1 text-xs"
 										value={providerAddForm.base_url}
@@ -3093,7 +3106,9 @@ export function ActivityPanel({
 									/>
 								</div>
 								<div className="space-y-1">
-									<label className="text-[10px] text-muted-foreground">Model</label>
+									<label className="text-[10px] text-muted-foreground">
+										Model
+									</label>
 									<input
 										className="w-full rounded border bg-background px-2 py-1 text-xs"
 										value={providerAddForm.model}
@@ -3107,7 +3122,9 @@ export function ActivityPanel({
 									/>
 								</div>
 								<div className="space-y-1">
-									<label className="text-[10px] text-muted-foreground">API Key</label>
+									<label className="text-[10px] text-muted-foreground">
+										API Key
+									</label>
 									<input
 										className="w-full rounded border bg-background px-2 py-1 text-xs"
 										type="password"
@@ -3122,7 +3139,9 @@ export function ActivityPanel({
 									/>
 								</div>
 								<div className="space-y-1">
-									<label className="text-[10px] text-muted-foreground">Auth mode</label>
+									<label className="text-[10px] text-muted-foreground">
+										Auth mode
+									</label>
 									<select
 										className="w-full rounded border bg-background px-2 py-1 text-xs"
 										value={providerAddForm.auth}
@@ -3171,7 +3190,9 @@ export function ActivityPanel({
 								</Button>
 								{providerAddResult && (
 									<div className="rounded border bg-secondary px-2 py-1.5 space-y-1">
-										<div className="font-medium">{providerAddResult.profile}</div>
+										<div className="font-medium">
+											{providerAddResult.profile}
+										</div>
 										<div className="text-[10px] text-muted-foreground">
 											{providerAddResult.api_base}
 										</div>
@@ -3303,112 +3324,172 @@ export function ActivityPanel({
 						)}
 					</section>
 
-
-				<section className="space-y-2">
-					<div className="flex items-center justify-between">
-						<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-							Permissions
-						</div>
-						<div className="flex items-center gap-1.5">
-							<Badge variant="outline" className="text-[10px]">
-								{permissionRequests?.length ?? "–"}
-							</Badge>
-							<Button
-								variant="ghost"
-								size="sm"
-								className="h-6 px-2 text-[10px]"
-								onClick={() => void refreshPermissions()}
-							>
-								<RotateCcw className="w-3 h-3 mr-1" />
-								Refresh
-							</Button>
-						</div>
-					</div>
-					{permissionRequests === null ? (
-						<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
-							Click “Refresh” to load pending permission requests.
-						</div>
-					) : permissionRequests.length === 0 ? (
-						<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
-							No pending permission requests.
-						</div>
-					) : (
-						<div className="space-y-2">
-							{permissionRequests.map((req) => (
-								<div
-									key={req.id}
-									className="rounded-lg border bg-card p-3 space-y-2 text-xs"
-								>
-									<div className="flex items-start justify-between gap-2">
-										<div className="min-w-0">
-											<div className="font-medium">{req.action}</div>
-											<div className="text-[11px] text-muted-foreground">
-												{req.description}
-											</div>
-										</div>
-										<Badge
-											variant={
-												req.urgency === "high"
-													? "destructive"
-													: req.urgency === "normal"
-														? "secondary"
-														: "outline"
-											}
-											className="text-[10px] uppercase"
-										>
-											{req.urgency}
-										</Badge>
-									</div>
-									{req.rationale && (
-										<div className="rounded border bg-secondary px-2 py-1.5 text-[11px] text-muted-foreground">
-										{req.rationale}
-									</div>
-								)}
-									<div className="flex items-center gap-2">
-										<Button
-											variant="default"
-											size="sm"
-											className="h-6 px-2 text-[10px]"
-											onClick={() => {
-												if (respondToPermission) {
-													void respondToPermission(req.id, true).then(
-														(ok) => {
-															if (ok) void refreshPermissions();
-														},
-													);
-												}
-											}}
-										>
-											Approve
-										</Button>
-										<Button
-											variant="outline"
-											size="sm"
-											className="h-6 px-2 text-[10px]"
-											onClick={() => {
-												if (respondToPermission) {
-													void respondToPermission(req.id, false).then(
-														(ok) => {
-															if (ok) void refreshPermissions();
-														},
-													);
-												}
-											}}
-										>
-											Deny
-										</Button>
-										<span className="text-[10px] text-muted-foreground ml-auto">
-										{new Date(req.created_at).toLocaleString()}
-									</span>
-								</div>
+					<section className="space-y-2">
+						<div className="flex items-center justify-between">
+							<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+								Permissions
 							</div>
-						))}
+							<div className="flex items-center gap-1.5">
+								<Badge variant="outline" className="text-[10px]">
+									{permissionRequests?.length ?? "–"}
+								</Badge>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="h-6 px-2 text-[10px]"
+									onClick={() => void refreshPermissions()}
+								>
+									<RotateCcw className="w-3 h-3 mr-1" />
+									Refresh
+								</Button>
+							</div>
 						</div>
-					)}
-				</section>
+						{permissionRequests === null ? (
+							<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
+								Click “Refresh” to load pending permission requests.
+							</div>
+						) : permissionRequests.length === 0 ? (
+							<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
+								No pending permission requests.
+							</div>
+						) : (
+							<div className="space-y-2">
+								{permissionRequests.map((req) => (
+									<div
+										key={req.id}
+										className="rounded-lg border bg-card p-3 space-y-2 text-xs"
+									>
+										<div className="flex items-start justify-between gap-2">
+											<div className="min-w-0">
+												<div className="font-medium">{req.action}</div>
+												<div className="text-[11px] text-muted-foreground">
+													{req.description}
+												</div>
+											</div>
+											<Badge
+												variant={
+													req.urgency === "high"
+														? "destructive"
+														: req.urgency === "normal"
+															? "secondary"
+															: "outline"
+												}
+												className="text-[10px] uppercase"
+											>
+												{req.urgency}
+											</Badge>
+										</div>
+										{req.rationale && (
+											<div className="rounded border bg-secondary px-2 py-1.5 text-[11px] text-muted-foreground">
+												{req.rationale}
+											</div>
+										)}
+										<div className="flex items-center gap-2">
+											<Button
+												variant="default"
+												size="sm"
+												className="h-6 px-2 text-[10px]"
+												onClick={() => {
+													if (respondToPermission) {
+														void respondToPermission(req.id, true).then(
+															(ok) => {
+																if (ok) void refreshPermissions();
+															},
+														);
+													}
+												}}
+											>
+												Approve
+											</Button>
+											<Button
+												variant="outline"
+												size="sm"
+												className="h-6 px-2 text-[10px]"
+												onClick={() => {
+													if (respondToPermission) {
+														void respondToPermission(req.id, false).then(
+															(ok) => {
+																if (ok) void refreshPermissions();
+															},
+														);
+													}
+												}}
+											>
+												Deny
+											</Button>
+											<span className="text-[10px] text-muted-foreground ml-auto">
+												{new Date(req.created_at).toLocaleString()}
+											</span>
+										</div>
+									</div>
+								))}
+							</div>
+						)}
+					</section>
 
-				<Separator />
 					<Separator />
+					<Separator />
+
+
+					<Separator />
+
+					<section className="space-y-2">
+						<div className="flex items-center justify-between">
+							<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+								Transcript
+							</div>
+							{transcriptBusy && (
+								<Badge variant="secondary" className="text-[10px]">
+									sending…
+								</Badge>
+							)}
+						</div>
+						<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
+							<textarea
+								className="w-full rounded border bg-background px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground resize-none"
+								rows={3}
+								placeholder="Paste or type transcript text to send to the active session…"
+								value={transcriptText}
+								onChange={(e) => setTranscriptText(e.target.value)}
+							/>
+							<div className="flex items-center gap-2">
+								<select
+									className="h-7 rounded border bg-background px-2 text-[11px] text-foreground"
+									value={transcriptMode}
+									onChange={(e) =>
+										setTranscriptMode(
+											e.target.value as import("@/types").TranscriptMode,
+										)
+									}
+								>
+									<option value="send">Send as message</option>
+									<option value="insert">Insert into input</option>
+									<option value="append">Append to input</option>
+									<option value="replace">Replace input</option>
+								</select>
+								<Button
+									variant="default"
+									size="sm"
+									className="h-7 px-3 text-[11px]"
+									disabled={
+										!transcriptText.trim() || transcriptBusy || !sendTranscript
+									}
+									onClick={() => {
+										if (!sendTranscript || !transcriptText.trim()) return;
+										setTranscriptBusy(true);
+										void sendTranscript(transcriptText.trim(), transcriptMode).then(
+											(ok) => {
+												setTranscriptBusy(false);
+												if (ok) setTranscriptText("");
+											},
+										);
+									}}
+								>
+									Send
+								</Button>
+							</div>
+						</div>
+					</section>
 
 					<section className="space-y-2">
 						<div className="flex items-center justify-between">

@@ -3163,6 +3163,64 @@ async fn add_provider_profile(
 }
 
 #[tauri::command]
+async fn send_transcript(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+    mode: String,
+) -> Result<(), String> {
+    const TRANSCRIPTION_PREFIX: &str = "[transcription]";
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("Transcript text is empty".to_string());
+    }
+
+    let effective_text = if mode == "send" {
+        let trimmed_start = trimmed.trim_start();
+        if trimmed_start.starts_with(TRANSCRIPTION_PREFIX)
+            || trimmed_start.starts_with('/')
+            || trimmed_start.starts_with('!')
+        {
+            trimmed.to_string()
+        } else {
+            format!("{} {}", TRANSCRIPTION_PREFIX, trimmed_start)
+        }
+    } else {
+        trimmed.to_string()
+    };
+
+    if mode == "send" {
+        let session_id = state
+            .active_session_id
+            .lock()
+            .await
+            .clone()
+            .ok_or("No active session")?;
+        return send_message(
+            app_handle,
+            state,
+            session_id,
+            effective_text,
+            Some(vec![]),
+            None,
+        )
+        .await;
+    } else {
+        app_handle
+            .emit(
+                "server-event",
+                &serde_json::json!({
+                    "type": "transcript",
+                    "text": effective_text,
+                    "mode": mode,
+                }),
+            )
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn trigger_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     if matches!(
@@ -3240,6 +3298,7 @@ pub fn run() {
             trigger_ambient,
             stop_ambient,
             add_provider_profile,
+            send_transcript,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

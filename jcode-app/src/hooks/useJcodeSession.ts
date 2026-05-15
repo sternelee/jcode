@@ -1678,9 +1678,9 @@ export function useJcodeSession() {
 
 	const getPermissionRequests = useCallback(async () => {
 		try {
-			const result = await invoke<{ requests: import("@/types").PermissionRequest[] }>(
-				"get_permission_requests",
-			);
+			const result = await invoke<{
+				requests: import("@/types").PermissionRequest[];
+			}>("get_permission_requests");
 			return result.requests || [];
 		} catch (e) {
 			dispatch({ type: "SET_ERROR", message: String(e) });
@@ -1746,6 +1746,19 @@ export function useJcodeSession() {
 		[],
 	);
 
+	const sendTranscript = useCallback(
+		async (text: string, mode: import("@/types").TranscriptMode = "send") => {
+			try {
+				await invoke("send_transcript", { text, mode });
+				return true;
+			} catch (e) {
+				dispatch({ type: "SET_ERROR", message: String(e) });
+				return false;
+			}
+		},
+		[],
+	);
+
 	return {
 		state,
 		connect,
@@ -1784,6 +1797,7 @@ export function useJcodeSession() {
 		triggerAmbient,
 		stopAmbient,
 		addProviderProfile,
+		sendTranscript,
 		setError,
 	};
 }

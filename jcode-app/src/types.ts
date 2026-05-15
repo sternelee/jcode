@@ -781,3 +781,5 @@ export interface ProviderSetupReport {
 	auth: string;
 	default_set: boolean;
 }
+
+export type TranscriptMode = "send" | "insert" | "append" | "replace";
