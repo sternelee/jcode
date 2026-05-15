@@ -23,7 +23,7 @@ export type DesktopSemanticEvent =
   | { type: "session-id"; sessionId: string }
   | { type: "interrupted" }
   | { type: "connection-phase"; phase: string }
-  | { type: "model-changed"; model: string }
+  | { type: "model-changed"; model: string; providerName?: string }
   | {
       type: "available-models";
       models: string[];
@@ -216,7 +216,7 @@ export function rawServerEventToDesktopEvents(
     case "connection_phase":
       return [{ type: "connection-phase", phase: event.phase }];
     case "model_changed":
-      return [{ type: "model-changed", model: event.model }];
+      return [{ type: "model-changed", model: event.model, providerName: event.provider_name }];
     case "available_models_updated":
       return [
         {

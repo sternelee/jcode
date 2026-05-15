@@ -52,6 +52,9 @@ export default function App() {
 	} = useJcodeSession();
 	const { toggleTheme, effectiveTheme } = useTheme();
 	const [preferredModel, setPreferredModel] = useState("");
+	const [preferredProfileId, setPreferredProfileId] = useState<
+		string | undefined
+	>();
 	const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
 	const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
 		null,
@@ -438,19 +441,24 @@ export default function App() {
 					</Button>
 					<ModelSelector
 						currentModel={state.providerModel || preferredModel || null}
-						currentProvider={state.providerName}
+						currentProvider={state.providerName || preferredProfileId || null}
 						onSelectModel={(model, profileId) => {
 							setPreferredModel(model);
+							setPreferredProfileId(profileId);
 							if (state.sessionId) {
 								setModel(model, profileId, state.sessionId);
 							}
 						}}
 						disabled={false}
 					/>
-					{state.providerName && (
+					{(state.providerName || preferredProfileId) && (
 						<Badge variant="outline" className="h-5 text-[10px] gap-1">
 							<Brain className="w-2.5 h-2.5" />
-							{state.providerName}
+							{state.providerName ||
+								(preferredProfileId
+									? preferredProfileId[0].toUpperCase() +
+										preferredProfileId.slice(1)
+									: "")}
 						</Badge>
 					)}
 					{state.availableModelRoutes.length > 0 && (

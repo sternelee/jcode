@@ -1854,14 +1854,17 @@ async fn rename_session(session_id: String, title: String) -> Result<(), String>
 
 #[tauri::command]
 async fn delete_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
-    let active_session_id = state.active_session_id.lock().await.clone();
-    if active_session_id.as_deref() == Some(session_id.as_str()) {
-        return Err("Cannot delete the active session. Switch to another session first.".to_string());
-    }
-
     if let Some(runtime) = state.runtimes.lock().await.get(&session_id).cloned() {
         if *runtime.is_processing.lock().await {
             return Err("Cannot delete a running session.".to_string());
+        }
+    }
+
+    // If this is the active session, clear it first so deletion succeeds.
+    {
+        let mut active = state.active_session_id.lock().await;
+        if active.as_deref() == Some(session_id.as_str()) {
+            *active = None;
         }
     }
 

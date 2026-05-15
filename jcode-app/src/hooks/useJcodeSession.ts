@@ -799,6 +799,7 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 			return updateSessionData(state, action.sessionId, (data) => ({
 				...data,
 				providerModel: action.model,
+				providerName: action.providerName ?? data.providerName,
 			}));
 		case "MODELS_UPDATED":
 			return updateSessionData(state, action.sessionId, (data) => ({
@@ -1742,6 +1743,7 @@ function processEvent(
 				dispatch({
 					type: "MODEL_CHANGED",
 					model: desktopEvent.model,
+					providerName: desktopEvent.providerName,
 					sessionId: sid,
 				});
 				break;
