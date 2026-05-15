@@ -351,124 +351,124 @@ export function ChatView({
 	return (
 		<div className="flex flex-col flex-1 overflow-hidden">
 			<div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
-					{isSlackMode ? (
-						/* Slack 模式头部：显示 workspace 线程标识和实时状态 */
-						<>
-							<div className="flex items-center gap-2 text-xs text-muted-foreground">
-								<div className="w-2 h-2 rounded-full bg-emerald-500" />
-								<span className="font-medium">Workspace thread</span>
-								{availableRoles && availableRoles.length > 0 && (
-									<div className="flex gap-1 ml-2">
-										{availableRoles.map((role) => (
-											<span
-												key={role}
-												className="px-2 py-0.5 rounded-full bg-secondary text-[10px] font-medium"
-											>
-												{role}
-											</span>
-										))}
-									</div>
-								)}
-							</div>
-							<div className="flex items-center gap-2">
-								{connectionType && (
-									<span className="text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded-full">
-										{connectionType}
-									</span>
-								)}
-								{isProcessing && (
-									<span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-										• responding
-									</span>
-								)}
-							</div>
-						</>
-					) : (
-						/* 普通模式单会话控制栏 */
-						<>
-							<div className="flex items-center gap-2">
-								<Select
-									value={reasoningEffort || ""}
-									onValueChange={(v) => v && onSetReasoningEffort(v)}
-								>
-									<SelectTrigger className="h-7 text-xs w-32 bg-background border-border rounded-lg">
-										<SelectValue placeholder="Reasoning" />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="">Default</SelectItem>
-										<SelectItem value="none">None</SelectItem>
-										<SelectItem value="low">Low</SelectItem>
-										<SelectItem value="medium">Medium</SelectItem>
-										<SelectItem value="high">High</SelectItem>
-										<SelectItem value="xhigh">Max</SelectItem>
-									</SelectContent>
-								</Select>
-								<Button
-									variant={memoryEnabled ? "default" : "outline"}
-									size="sm"
-									className="h-7 text-xs gap-1 rounded-lg"
-									onClick={() => onSetMemoryEnabled(!memoryEnabled)}
-								>
-									<Brain className="w-3 h-3" />
-									Memory {memoryEnabled ? "on" : "off"}
-								</Button>
-								<Button
-									variant="outline"
-									size="sm"
-									className="h-7 text-xs gap-1 rounded-lg"
-									onClick={onCompactContext}
-									disabled={isProcessing}
-								>
-									<ArrowDownWideNarrow className="w-3 h-3" />
-									Compact
-								</Button>
-							</div>
-							<div className="flex items-center gap-2">
-								{connectionType && (
-									<span className="text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded-full">
-										{connectionType}
-									</span>
-								)}
-								{statusDetail && (
-									<span className="text-[10px] text-muted-foreground truncate max-w-[200px]">
-										{statusDetail}
-									</span>
-								)}
-								{stdinPromptActive && (
-									<span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 font-mono">
-										<Keyboard className="w-3 h-3" />
-										input pending
-									</span>
-								)}
-								{queuedDraftCount > 0 && (
-									<span className="text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded-full">
-										queued:{queuedDraftCount}
-										{stdinPromptActive ? " (paused)" : ""}
-									</span>
-								)}
-								<Button
-									variant="outline"
-									size="sm"
-									className="h-7 text-xs gap-1 rounded-lg"
-									onClick={onRewindChat}
-									disabled={isProcessing || messages.length === 0}
-								>
-									<Undo2 className="w-3 h-3" />
-									Rewind
-								</Button>
-								<Button
-									variant="outline"
-									size="sm"
-									className="h-7 text-xs gap-1 text-destructive hover:text-destructive rounded-lg"
-									onClick={onClearChat}
-									disabled={isProcessing || messages.length === 0}
-								>
-									<Trash2 className="w-3 h-3" />
-									Clear
-								</Button>
-							</div>
-						</>
-					)}
+				{isSlackMode ? (
+					/* Slack 模式头部：显示 workspace 线程标识和实时状态 */
+					<>
+						<div className="flex items-center gap-2 text-xs text-muted-foreground">
+							<div className="w-2 h-2 rounded-full bg-emerald-500" />
+							<span className="font-medium">Workspace thread</span>
+							{availableRoles && availableRoles.length > 0 && (
+								<div className="flex gap-1 ml-2">
+									{availableRoles.map((role) => (
+										<span
+											key={role}
+											className="px-2 py-0.5 rounded-full bg-secondary text-[10px] font-medium"
+										>
+											{role}
+										</span>
+									))}
+								</div>
+							)}
+						</div>
+						<div className="flex items-center gap-2">
+							{connectionType && (
+								<span className="text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded-full">
+									{connectionType}
+								</span>
+							)}
+							{isProcessing && (
+								<span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+									• responding
+								</span>
+							)}
+						</div>
+					</>
+				) : (
+					/* 普通模式单会话控制栏 */
+					<>
+						<div className="flex items-center gap-2">
+							<Select
+								value={reasoningEffort || ""}
+								onValueChange={(v) => v && onSetReasoningEffort(v)}
+							>
+								<SelectTrigger className="h-7 text-xs w-32 bg-background border-border rounded-lg">
+									<SelectValue placeholder="Reasoning" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="">Default</SelectItem>
+									<SelectItem value="none">None</SelectItem>
+									<SelectItem value="low">Low</SelectItem>
+									<SelectItem value="medium">Medium</SelectItem>
+									<SelectItem value="high">High</SelectItem>
+									<SelectItem value="xhigh">Max</SelectItem>
+								</SelectContent>
+							</Select>
+							<Button
+								variant={memoryEnabled ? "default" : "outline"}
+								size="sm"
+								className="h-7 text-xs gap-1 rounded-lg"
+								onClick={() => onSetMemoryEnabled(!memoryEnabled)}
+							>
+								<Brain className="w-3 h-3" />
+								Memory {memoryEnabled ? "on" : "off"}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-7 text-xs gap-1 rounded-lg"
+								onClick={onCompactContext}
+								disabled={isProcessing}
+							>
+								<ArrowDownWideNarrow className="w-3 h-3" />
+								Compact
+							</Button>
+						</div>
+						<div className="flex items-center gap-2">
+							{connectionType && (
+								<span className="text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded-full">
+									{connectionType}
+								</span>
+							)}
+							{statusDetail && (
+								<span className="text-[10px] text-muted-foreground truncate max-w-[200px]">
+									{statusDetail}
+								</span>
+							)}
+							{stdinPromptActive && (
+								<span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 font-mono">
+									<Keyboard className="w-3 h-3" />
+									input pending
+								</span>
+							)}
+							{queuedDraftCount > 0 && (
+								<span className="text-[10px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded-full">
+									queued:{queuedDraftCount}
+									{stdinPromptActive ? " (paused)" : ""}
+								</span>
+							)}
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-7 text-xs gap-1 rounded-lg"
+								onClick={onRewindChat}
+								disabled={isProcessing || messages.length === 0}
+							>
+								<Undo2 className="w-3 h-3" />
+								Rewind
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className="h-7 text-xs gap-1 text-destructive hover:text-destructive rounded-lg"
+								onClick={onClearChat}
+								disabled={isProcessing || messages.length === 0}
+							>
+								<Trash2 className="w-3 h-3" />
+								Clear
+							</Button>
+						</div>
+					</>
+				)}
 			</div>
 			<Conversation className="flex-1">
 				<ConversationContent>

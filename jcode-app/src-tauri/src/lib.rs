@@ -1830,6 +1830,139 @@ async fn set_workspace_memory_preference(
 }
 
 #[tauri::command]
+fn get_memory_list(
+    scope: String,
+    tag: Option<String>,
+) -> Result<serde_json::Value, String> {
+    use jcode::memory::MemoryManager;
+    let manager = MemoryManager::new();
+    let mut all_memories: Vec<serde_json::Value> = Vec::new();
+
+    if scope == "all" || scope == "project" {
+        if let Ok(graph) = manager.load_project_graph() {
+            for entry in graph.all_memories() {
+                all_memories.push(memory_entry_to_json(entry));
+            }
+        }
+    }
+    if scope == "all" || scope == "global" {
+        if let Ok(graph) = manager.load_global_graph() {
+            for entry in graph.all_memories() {
+                all_memories.push(memory_entry_to_json(entry));
+            }
+        }
+    }
+
+    if let Some(tag_filter) = tag {
+        all_memories.retain(|m| {
+            m.get("tags")
+                .and_then(|t| t.as_array())
+                .map(|arr| arr.iter().any(|t| t.as_str() == Some(&tag_filter)))
+                .unwrap_or(false)
+        });
+    }
+
+    // Sort by updated_at descending
+    all_memories.sort_by(|a, b| {
+        let a_ts = a.get("updated_at").and_then(|v| v.as_str()).unwrap_or("");
+        let b_ts = b.get("updated_at").and_then(|v| v.as_str()).unwrap_or("");
+        b_ts.cmp(a_ts)
+    });
+
+    Ok(serde_json::json!({ "memories": all_memories }))
+}
+
+fn memory_entry_to_json(entry: &jcode::memory_types::MemoryEntry) -> serde_json::Value {
+    serde_json::json!({
+        "id": entry.id,
+        "category": entry.category.to_string(),
+        "content": entry.content,
+        "tags": entry.tags,
+        "created_at": entry.created_at.to_rfc3339(),
+        "updated_at": entry.updated_at.to_rfc3339(),
+        "access_count": entry.access_count,
+        "source": entry.source,
+        "trust": format!("{:?}", entry.trust).to_lowercase(),
+        "strength": entry.strength,
+        "active": entry.active,
+        "superseded_by": entry.superseded_by,
+        "confidence": entry.confidence,
+        "effective_confidence": entry.effective_confidence(),
+    })
+}
+
+#[tauri::command]
+fn search_memories(query: String, semantic: bool) -> Result<serde_json::Value, String> {
+    use jcode::memory::MemoryManager;
+    let manager = MemoryManager::new();
+    let mut results: Vec<serde_json::Value> = Vec::new();
+
+    if semantic {
+        match manager.find_similar(&query, 0.3, 20) {
+            Ok(found) => {
+                for (entry, score) in found {
+                    let mut json = memory_entry_to_json(&entry);
+                    if let Some(obj) = json.as_object_mut() {
+                        obj.insert("score".to_string(), serde_json::json!(score));
+                    }
+                    results.push(json);
+                }
+            }
+            Err(e) => return Err(format!("Semantic search failed: {e}")),
+        }
+    } else {
+        match manager.search(&query) {
+            Ok(found) => {
+                for entry in found {
+                    results.push(memory_entry_to_json(&entry));
+                }
+            }
+            Err(e) => return Err(format!("Keyword search failed: {e}")),
+        }
+    }
+
+    Ok(serde_json::json!({ "results": results }))
+}
+
+#[tauri::command]
+fn get_memory_stats() -> Result<serde_json::Value, String> {
+    use jcode::memory::MemoryManager;
+    let manager = MemoryManager::new();
+    let mut project_count = 0usize;
+    let mut global_count = 0usize;
+    let mut total_tags = std::collections::HashSet::<String>::new();
+    let mut categories: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+
+    if let Ok(graph) = manager.load_project_graph() {
+        project_count = graph.memory_count();
+        for entry in graph.all_memories() {
+            for tag in &entry.tags {
+                total_tags.insert(tag.clone());
+            }
+            *categories.entry(entry.category.to_string()).or_default() += 1;
+        }
+    }
+
+    if let Ok(graph) = manager.load_global_graph() {
+        global_count = graph.memory_count();
+        for entry in graph.all_memories() {
+            for tag in &entry.tags {
+                total_tags.insert(tag.clone());
+            }
+            *categories.entry(entry.category.to_string()).or_default() += 1;
+        }
+    }
+
+    Ok(serde_json::json!({
+        "project_count": project_count,
+        "global_count": global_count,
+        "total": project_count + global_count,
+        "unique_tags": total_tags.len(),
+        "categories": categories,
+    }))
+}
+
+#[tauri::command]
 fn get_version_info() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({
         "version": option_env!("JCODE_VERSION").unwrap_or("unknown"),
@@ -2664,6 +2797,9 @@ pub fn run() {
             get_version_info,
             get_auth_status,
             get_usage_info,
+            get_memory_list,
+            search_memories,
+            get_memory_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
