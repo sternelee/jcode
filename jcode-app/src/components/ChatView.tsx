@@ -75,6 +75,10 @@ interface ChatViewProps {
 		text: string;
 		mode: import("@/types").TranscriptMode;
 	} | null>;
+	/** Workspace file names for # insertion */
+	workspaceFiles?: string[];
+	/** Callback when a slash command is selected */
+	onSlashCommand?: (command: string) => void;
 }
 
 interface MessageSegment {
@@ -206,6 +210,8 @@ export function ChatView({
 	onSetMemoryEnabled,
 	onCompactContext,
 	onDictate,
+	workspaceFiles = [],
+	onSlashCommand,
 }: ChatViewProps) {
 	const [showEarlierMessages, setShowEarlierMessages] = useState(false);
 
@@ -566,7 +572,9 @@ export function ChatView({
 				queuedDraftCount={queuedDraftCount}
 				availableRoles={availableRoles}
 				roleModels={roleModels}
+				workspaceFiles={workspaceFiles}
 				onDictate={onDictate}
+				onSlashCommand={onSlashCommand}
 			/>
 		</div>
 	);

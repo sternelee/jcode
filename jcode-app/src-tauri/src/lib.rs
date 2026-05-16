@@ -3320,6 +3320,26 @@ async fn run_dictation() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+async fn list_workspace_files(working_dir: String) -> Result<Vec<String>, String> {
+    let mut files = Vec::new();
+    let mut entries = tokio::fs::read_dir(&working_dir).await
+        .map_err(|e| format!("Failed to read directory: {e}"))?;
+    while let Some(entry) = entries.next_entry().await.map_err(|e| format!("{e}"))? {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name.starts_with("target") || name == "node_modules" {
+            continue;
+        }
+        if let Ok(metadata) = entry.metadata().await {
+            if metadata.is_file() {
+                files.push(name);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+#[tauri::command]
 async fn trigger_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     if matches!(
@@ -3401,6 +3421,7 @@ pub fn run() {
             setup_browser,
             send_transcript,
             run_dictation,
+            list_workspace_files,
             save_session_state,
             get_last_session_state,
             clear_session_state,

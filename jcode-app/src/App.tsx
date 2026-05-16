@@ -81,6 +81,7 @@ export default function App() {
 	>({});
 	const [defaultWorkspaceMemoryEnabled, setDefaultWorkspaceMemoryEnabled] =
 		useState(true);
+	const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
 
 	const hasPolledOnConnect = useRef(false);
 	useEffect(() => {
@@ -145,6 +146,25 @@ export default function App() {
 		};
 		void loadMemoryPreferences();
 	}, []);
+
+	// Load workspace files when workingDir changes
+	useEffect(() => {
+		const loadFiles = async () => {
+			if (!state.workingDir) {
+				setWorkspaceFiles([]);
+				return;
+			}
+			try {
+				const files = await invoke<string[]>("list_workspace_files", {
+					workingDir: state.workingDir,
+				});
+				setWorkspaceFiles(files);
+			} catch {
+				setWorkspaceFiles([]);
+			}
+		};
+		void loadFiles();
+	}, [state.workingDir]);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
@@ -294,6 +314,51 @@ export default function App() {
 		await deleteWorkspaceSessions(
 			workspaceId === "default" ? null : workspaceId,
 		);
+	};
+
+	const handleSlashCommand = (command: string) => {
+		switch (command) {
+			case "compact":
+				compactContext(state.sessionId || undefined);
+				break;
+			case "clear":
+				clearChat(state.sessionId || undefined);
+				break;
+			case "rewind": {
+				const visibleCount = (
+					isSlackMode ? slackMessages : state.messages
+				).filter(
+					(m) => m.role === "user" || m.role === "assistant",
+				).length;
+				if (visibleCount > 0) {
+					rewindChat(visibleCount, state.sessionId || undefined);
+				}
+				break;
+			}
+			case "memory-on":
+				void handleSetMemoryEnabled(true);
+				break;
+			case "memory-off":
+				void handleSetMemoryEnabled(false);
+				break;
+			case "interrupt":
+				if (isSlackMode) {
+					workspaceSessions
+						.filter((s) => state.sessionData[s.sessionId]?.isProcessing)
+						.forEach((s) =>
+						void sendSoftInterrupt(
+							"Pause execution to review the current state and respond to user input.",
+							s.sessionId,
+						),
+					);
+				} else {
+					void sendSoftInterrupt(
+						"Pause execution to review the current state and respond to user input.",
+						state.sessionId || undefined,
+					);
+				}
+				break;
+		}
 	};
 
 	const currentWorkspaceKey =
@@ -727,6 +792,8 @@ export default function App() {
 					onSetMemoryEnabled={handleSetMemoryEnabled}
 					onCompactContext={() => compactContext(state.sessionId || undefined)}
 					onDictate={runDictation}
+					workspaceFiles={workspaceFiles}
+					onSlashCommand={handleSlashCommand}
 				/>
 				<Separator orientation="vertical" className="hidden xl:flex" />
 				<ActivityPanel
