@@ -327,9 +327,7 @@ export default function App() {
 			case "rewind": {
 				const visibleCount = (
 					isSlackMode ? slackMessages : state.messages
-				).filter(
-					(m) => m.role === "user" || m.role === "assistant",
-				).length;
+				).filter((m) => m.role === "user" || m.role === "assistant").length;
 				if (visibleCount > 0) {
 					rewindChat(visibleCount, state.sessionId || undefined);
 				}
@@ -345,12 +343,13 @@ export default function App() {
 				if (isSlackMode) {
 					workspaceSessions
 						.filter((s) => state.sessionData[s.sessionId]?.isProcessing)
-						.forEach((s) =>
-						void sendSoftInterrupt(
-							"Pause execution to review the current state and respond to user input.",
-							s.sessionId,
-						),
-					);
+						.forEach(
+							(s) =>
+								void sendSoftInterrupt(
+									"Pause execution to review the current state and respond to user input.",
+									s.sessionId,
+								),
+						);
 				} else {
 					void sendSoftInterrupt(
 						"Pause execution to review the current state and respond to user input.",

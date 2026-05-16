@@ -1,4 +1,12 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import {
+	useState,
+	useRef,
+	useCallback,
+	useEffect,
+	useMemo,
+	useLayoutEffect,
+} from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
 	Plus,
@@ -142,6 +150,11 @@ export function InputArea({
 		selectedIndex: 0,
 		visible: false,
 	});
+	const [pickerPos, setPickerPos] = useState<{
+		top: number;
+		left: number;
+		width: number;
+	} | null>(null);
 
 	const filteredItems = useMemo(() => {
 		const q = picker.query.toLowerCase();
@@ -153,17 +166,50 @@ export function InputArea({
 						c.description.toLowerCase().includes(q),
 				);
 			case "mention":
-				return availableRoles.filter((r) =>
-					r.toLowerCase().includes(q),
-				);
+				return availableRoles.filter((r) => r.toLowerCase().includes(q));
 			case "file":
-				return workspaceFiles.filter((f) =>
-					f.toLowerCase().includes(q),
-				);
+				return workspaceFiles.filter((f) => f.toLowerCase().includes(q));
 			default:
 				return [];
 		}
 	}, [picker.type, picker.query, availableRoles, workspaceFiles]);
+
+	// Keep selectedIndex in bounds when filteredItems changes
+	useEffect(() => {
+		setPicker((p) => {
+			if (!p.visible) return p;
+			const maxIndex = Math.max(0, filteredItems.length - 1);
+			if (p.selectedIndex > maxIndex) {
+				return { ...p, selectedIndex: maxIndex };
+			}
+			return p;
+		});
+	}, [filteredItems.length]);
+
+	// Compute picker position whenever it opens
+	useLayoutEffect(() => {
+		if (!picker.visible) {
+			setPickerPos(null);
+			return;
+		}
+		const textarea = textareaRef.current;
+		if (!textarea) return;
+		const updatePos = () => {
+			const rect = textarea.getBoundingClientRect();
+			setPickerPos({
+				top: rect.bottom + 8,
+				left: rect.left,
+				width: Math.min(rect.width, 320),
+			});
+		};
+		updatePos();
+		window.addEventListener("resize", updatePos);
+		window.addEventListener("scroll", updatePos, true);
+		return () => {
+			window.removeEventListener("resize", updatePos);
+			window.removeEventListener("scroll", updatePos, true);
+		};
+	}, [picker.visible]);
 
 	const detectTrigger = useCallback(
 		(value: string, cursorPos: number): PickerState | null => {
@@ -228,7 +274,6 @@ export function InputArea({
 				case "slash":
 					regex = /\/[\w-]*$/;
 					prefix = "/";
-					// Slash commands execute immediately — no trailing space needed for some
 					suffix = " ";
 					break;
 				case "mention":
@@ -243,7 +288,10 @@ export function InputArea({
 					break;
 			}
 
-			const newBefore = beforeCursor.replace(regex, `${prefix}${item}${suffix}`);
+			const newBefore = beforeCursor.replace(
+				regex,
+				`${prefix}${item}${suffix}`,
+			);
 			setText(newBefore + afterCursor);
 			setPicker((p) => ({ ...p, visible: false }));
 			setTimeout(() => {
@@ -268,7 +316,6 @@ export function InputArea({
 				return;
 			}
 
-			// Fallback: map to soft interrupt messages if no handler provided
 			switch (command.action) {
 				case "interrupt":
 					if (onSoftInterrupt) {
@@ -284,7 +331,6 @@ export function InputArea({
 
 	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		if (!picker.visible || filteredItems.length === 0) {
-			// Allow Enter to submit when picker is closed (unless Shift is held)
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				handleSubmit();
@@ -358,11 +404,7 @@ export function InputArea({
 				targetRole,
 			);
 		} else {
-			onSend(
-				finalContent,
-				tuples.length > 0 ? tuples : undefined,
-				targetRole,
-			);
+			onSend(finalContent, tuples.length > 0 ? tuples : undefined, targetRole);
 		}
 
 		setText("");
@@ -453,6 +495,98 @@ export function InputArea({
 		return "Type a message… (Enter to send, Shift+Enter for newline)";
 	}, [disabled, availableRoles.length, workspaceFiles.length]);
 
+	const pickerPortal =
+		picker.visible && filteredItems.length > 0 && pickerPos
+			? createPortal(
+					<div
+						className="rounded-lg border bg-popover shadow-md z-[9999] flex flex-col"
+						style={{
+							position: "fixed",
+							top: pickerPos.top,
+							left: pickerPos.left,
+							width: pickerPos.width,
+							maxHeight: 240,
+						}}
+					>
+						<div className="px-2 py-1.5 text-[10px] text-muted-foreground uppercase font-semibold border-b border-border/50 shrink-0">
+							{pickerTitle}
+						</div>
+						<div className="overflow-auto">
+							{picker.type === "slash" &&
+								(filteredItems as SlashCommand[]).map((cmd, index) => (
+									<button
+										key={cmd.id}
+										type="button"
+										onClick={(e) => {
+											e.stopPropagation();
+											executeSlashCommand(cmd);
+										}}
+										className={cn(
+											"w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2.5",
+											index === picker.selectedIndex && "bg-accent",
+										)}
+									>
+										<span className="text-muted-foreground shrink-0">
+											{cmd.icon}
+										</span>
+										<div className="flex flex-col min-w-0">
+											<span className="font-medium truncate">
+												/{cmd.label}
+											</span>
+											<span className="text-[10px] text-muted-foreground truncate">
+												{cmd.description}
+											</span>
+										</div>
+									</button>
+								))}
+							{picker.type === "mention" &&
+								(filteredItems as string[]).map((role, index) => (
+									<button
+										key={role}
+										type="button"
+										onClick={(e) => {
+											e.stopPropagation();
+											insertItem(role);
+										}}
+										className={cn(
+											"w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between",
+											index === picker.selectedIndex && "bg-accent",
+										)}
+									>
+										<span className="font-medium">@{role}</span>
+										{roleModels[role] && (
+											<span className="text-[10px] text-muted-foreground font-mono bg-secondary px-1.5 py-0.5 rounded">
+												{roleModels[role]}
+											</span>
+										)}
+									</button>
+								))}
+							{picker.type === "file" &&
+								(filteredItems as string[]).map((file, index) => (
+									<button
+										key={file}
+										type="button"
+										onClick={(e) => {
+											e.stopPropagation();
+											insertItem(file);
+										}}
+										className={cn(
+											"w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2",
+											index === picker.selectedIndex && "bg-accent",
+										)}
+									>
+										<FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+										<span className="font-mono text-xs truncate">
+											#{file}
+										</span>
+									</button>
+								))}
+						</div>
+					</div>,
+					document.body,
+			  )
+			: null;
+
 	return (
 		<div className="border-t bg-card p-3">
 			{images.length > 0 && (
@@ -479,6 +613,7 @@ export function InputArea({
 					))}
 				</div>
 			)}
+			{pickerPortal}
 			<PromptInput onSubmit={handleSubmit} className="relative">
 				<PromptInputBody>
 					<div className="relative w-full">
@@ -490,82 +625,6 @@ export function InputArea({
 							placeholder={placeholderText}
 							className="min-h-10 max-h-48 resize-none text-left"
 						/>
-						{picker.visible && filteredItems.length > 0 && (
-							<div className="absolute bottom-full left-0 mb-1 w-64 max-h-48 overflow-auto rounded-lg border bg-popover shadow-md z-50">
-								<div className="px-2 py-1.5 text-[10px] text-muted-foreground uppercase font-semibold border-b border-border/50">
-									{pickerTitle}
-								</div>
-								{picker.type === "slash" &&
-									(filteredItems as SlashCommand[]).map((cmd, index) => (
-										<button
-											key={cmd.id}
-											type="button"
-											onClick={(e) => {
-												e.stopPropagation();
-												executeSlashCommand(cmd);
-											}}
-											className={cn(
-												"w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2.5",
-												index === picker.selectedIndex && "bg-accent",
-											)}
-										>
-											<span className="text-muted-foreground shrink-0">
-												{cmd.icon}
-											</span>
-											<div className="flex flex-col min-w-0">
-												<span className="font-medium truncate">
-													/{cmd.label}
-												</span>
-												<span className="text-[10px] text-muted-foreground truncate">
-													{cmd.description}
-												</span>
-											</div>
-										</button>
-										))}
-								{picker.type === "mention" &&
-									(filteredItems as string[]).map((role, index) => (
-										<button
-											key={role}
-											type="button"
-											onClick={(e) => {
-												e.stopPropagation();
-												insertItem(role);
-											}}
-											className={cn(
-												"w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between",
-												index === picker.selectedIndex && "bg-accent",
-											)}
-										>
-											<span className="font-medium">@{role}</span>
-											{roleModels[role] && (
-												<span className="text-[10px] text-muted-foreground font-mono bg-secondary px-1.5 py-0.5 rounded">
-													{roleModels[role]}
-												</span>
-											)}
-										</button>
-									))}
-								{picker.type === "file" &&
-									(filteredItems as string[]).map((file, index) => (
-										<button
-											key={file}
-											type="button"
-											onClick={(e) => {
-												e.stopPropagation();
-												insertItem(file);
-											}}
-											className={cn(
-												"w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center gap-2",
-												index === picker.selectedIndex && "bg-accent",
-											)}
-										>
-											<FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-											<span className="font-mono text-xs truncate">
-												#{file}
-											</span>
-										</button>
-									))}
-							</div>
-						)}
 					</div>
 				</PromptInputBody>
 				<PromptInputFooter>
@@ -603,8 +662,7 @@ export function InputArea({
 											textareaRef.current?.selectionStart || 0;
 										const before = text.slice(0, cursorPos);
 										const after = text.slice(cursorPos);
-										const spacer =
-											before && !before.endsWith(" ") ? " " : "";
+										const spacer = before && !before.endsWith(" ") ? " " : "";
 										const newText =
 											before + spacer + t + (after ? " " + after : "");
 										setText(newText);
@@ -695,7 +753,7 @@ export function InputArea({
 										"Pause execution to review the current state and respond to user input.";
 									onSoftInterrupt(content);
 									setText("");
-									}}
+								}}
 								className="h-10 w-10 shrink-0 text-muted-foreground hover:text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-900/20"
 								title="Soft interrupt — pause agent and inject message"
 							>
