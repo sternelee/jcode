@@ -1396,7 +1396,7 @@ async fn register_runtime_and_emit(
     }
     {
         let mut active = state.active_session_id.lock().await;
-        *active = Some(session_id);
+        *active = Some(session_id.clone());
     }
 
     let handle = app_handle.clone();
@@ -1428,7 +1428,7 @@ async fn register_runtime_and_emit(
     app_handle
         .emit(
             "server-event",
-            &serde_json::json!({ "type": "connection_phase", "phase": "connected" }),
+            &serde_json::json!({ "type": "connection_phase", "phase": "connected", "session_id": &session_id }),
         )
         .ok();
     emit_runtime_snapshot(app_handle, &runtime).await?;
