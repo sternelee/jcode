@@ -64,9 +64,10 @@ interface InputAreaProps {
 	/** Workspace file names for # insertion */
 	workspaceFiles?: string[];
 	/** Run configured dictation command and return transcript */
-	onDictate?: () => Promise<
-		{ text: string; mode: import("@/types").TranscriptMode } | null
-	>;
+	onDictate?: () => Promise<{
+		text: string;
+		mode: import("@/types").TranscriptMode;
+	} | null>;
 	/** Callback when a slash command is selected */
 	onSlashCommand?: (command: string) => void;
 }
@@ -197,7 +198,7 @@ export function InputArea({
 		const updatePos = () => {
 			const rect = textarea.getBoundingClientRect();
 			setPickerPos({
-				top: rect.bottom + 8,
+				top: rect.top - 8,
 				left: rect.left,
 				width: Math.min(rect.width, 320),
 			});
@@ -351,8 +352,7 @@ export function InputArea({
 			setPicker((p) => ({
 				...p,
 				selectedIndex:
-					(p.selectedIndex - 1 + filteredItems.length) %
-					filteredItems.length,
+					(p.selectedIndex - 1 + filteredItems.length) % filteredItems.length,
 			}));
 			return;
 		}
@@ -506,6 +506,7 @@ export function InputArea({
 							left: pickerPos.left,
 							width: pickerPos.width,
 							maxHeight: 240,
+							transform: "translateY(-100%)",
 						}}
 					>
 						<div className="px-2 py-1.5 text-[10px] text-muted-foreground uppercase font-semibold border-b border-border/50 shrink-0">
@@ -530,9 +531,7 @@ export function InputArea({
 											{cmd.icon}
 										</span>
 										<div className="flex flex-col min-w-0">
-											<span className="font-medium truncate">
-												/{cmd.label}
-											</span>
+											<span className="font-medium truncate">/{cmd.label}</span>
 											<span className="text-[10px] text-muted-foreground truncate">
 												{cmd.description}
 											</span>
@@ -576,15 +575,13 @@ export function InputArea({
 										)}
 									>
 										<FileText className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-										<span className="font-mono text-xs truncate">
-											#{file}
-										</span>
+										<span className="font-mono text-xs truncate">#{file}</span>
 									</button>
 								))}
 						</div>
 					</div>,
 					document.body,
-			  )
+				)
 			: null;
 
 	return (
@@ -658,8 +655,7 @@ export function InputArea({
 									} else if (mode === "append") {
 										setText((prev) => (prev ? prev + " " + t : t));
 									} else if (mode === "insert") {
-										const cursorPos =
-											textareaRef.current?.selectionStart || 0;
+										const cursorPos = textareaRef.current?.selectionStart || 0;
 										const before = text.slice(0, cursorPos);
 										const after = text.slice(cursorPos);
 										const spacer = before && !before.endsWith(" ") ? " " : "";
@@ -668,8 +664,7 @@ export function InputArea({
 										setText(newText);
 										setTimeout(() => {
 											if (textareaRef.current) {
-												const newPos =
-													cursorPos + spacer.length + t.length + 1;
+												const newPos = cursorPos + spacer.length + t.length + 1;
 												textareaRef.current.selectionStart = newPos;
 												textareaRef.current.selectionEnd = newPos;
 												textareaRef.current.focus();
@@ -690,8 +685,7 @@ export function InputArea({
 												.map((i) => [i.mediaType, i.base64Data]);
 											const { targetRole, cleanContent } =
 												parseTargetRole(content);
-											const finalContent =
-												cleanContent.trim() || "(dictated)";
+											const finalContent = cleanContent.trim() || "(dictated)";
 											if (isProcessing) {
 												onQueueSend(
 													finalContent,
