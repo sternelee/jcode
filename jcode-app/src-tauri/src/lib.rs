@@ -3340,6 +3340,28 @@ async fn list_workspace_files(working_dir: String) -> Result<Vec<String>, String
 }
 
 #[tauri::command]
+async fn git_status(working_dir: Option<String>) -> Result<String, String> {
+    let output = tokio::process::Command::new("git")
+        .arg("status")
+        .arg("--short")
+        .arg("--branch")
+        .current_dir(working_dir.as_deref().unwrap_or("."))
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run git status: {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        return Err(format!("git status failed: {stderr}"));
+    }
+    Ok(if stdout.trim().is_empty() {
+        "Working tree clean".to_string()
+    } else {
+        stdout.trim().to_string()
+    })
+}
+
+#[tauri::command]
 async fn trigger_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     if matches!(
@@ -3422,6 +3444,7 @@ pub fn run() {
             send_transcript,
             run_dictation,
             list_workspace_files,
+            git_status,
             save_session_state,
             get_last_session_state,
             clear_session_state,
