@@ -846,7 +846,7 @@ export function ModelSelector({
 												)}
 												<span className="text-xs font-medium">{label}</span>
 												<Badge variant="outline" className="h-5 text-[10px]">
-													{provider?.route_count ?? groupRoutes.length}
+													{groupRoutes.length}
 												</Badge>
 												{isCurrentProfile && (
 													<Badge
