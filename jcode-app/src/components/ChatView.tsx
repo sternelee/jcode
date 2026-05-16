@@ -79,6 +79,12 @@ interface ChatViewProps {
 	workspaceFiles?: string[];
 	/** Callback when a slash command is selected */
 	onSlashCommand?: (command: string) => void;
+	/** Current model for the model selector */
+	currentModel?: string | null;
+	/** Current provider for the model selector */
+	currentProvider?: string | null;
+	/** Callback when a model is selected */
+	onSelectModel?: (model: string, profileId?: string) => void;
 }
 
 interface MessageSegment {
@@ -212,6 +218,9 @@ export function ChatView({
 	onDictate,
 	workspaceFiles = [],
 	onSlashCommand,
+	currentModel,
+	currentProvider,
+	onSelectModel,
 }: ChatViewProps) {
 	const [showEarlierMessages, setShowEarlierMessages] = useState(false);
 
@@ -575,6 +584,9 @@ export function ChatView({
 				workspaceFiles={workspaceFiles}
 				onDictate={onDictate}
 				onSlashCommand={onSlashCommand}
+				currentModel={currentModel}
+				currentProvider={currentProvider}
+				onSelectModel={onSelectModel}
 			/>
 		</div>
 	);

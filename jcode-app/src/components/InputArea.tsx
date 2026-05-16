@@ -32,6 +32,7 @@ import {
 	PromptInputSubmit,
 	PromptInputTextarea,
 } from "@/components/ai-elements/prompt-input";
+import { ModelSelector } from "@/components/ModelSelector";
 
 interface SlashCommand {
 	id: string;
@@ -70,6 +71,12 @@ interface InputAreaProps {
 	} | null>;
 	/** Callback when a slash command is selected */
 	onSlashCommand?: (command: string) => void;
+	/** Current model for the model selector */
+	currentModel?: string | null;
+	/** Current provider for the model selector */
+	currentProvider?: string | null;
+	/** Callback when a model is selected */
+	onSelectModel?: (model: string, profileId?: string) => void;
 }
 
 const SLASH_COMMANDS: SlashCommand[] = [
@@ -139,6 +146,9 @@ export function InputArea({
 	workspaceFiles = [],
 	onDictate,
 	onSlashCommand,
+	currentModel,
+	currentProvider,
+	onSelectModel,
 }: InputAreaProps) {
 	const [text, setText] = useState("");
 	const [images, setImages] = useState<AttachedImage[]>([]);
@@ -637,6 +647,16 @@ export function InputArea({
 						>
 							<Plus className="w-4 h-4" />
 						</Button>
+
+						{/* Model 选择器 */}
+						{onSelectModel && (
+							<ModelSelector
+								currentModel={currentModel || null}
+								currentProvider={currentProvider || null}
+								onSelectModel={onSelectModel}
+								disabled={disabled}
+							/>
+						)}
 
 						{/* 语音输入按钮 */}
 						{onDictate && (
