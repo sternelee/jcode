@@ -766,7 +766,12 @@ impl App {
 
         let incomplete = super::commands::incomplete_poke_todos(self);
         if incomplete.is_empty() {
+            let had_todos = crate::todo::todos_exist(&super::commands::active_session_id(self))
+                .unwrap_or(false);
             self.auto_poke_incomplete_todos = false;
+            if !had_todos {
+                return false;
+            }
             self.push_display_message(DisplayMessage::system(
                 "✅ Todos complete. Auto-poke finished.".to_string(),
             ));
@@ -1224,6 +1229,22 @@ pub(super) fn handle_visible_copy_shortcut(
     let implicit_shift = c.is_ascii_uppercase();
     if !explicit_shift && !implicit_shift {
         return false;
+    }
+
+    if c.eq_ignore_ascii_case(&'e') && app.diff_mode.is_inline() {
+        app.diff_mode = if app.diff_mode.is_full_inline() {
+            crate::config::DiffDisplayMode::Inline
+        } else {
+            crate::config::DiffDisplayMode::FullInline
+        };
+        app.record_copy_badge_key_press('e');
+        let action = if app.diff_mode.is_full_inline() {
+            "Expanded edit diffs"
+        } else {
+            "Collapsed edit diffs"
+        };
+        app.set_status_notice(format!("{} · Diffs: {}", action, app.diff_mode.label()));
+        return true;
     }
 
     if let Some(target) = crate::tui::ui::recent_flicker_copy_target_for_key(c)

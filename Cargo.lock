@@ -3960,7 +3960,7 @@ dependencies = [
 
 [[package]]
 name = "jcode"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "agentgrep",
  "anyhow",
