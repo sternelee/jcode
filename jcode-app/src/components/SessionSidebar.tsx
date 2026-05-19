@@ -42,7 +42,7 @@ interface SessionSidebarProps {
 	queuedDraftCount: number;
 	stdinPromptActive: boolean;
 	availableRouteCount: number;
-	workspaceModes?: Record<string, "normal" | "slack">;
+	workspaceModes?: Record<string, "normal" | "swarm">;
 	onSelectSession: (session: SessionInfo) => void;
 	onRefresh: () => void;
 	onToggleWorkspace: (workspaceId: string) => void;
@@ -50,7 +50,7 @@ interface SessionSidebarProps {
 	onCreateWorkspace: () => void;
 	onCreateSession: (workspaceId: string) => void;
 	onCreateRole?: (workspaceId: string) => void;
-	onToggleSlackMode?: (workspaceId: string) => void;
+	onToggleSwarmMode?: (workspaceId: string) => void;
 	onRenameSession?: (
 		sessionId: string,
 		newTitle: string,
@@ -204,7 +204,7 @@ export function SessionSidebar({
 	onCreateWorkspace,
 	onCreateSession,
 	onCreateRole,
-	onToggleSlackMode,
+	onToggleSwarmMode,
 	onRenameSession,
 	onDeleteSession,
 	onDeleteWorkspace,
@@ -434,26 +434,26 @@ export function SessionSidebar({
 												: ws.totalSessions}
 										</span>
 									</button>
-									{onToggleSlackMode && (
+									{onToggleSwarmMode && (
 										<Button
 											variant={
-												workspaceModes[ws.id] === "slack"
+												workspaceModes[ws.id] === "swarm"
 													? "secondary"
 													: "ghost"
 											}
 											size="icon"
 											className="h-7 w-7 shrink-0 hover:bg-secondary"
-											onClick={() => onToggleSlackMode(ws.id)}
+											onClick={() => onToggleSwarmMode(ws.id)}
 											title={
-												workspaceModes[ws.id] === "slack"
+												workspaceModes[ws.id] === "swarm"
 													? "Switch to normal mode"
-													: "Switch to slack mode"
+													: "Switch to swarm mode"
 											}
 										>
 											<Users className="w-3.5 h-3.5" />
 										</Button>
 									)}
-									{workspaceModes[ws.id] === "slack" && onCreateRole ? (
+									{workspaceModes[ws.id] === "swarm" && onCreateRole ? (
 										<Button
 											variant="ghost"
 											size="icon"
@@ -497,8 +497,8 @@ export function SessionSidebar({
 												>
 													<div
 														onClick={() => {
-															if (workspaceModes[ws.id] === "slack") {
-																// In slack mode the workspace itself is the chat entry;
+															if (workspaceModes[ws.id] === "swarm") {
+																// In swarm mode the workspace itself is the chat entry;
 																// clicking a role card does nothing (model badge below
 																// can still be clicked to target the model selector).
 																return;
@@ -737,11 +737,11 @@ export function SessionSidebar({
 																}}
 																className={cn(
 																	"text-[10px] text-muted-foreground font-mono mt-2 truncate text-left",
-																	workspaceModes[ws.id] === "slack" &&
+																	workspaceModes[ws.id] === "swarm" &&
 																		"hover:text-primary hover:underline cursor-pointer",
 																)}
 																title={
-																	workspaceModes[ws.id] === "slack"
+																	workspaceModes[ws.id] === "swarm"
 																		? "Click to select this character, then use the top model selector to change its model"
 																		: s.model
 																}

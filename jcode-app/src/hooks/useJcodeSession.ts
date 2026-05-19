@@ -141,7 +141,7 @@ type Action =
 	| {
 			type: "SET_WORKSPACE_MODE";
 			workspaceId: string;
-			mode: "normal" | "slack";
+			mode: "normal" | "swarm";
 			initialMessages?: ChatMessage[];
 	  }
 	| { type: "CLEAR_WORKSPACE_MESSAGES"; workspaceId: string };
@@ -947,7 +947,7 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 			};
 
 			if (action.mode === "normal") {
-				// 退出 slack 模式：清除虚拟 session
+				// 退出 swarm 模式：清除虚拟 session
 				const { [virtualSessionId]: _removed, ...restSessionData } =
 					state.sessionData;
 				return {
@@ -958,13 +958,24 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 			}
 
 			if (
-				action.mode === "slack" &&
+				action.mode === "swarm" &&
 				action.initialMessages &&
 				action.initialMessages.length > 0
 			) {
-				// 进入 slack 模式：用按时间戳排序的历史消息初始化虚拟 session
+				// 进入 swarm 模式：合并已存在的线程消息与持久化历史，避免重新进入线程时丢失实时镜像内容
 				const existing = getOrCreateSessionData(state, virtualSessionId);
-				const sorted = [...action.initialMessages].sort(
+				const merged = new Map<string, ChatMessage>();
+				for (const message of [...existing.messages, ...action.initialMessages]) {
+					const signature = [
+						message.role,
+						message.roleSessionId || "",
+						message.roleName || "",
+						String(message.timestamp ?? ""),
+						message.content,
+					].join("::");
+					merged.set(signature, message);
+				}
+				const sorted = [...merged.values()].sort(
 					(a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0),
 				);
 				return {
@@ -1028,7 +1039,7 @@ export function useJcodeSession() {
 				);
 				processEvent(payload, dispatch, sessionId);
 
-				// Slack mode: also mirror message events into the workspace virtual session
+				// Swarm mode: also mirror message events into the workspace virtual session
 				if (sessionId) {
 					const currentState = stateRef.current;
 					const session = currentState.sessions.find(
@@ -1039,10 +1050,10 @@ export function useJcodeSession() {
 					console.log("[server-event] session lookup:", {
 						found: Boolean(session),
 						workspaceId,
-						slackMode: currentState.workspaceModes[workspaceId],
+						swarmMode: currentState.workspaceModes[workspaceId],
 						roleName: session?.roleName,
 					});
-					if (currentState.workspaceModes[workspaceId] === "slack") {
+					if (currentState.workspaceModes[workspaceId] === "swarm") {
 						const virtualSessionId = `workspace:${workspaceId}`;
 						// eslint-disable-next-line no-console
 						console.log(
@@ -1086,14 +1097,14 @@ export function useJcodeSession() {
 				images: imageAttachments,
 				sessionId,
 			});
-			// In slack mode, also add the user message to the workspace thread
+			// In swarm mode, also add the user message to the workspace thread
 			if (sessionId) {
 				const currentState = stateRef.current;
 				const session = currentState.sessions.find(
 					(s) => s.sessionId === sessionId,
 				);
 				const workspaceId = session?.workingDir || "default";
-				if (currentState.workspaceModes[workspaceId] === "slack") {
+				if (currentState.workspaceModes[workspaceId] === "swarm") {
 					const virtualSessionId = `workspace:${workspaceId}`;
 					dispatch({
 						type: "ADD_USER_MESSAGE",
@@ -1134,7 +1145,7 @@ export function useJcodeSession() {
 		) => {
 			dispatch({ type: "SET_CONNECTING" });
 			try {
-				await invoke("begin_session", {
+				return await invoke<string>("begin_session", {
 					workingDir,
 					model: model || null,
 					memoryEnabled: memoryEnabled ?? true,
@@ -1143,6 +1154,7 @@ export function useJcodeSession() {
 				});
 			} catch (e) {
 				dispatch({ type: "SET_ERROR", message: String(e) });
+				return null;
 			}
 		},
 		[],
@@ -1158,7 +1170,7 @@ export function useJcodeSession() {
 		) => {
 			dispatch({ type: "SET_CONNECTING" });
 			try {
-				await invoke("begin_session", {
+				return await invoke<string>("begin_session", {
 					workingDir,
 					model: model || null,
 					memoryEnabled: memoryEnabled ?? true,
@@ -1167,6 +1179,7 @@ export function useJcodeSession() {
 				});
 			} catch (e) {
 				dispatch({ type: "SET_ERROR", message: String(e) });
+				return null;
 			}
 		},
 		[],
@@ -1209,14 +1222,14 @@ export function useJcodeSession() {
 				content: `📝 Queued prompt (${state.queuedDrafts.length + 1} pending)`,
 				sessionId,
 			});
-			// In slack mode, also mirror queued draft to workspace thread
+			// In swarm mode, also mirror queued draft to workspace thread
 			if (sessionId) {
 				const currentState = stateRef.current;
 				const session = currentState.sessions.find(
 					(s) => s.sessionId === sessionId,
 				);
 				const workspaceId = session?.workingDir || "default";
-				if (currentState.workspaceModes[workspaceId] === "slack") {
+				if (currentState.workspaceModes[workspaceId] === "swarm") {
 					const virtualSessionId = `workspace:${workspaceId}`;
 					dispatch({ type: "QUEUE_DRAFT", draft, sessionId: virtualSessionId });
 					dispatch({
@@ -1455,6 +1468,58 @@ export function useJcodeSession() {
 		}
 	}, [state.sessionId]);
 
+	const loadWorkspaceThreadHistory = useCallback(
+		async (workingDir: string | null) => {
+			try {
+				const data = await invoke<
+					Array<{
+						id: string;
+						role: "user" | "assistant" | "system" | string;
+						content: string;
+						tool_executions?: ToolExecution[];
+						is_streaming?: boolean;
+						images?: Array<{
+							media_type: string;
+							data?: string;
+							base64_data?: string;
+							label?: string;
+							path?: string;
+						}>;
+						timestamp?: number | null;
+						role_name?: string | null;
+						role_session_id?: string | null;
+					}>
+				>("get_workspace_thread_history", { workingDir });
+				return data.map((message, index) => ({
+					id: message.id || `workspace-history-${index}`,
+					role:
+						message.role === "user" ||
+						message.role === "assistant" ||
+						message.role === "system"
+							? message.role
+							: "system",
+					content: message.content,
+					toolExecutions: message.tool_executions || [],
+					isStreaming: message.is_streaming ?? false,
+					images: message.images?.map((image, imageIndex) => ({
+						id: `${message.id}-img-${imageIndex}`,
+						mediaType: image.media_type,
+						base64Data: image.base64_data || image.data,
+						filePath: image.path,
+						label: image.label,
+					})),
+					timestamp: message.timestamp ?? undefined,
+					roleName: message.role_name ?? undefined,
+					roleSessionId: message.role_session_id ?? undefined,
+				} satisfies ChatMessage));
+			} catch (e) {
+				dispatch({ type: "SET_ERROR", message: String(e) });
+				return [] as ChatMessage[];
+			}
+		},
+		[],
+	);
+
 	const sendStdinResponse = useCallback(
 		async (requestId: string, input: string, sessionId?: string) => {
 			dispatch({
@@ -1608,7 +1673,7 @@ export function useJcodeSession() {
 	const setWorkspaceMode = useCallback(
 		(
 			workspaceId: string,
-			mode: "normal" | "slack",
+			mode: "normal" | "swarm",
 			initialMessages?: ChatMessage[],
 		) => {
 			dispatch({
@@ -1824,6 +1889,17 @@ export function useJcodeSession() {
 		}
 	}, []);
 
+	const gitStatus = useCallback(
+		async (workingDir?: string | null) => {
+			try {
+				return await invoke<string>("git_status", { workingDir: workingDir ?? null });
+			} catch (e) {
+				return String(e);
+			}
+		},
+		[],
+	);
+
 	return {
 		state,
 		connect,
@@ -1849,6 +1925,7 @@ export function useJcodeSession() {
 		setActiveWorkspace,
 		toggleWorkspace,
 		setWorkspaceMode,
+		loadWorkspaceThreadHistory,
 		addWorkspaceMessage,
 		clearWorkspaceMessages,
 		exportMemories,
@@ -1869,6 +1946,7 @@ export function useJcodeSession() {
 		saveSessionState,
 		getLastSessionState,
 		clearSessionState,
+		gitStatus,
 		setError,
 	};
 }

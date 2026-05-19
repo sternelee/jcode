@@ -97,7 +97,7 @@ export function SkeletonMessage({ roleName }: { roleName?: string }) {
 			>
 				{initial}
 			</div>
-			<div className="flex-1 min-w-0 py-0.5">
+			<div style={{ color: "#111827" }} className="flex-1 min-w-0 py-0.5">
 				{/* 角色名 + 时间戳占位 */}
 				{roleName && (
 					<div className={cn("text-sm font-bold mb-2", palette?.name)}>
@@ -122,6 +122,8 @@ interface MessageBubbleProps {
 	message: ChatMessage;
 	isStreaming?: boolean;
 	isHighlighted?: boolean;
+	/** Skip internal avatar/header when parent already provides one (swarm thread mode) */
+	hideHeader?: boolean;
 }
 
 type SystemMessageKind =
@@ -221,6 +223,7 @@ export function MessageBubble({
 	message,
 	isStreaming,
 	isHighlighted,
+	hideHeader = false,
 }: MessageBubbleProps) {
 	if (message.role === "system") {
 		const systemMeta = classifySystemMessage(message.content);
@@ -275,8 +278,52 @@ export function MessageBubble({
 
 	const isUser = message.role === "user";
 
-	// --- Slack 风格的角色消息 ---
+	// --- Swarm 风格的角色消息 ---
 	if (!isUser && message.roleName) {
+		// When parent (ChatArea Slack-style) provides its own header, only render content
+		if (hideHeader) {
+			// Explicit text color so content stays readable regardless of dark/light CSS vars
+			return (
+				<div style={{ color: "#111827" }} className="space-y-2">
+					{message.images && message.images.length > 0 && (
+						<div className="flex gap-2 flex-wrap">
+							{message.images.map((img) => (
+								<img
+									key={img.id}
+									src={imageSrc(img)}
+									alt={img.label || "Attached"}
+									className="w-16 h-16 rounded-lg object-cover border"
+								/>
+							))}
+						</div>
+					)}
+					{message.content && (
+						<div className="relative">
+							<div style={{ color: "inherit" }}><MessageResponse>{message.content}</MessageResponse></div>
+							{isStreaming && (
+								<span className="text-primary animate-blink ml-0.5">◌</span>
+							)}
+						</div>
+					)}
+					{message.toolExecutions.length > 0 && (
+						<div className="mt-2 space-y-2">
+							{message.toolExecutions.map((tool) => (
+								<ToolCard key={tool.id} tool={tool} />
+							))}
+						</div>
+					)}
+					<MessageActions>
+						<MessageAction
+							onClick={() => navigator.clipboard.writeText(message.content)}
+							label="Copy"
+						>
+							<CopyIcon className="size-3" />
+						</MessageAction>
+					</MessageActions>
+				</div>
+			);
+		}
+
 		const palette = ROLE_PALETTE[roleColorIndex(message.roleName)];
 		const initial = message.roleName.charAt(0).toUpperCase();
 		return (
@@ -297,8 +344,8 @@ export function MessageBubble({
 					{initial}
 				</div>
 
-				<div className="flex-1 min-w-0">
-					{/* 头部：角色名 + 时间戳 + token */}
+				<div style={{ color: "#111827" }} className="flex-1 min-w-0">
+
 					<div className="flex items-baseline gap-2 mb-1.5">
 						<span
 							className={cn("text-sm font-bold leading-none", palette.name)}
@@ -361,7 +408,7 @@ export function MessageBubble({
 					{/* 消息内容 */}
 					{message.content && (
 						<div className="relative">
-							<MessageResponse>{message.content}</MessageResponse>
+							<div style={{ color: "inherit" }}><MessageResponse>{message.content}</MessageResponse></div>
 							{isStreaming && (
 								<span className="text-primary animate-blink ml-0.5">▌</span>
 							)}
@@ -399,8 +446,9 @@ export function MessageBubble({
 				isHighlighted && "bg-primary/5 ring-1 ring-primary/30 px-2 py-1",
 			)}
 		>
-			<Message from={message.role}>
-				<MessageContent>
+		<Message from={message.role}>
+				<MessageContent style={{ color: "#111827" }}>
+
 					{isUser ? (
 						<>
 							{message.images && message.images.length > 0 && (
@@ -421,7 +469,7 @@ export function MessageBubble({
 									))}
 								</div>
 							)}
-							<MessageResponse>{message.content}</MessageResponse>
+							<div style={{ color: "inherit" }}><MessageResponse>{message.content}</MessageResponse></div>
 						</>
 					) : (
 						<>
@@ -483,7 +531,7 @@ export function MessageBubble({
 							)}
 							{message.content && (
 								<>
-									<MessageResponse>{message.content}</MessageResponse>
+									<div style={{ color: "inherit" }}><MessageResponse>{message.content}</MessageResponse></div>
 									{isStreaming && (
 										<span className="text-primary animate-blink ml-0.5">▌</span>
 									)}

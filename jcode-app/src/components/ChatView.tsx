@@ -49,8 +49,8 @@ interface ChatViewProps {
 	availableRoles?: string[];
 	/** roleName → current model display string */
 	roleModels?: Record<string, string>;
-	isSlackMode?: boolean;
-	/** Slack 模式下正在回复的角色名列表（用于渲染骨架屏） */
+	isSwarmMode?: boolean;
+	/** Swarm 模式下正在回复的角色名列表（用于渲染骨架屏） */
 	respondingRoles?: string[];
 	onSend: (
 		content: string,
@@ -204,7 +204,7 @@ export function ChatView({
 	selectedMessageId,
 	availableRoles,
 	roleModels,
-	isSlackMode = false,
+	isSwarmMode = false,
 	respondingRoles = [],
 	onSend,
 	onQueueSend,
@@ -230,13 +230,13 @@ export function ChatView({
 			.filter((m) => m.role === "assistant" && m.isStreaming && m.roleName)
 			.map((m) => m.roleName!),
 	);
-	// Slack 模式：只对「正在处理但还未开始 streaming」的角色显示骨架屏
+	// Swarm 模式：只对「正在处理但还未开始 streaming」的角色显示骨架屏
 	const skeletonRoles = respondingRoles.filter(
 		(r) => !streamingRoleNames.has(r),
 	);
 	// 普通模式：processing 且还没有任何 streaming 消息时显示通用骨架屏
 	const showGenericSkeleton =
-		!isSlackMode &&
+		!isSwarmMode &&
 		isProcessing &&
 		!messages.some((m) => m.role === "assistant" && m.isStreaming) &&
 		messages.some((m) => m.role === "user");
@@ -372,8 +372,8 @@ export function ChatView({
 	return (
 		<div className="flex flex-col flex-1 overflow-hidden">
 			<div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
-				{isSlackMode ? (
-					/* Slack 模式头部：显示 workspace 线程标识和实时状态 */
+				{isSwarmMode ? (
+					/* Swarm 模式头部：显示 workspace 线程标识和实时状态 */
 					<>
 						<div className="flex items-center gap-2 text-xs text-muted-foreground">
 							<div className="w-2 h-2 rounded-full bg-emerald-500" />
@@ -561,7 +561,7 @@ export function ChatView({
 							{collapseState.visibleSegments.map((segment) =>
 								renderSegment(segment, true),
 							)}
-							{/* 骨架屏：Slack 模式自动显示正在回复的角色 */}
+							{/* 骨架屏：Swarm 模式自动显示正在回复的角色 */}
 							{skeletonRoles.map((role) => (
 								<SkeletonMessage key={`skeleton-${role}`} roleName={role} />
 							))}

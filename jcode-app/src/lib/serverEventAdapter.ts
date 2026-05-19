@@ -93,7 +93,7 @@ function historyMessageToChatMessage(
 		toolExecutions,
 		isStreaming: false,
 		images: message.images?.map(toAttachedImage),
-		timestamp: Date.now(),
+		timestamp: message.timestamp_ms ?? Date.now(),
 	};
 }
 

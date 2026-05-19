@@ -59,6 +59,7 @@ fn push_desktop_message(
     tool_calls: &mut Vec<String>,
     tool_data: &mut Option<ToolCall>,
     images: &mut Vec<serde_json::Value>,
+    timestamp_ms: Option<i64>,
 ) {
     if content.is_empty() && tool_data.is_none() && images.is_empty() && tool_calls.is_empty() {
         return;
@@ -70,6 +71,7 @@ fn push_desktop_message(
         "tool_calls": (!tool_calls.is_empty()).then_some(std::mem::take(tool_calls)),
         "tool_data": tool_data.take(),
         "images": std::mem::take(images),
+        "timestamp_ms": timestamp_ms,
     }));
 }
 
@@ -544,6 +546,7 @@ fn desktop_history_messages(session: &Session) -> Vec<serde_json::Value> {
             continue;
         }
 
+        let timestamp_ms = message.timestamp.map(|timestamp| timestamp.timestamp_millis());
         let base_role = message_role(message);
         let mut pending_role = base_role;
         let mut pending_text = String::new();
@@ -577,6 +580,7 @@ fn desktop_history_messages(session: &Session) -> Vec<serde_json::Value> {
                         &mut pending_tool_calls,
                         &mut pending_tool_data,
                         &mut pending_images,
+                        timestamp_ms,
                     );
                     pending_role = "assistant";
                     pending_text = content.clone();
@@ -608,10 +612,54 @@ fn desktop_history_messages(session: &Session) -> Vec<serde_json::Value> {
             &mut pending_tool_calls,
             &mut pending_tool_data,
             &mut pending_images,
+            timestamp_ms,
         );
     }
 
     messages
+}
+
+fn workspace_history_messages(
+    session: &Session,
+    session_id: &str,
+    role_name: Option<&str>,
+) -> Vec<serde_json::Value> {
+    desktop_history_messages(session)
+        .into_iter()
+        .enumerate()
+        .map(|(index, message)| {
+            let role = message
+                .get("role")
+                .and_then(Value::as_str)
+                .unwrap_or("system");
+            let tool_executions = message
+                .get("tool_data")
+                .cloned()
+                .map(|tool_data| {
+                    vec![serde_json::json!({
+                        "id": tool_data.get("id").and_then(Value::as_str).unwrap_or("tool"),
+                        "name": tool_data.get("name").and_then(Value::as_str).unwrap_or("tool"),
+                        "status": "done",
+                        "input": serde_json::to_string(tool_data.get("input").unwrap_or(&Value::Null))
+                            .unwrap_or_else(|_| "null".to_string()),
+                        "output": "",
+                    })]
+                })
+                .unwrap_or_default();
+
+            serde_json::json!({
+                "id": format!("workspace-{session_id}-{index}"),
+                "role": role,
+                "content": message.get("content").and_then(Value::as_str).unwrap_or_default(),
+                "tool_executions": tool_executions,
+                "is_streaming": false,
+                "images": message.get("images").cloned().unwrap_or_else(|| serde_json::json!([])),
+                "timestamp": message.get("timestamp_ms").and_then(Value::as_i64),
+                "role_name": (role == "assistant").then_some(role_name).flatten(),
+                "role_session_id": (role == "assistant").then_some(session_id),
+            })
+        })
+        .collect()
 }
 
 #[derive(Debug)]
@@ -1210,7 +1258,7 @@ async fn get_runtime_by_session_id(
 /// 静默把 session 从磁盘加载到内存。
 /// 与 `register_runtime_and_emit` 的区别：
 ///   - 不更改 active_session_id
-///   - 不发送 connection_phase / history 事件（避免干扰 Slack 模式的 UI 返回图层）
+///   - 不发送 connection_phase / history 事件（避免干扰 Swarm 模式的 UI 返回图层）
 async fn load_session_runtime_silently(
     app_handle: &AppHandle,
     state: &State<'_, AppState>,
@@ -1444,7 +1492,7 @@ async fn begin_session(
     memory_enabled: Option<bool>,
     role_name: Option<String>,
     profile_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let provider = create_provider().await?;
     if let Some(ref model_name) = model {
         let model_arg = if let Some(pid) = profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
@@ -1470,7 +1518,8 @@ async fn begin_session(
     });
     agent.set_memory_enabled(resolved_memory_enabled);
 
-    register_runtime_and_emit(&app_handle, &state, agent).await.map(|_| ())
+    let runtime = register_runtime_and_emit(&app_handle, &state, agent).await?;
+    Ok(runtime.session_id.clone())
 }
 
 #[tauri::command]
@@ -1519,7 +1568,7 @@ async fn send_message(
         session_id,
         content.chars().take(60).collect::<String>());
 
-    // 若 runtime 不在内存（Slack 模式下历史会话尚未加载），则静默从磁盘加载
+    // 若 runtime 不在内存（Swarm 模式下历史会话尚未加载），则静默从磁盘加载
     let runtime = match get_or_load_session_runtime(&app_handle, &state, &session_id).await {
         Ok(rt) => {
             eprintln!("[send_message] runtime ready (session={})", session_id);
@@ -2548,6 +2597,69 @@ async fn delete_workspace_sessions(
 }
 
 #[tauri::command]
+async fn get_workspace_thread_history(
+    working_dir: Option<String>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let workspace_key = working_dir
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("default")
+        .to_string();
+    let dir = jcode::storage::jcode_dir()
+        .map_err(|e| e.to_string())?
+        .join("sessions");
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut candidates = fs::read_dir(&dir)
+        .map_err(|e| format!("failed to read {}: {e}", dir.display()))?
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| session_file_candidate(entry.path()))
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.modified));
+
+    let mut messages = Vec::new();
+    for candidate in candidates {
+        let Ok(Some(summary)) = load_session_sidebar_summary(&candidate.path) else {
+            continue;
+        };
+        let summary_workspace = summary
+            .get("working_dir")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("default");
+        if summary_workspace != workspace_key {
+            continue;
+        }
+        let Some(session_id) = summary.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let Ok(session) = Session::load(session_id) else {
+            continue;
+        };
+        let role_name = summary
+            .get("role_name")
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty());
+        messages.extend(workspace_history_messages(&session, session_id, role_name));
+    }
+
+    messages.sort_by(|a, b| {
+        let a_ts = a.get("timestamp").and_then(Value::as_i64).unwrap_or(i64::MIN);
+        let b_ts = b.get("timestamp").and_then(Value::as_i64).unwrap_or(i64::MIN);
+        a_ts.cmp(&b_ts).then_with(|| {
+            a.get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .cmp(b.get("id").and_then(Value::as_str).unwrap_or_default())
+        })
+    });
+
+    Ok(messages)
+}
+
+#[tauri::command]
 async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
     let dir = jcode::storage::jcode_dir()
         .map_err(|e| e.to_string())?
@@ -3404,6 +3516,7 @@ pub fn run() {
             set_memory_enabled,
             get_workspace_memory_preferences,
             set_workspace_memory_preference,
+            get_workspace_thread_history,
             list_sessions,
             delete_session,
             delete_workspace_sessions,

@@ -1,29 +1,28 @@
-import { invoke } from "@tauri-apps/api/core";
 import { useJcodeSession } from "@/hooks/useJcodeSession";
-import { ChatView } from "@/components/ChatView";
-import { SessionSidebar } from "@/components/SessionSidebar";
-
+import { NavBar } from "@/components/NavBar";
+import { ConversationsList } from "@/components/ConversationsList";
+import { ChatArea } from "@/components/ChatArea";
+import { CreateSessionDialog } from "@/components/CreateSessionDialog";
 import { StdinInputModal } from "@/components/StdinInputModal";
 import { SessionSwitcherDialog } from "@/components/SessionSwitcherDialog";
-import { ActivityPanel } from "@/components/ActivityPanel";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { useState, useEffect, useRef } from "react";
-import { useTheme } from "@/hooks/useTheme";
+import { parseSlashCommand } from "@/components/SlashCommands";
 import type { SessionInfo } from "@/types";
-import {
-	FolderOpen,
-	Zap,
-	ZapOff,
-	Loader2,
-	AlertCircle,
-	Search,
-	Brain,
-	Wrench,
-	Sun,
-	Moon,
-} from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+
+const DEFAULT_WORKSPACE_ID = "default";
+
+function workspaceIdFromDir(workingDir?: string | null): string {
+	return workingDir || DEFAULT_WORKSPACE_ID;
+}
+
+function workingDirFromWorkspaceId(workspaceId: string): string | null {
+	return workspaceId === DEFAULT_WORKSPACE_ID ? null : workspaceId;
+}
+
+function workspaceLabel(workspaceId: string): string {
+	if (workspaceId === DEFAULT_WORKSPACE_ID) return "Default";
+	return workspaceId.split("/").pop() || workspaceId;
+}
 
 export default function App() {
 	const {
@@ -34,65 +33,106 @@ export default function App() {
 		switchSession,
 		sendMessage,
 		cancel,
-		sendSoftInterrupt,
-		setModel,
 		listSessions,
 		sendStdinResponse,
 		setWorkingDir,
-		clearChat,
-		rewindChat,
-		setReasoningEffort,
-		setMemoryEnabled,
-		compactContext,
-		deleteSession,
-		deleteWorkspaceSessions,
 		setActiveWorkspace,
-		toggleWorkspace,
-		setWorkspaceMode,
-		exportMemories,
-		importMemories,
-		listBackgroundTasks,
-		cancelBackgroundTask,
-		runAuthDoctor,
-		getPermissionRequests,
-		respondToPermission,
-		triggerAmbient,
-		stopAmbient,
-		addProviderProfile,
-		sendTranscript,
-		getBrowserStatus,
-		setupBrowser,
-		runDictation,
 		saveSessionState,
 		getLastSessionState,
-		setError,
+		setWorkspaceMode,
+		loadWorkspaceThreadHistory,
+		deleteSession,
+		setModel,
+		setReasoningEffort,
+		setMemoryEnabled,
+		clearChat,
+		compactContext,
+		rewindChat,
+		gitStatus,
 	} = useJcodeSession();
-	const { toggleTheme, effectiveTheme } = useTheme();
-	const [preferredModel, setPreferredModel] = useState("");
-	const [preferredProfileId, setPreferredProfileId] = useState<
-		string | undefined
-	>();
-	const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
-	const [selectedMessageId, setSelectedMessageId] = useState<string | null>(
-		null,
-	);
-	const [workspaceMemoryPrefs, setWorkspaceMemoryPrefs] = useState<
-		Record<string, boolean>
-	>({});
-	const [defaultWorkspaceMemoryEnabled, setDefaultWorkspaceMemoryEnabled] =
-		useState(true);
-	const [workspaceFiles, setWorkspaceFiles] = useState<string[]>([]);
 
-	const hasPolledOnConnect = useRef(false);
-	useEffect(() => {
-		if (state.connected && !hasPolledOnConnect.current) {
-			hasPolledOnConnect.current = true;
-			listSessions();
+	const [activeNavTab, setActiveNavTab] = useState("chat");
+	const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
+	const [createDialogOpen, setCreateDialogOpen] = useState(false);
+	// Pre-seed createDialog in swarm mode when adding an agent to existing workspace
+	const [createDialogInitMode, setCreateDialogInitMode] = useState<"normal" | "swarm">("swarm");
+	const [preferredModel] = useState("");
+	const [selectedConvId, setSelectedConvId] = useState<string | undefined>();
+	const [pendingSwarmMembers, setPendingSwarmMembers] = useState<
+		Array<{ roleName: string; model: string }>
+	>([]);
+	// Read cursor: track when each conversation was last viewed
+	const [lastReadAt, setLastReadAt] = useState<Record<string, number>>({});
+
+	const currentWorkspaceId = state.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
+
+	const getWorkspaceSessions = (workspaceId: string) =>
+		state.sessions.filter(
+			(session) => workspaceIdFromDir(session.workingDir) === workspaceId,
+		);
+
+	const findWorkspaceTargetSession = (workspaceId: string) => {
+		const sessions = getWorkspaceSessions(workspaceId);
+		return (
+			sessions.find((session) => session.swarmRole === "coordinator") ||
+			sessions.find((session) => !session.roleName) ||
+			sessions[0]
+		);
+	};
+
+	const openWorkspaceConversation = async (
+		workspaceId: string,
+		preferredSessionId?: string,
+	) => {
+		const workingDir = workingDirFromWorkspaceId(workspaceId);
+		setActiveWorkspace(workspaceId);
+		setWorkingDir(workingDir);
+		const history = await loadWorkspaceThreadHistory(workingDir);
+		setWorkspaceMode(workspaceId, "swarm", history);
+		setSelectedConvId(`workspace:${workspaceId}`);
+
+		const targetSessionId =
+			preferredSessionId || findWorkspaceTargetSession(workspaceId)?.sessionId;
+		if (!targetSessionId) return;
+
+		const targetSession = state.sessions.find(
+			(session) => session.sessionId === targetSessionId,
+		);
+		if (state.sessionData[targetSessionId]?.connectionPhase === "connected") {
+			switchSession(targetSessionId);
+			return;
 		}
-		if (!state.connected) {
-			hasPolledOnConnect.current = false;
+		if (targetSession) {
+			void resumeSession(targetSessionId, targetSession.workingDir || null);
+			return;
 		}
-	}, [state.connected, listSessions]);
+		switchSession(targetSessionId);
+	};
+
+	const handleWorkspaceChange = async (workspaceId: string) => {
+		const workingDir = workingDirFromWorkspaceId(workspaceId);
+		setActiveWorkspace(workspaceId);
+		setWorkingDir(workingDir);
+
+		const sessions = getWorkspaceSessions(workspaceId);
+		const hasSwarmThread = sessions.filter((session) => session.roleName).length >= 2;
+		if (hasSwarmThread) {
+			await openWorkspaceConversation(workspaceId);
+			return;
+		}
+
+		const targetSession = findWorkspaceTargetSession(workspaceId);
+		if (!targetSession) {
+			setSelectedConvId(undefined);
+			return;
+		}
+		setSelectedConvId(targetSession.sessionId);
+		if (state.sessionData[targetSession.sessionId]?.connectionPhase === "connected") {
+			switchSession(targetSession.sessionId);
+		} else {
+			void resumeSession(targetSession.sessionId, targetSession.workingDir || null);
+		}
+	};
 
 	// Restore last session on startup
 	const hasRestored = useRef(false);
@@ -106,23 +146,13 @@ export default function App() {
 			const workingDir =
 				(saved as { working_dir?: string | null }).working_dir ?? null;
 			if (!sessionId) return;
-			const confirmed = window.confirm(
-				`Resume previous session "${sessionId.slice(-8)}"?`,
-			);
-			if (confirmed) {
-				setActiveWorkspace(workingDir || "default");
-				setWorkingDir(workingDir);
-				await resumeSession(sessionId, workingDir);
-				await listSessions();
-			}
+			setActiveWorkspace(workspaceIdFromDir(workingDir));
+			setWorkingDir(workingDir);
+			setSelectedConvId(sessionId);
+			await resumeSession(sessionId, workingDir);
+			await listSessions();
 		})();
-	}, [
-		getLastSessionState,
-		resumeSession,
-		listSessions,
-		setActiveWorkspace,
-		setWorkingDir,
-	]);
+	}, [getLastSessionState, listSessions, resumeSession, setActiveWorkspace, setWorkingDir]);
 
 	// Save session state when active session changes
 	useEffect(() => {
@@ -131,41 +161,19 @@ export default function App() {
 		}
 	}, [state.sessionId, state.workingDir, saveSessionState]);
 
+	// Poll sessions on connect
+	const hasPolledOnConnect = useRef(false);
 	useEffect(() => {
-		const loadMemoryPreferences = async () => {
-			try {
-				const prefs = await invoke<{
-					default_enabled: boolean;
-					workspaces: Record<string, boolean>;
-				}>("get_workspace_memory_preferences");
-				setDefaultWorkspaceMemoryEnabled(prefs.default_enabled);
-				setWorkspaceMemoryPrefs(prefs.workspaces || {});
-			} catch {
-				// ignore; UI will fall back to in-memory defaults
-			}
-		};
-		void loadMemoryPreferences();
-	}, []);
+		if (state.connected && !hasPolledOnConnect.current) {
+			hasPolledOnConnect.current = true;
+			listSessions();
+		}
+		if (!state.connected) {
+			hasPolledOnConnect.current = false;
+		}
+	}, [state.connected, listSessions]);
 
-	// Load workspace files when workingDir changes
-	useEffect(() => {
-		const loadFiles = async () => {
-			if (!state.workingDir) {
-				setWorkspaceFiles([]);
-				return;
-			}
-			try {
-				const files = await invoke<string[]>("list_workspace_files", {
-					workingDir: state.workingDir,
-				});
-				setWorkspaceFiles(files);
-			} catch {
-				setWorkspaceFiles([]);
-			}
-		};
-		void loadFiles();
-	}, [state.workingDir]);
-
+	// Cmd+P keyboard shortcut
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
 			const target = event.target as HTMLElement | null;
@@ -178,9 +186,6 @@ export default function App() {
 
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
 				event.preventDefault();
-				if (!sessionSwitcherOpen) {
-					listSessions();
-				}
 				setSessionSwitcherOpen((open) => !open);
 				return;
 			}
@@ -197,443 +202,425 @@ export default function App() {
 				setSessionSwitcherOpen(true);
 			}
 		};
-
 		window.addEventListener("keydown", onKeyDown);
 		return () => window.removeEventListener("keydown", onKeyDown);
-	}, [listSessions, sessionSwitcherOpen]);
+	}, [listSessions]);
 
-	const pickWorkspace = async () => {
-		try {
-			const { open } = await import("@tauri-apps/plugin-dialog");
-			const selected = await open({
-				directory: true,
-				multiple: false,
-				title: "Select workspace folder",
-			});
-			if (selected)
-				setWorkingDir(typeof selected === "string" ? selected : selected[0]);
-		} catch {
-			// Dialog cancelled or unavailable — no action needed
-		}
+	const handleNewSession = async () => {
+		setCreateDialogOpen(true);
 	};
 
-	const handleCreateWorkspace = () => {
-		pickWorkspace();
-	};
-
-	const handleCreateSession = async (workspaceId: string) => {
-		const workingDir = workspaceId === "default" ? null : workspaceId;
+	const handleCreateNormal = async (workingDir: string | null, model: string) => {
+		const workspaceId = workspaceIdFromDir(workingDir);
 		setActiveWorkspace(workspaceId);
 		setWorkingDir(workingDir);
-		await connect(
-			workingDir,
-			preferredModel || undefined,
-			workspaceId === "default"
-				? defaultWorkspaceMemoryEnabled
-				: (workspaceMemoryPrefs[workspaceId] ?? defaultWorkspaceMemoryEnabled),
-		);
+		const sessionId = await connect(workingDir, model || undefined, true);
+		if (sessionId) {
+			switchSession(sessionId);
+			setSelectedConvId(sessionId);
+		}
 		await listSessions();
 	};
 
-	const handleCreateRole = async (workspaceId: string) => {
-		const roleName = window.prompt(
-			"Enter character name (e.g., 'Coder', 'Reviewer'):",
-		);
-		if (!roleName || !roleName.trim()) return;
-		const model = window.prompt("Model (optional, leave empty for default):");
-		const workingDir = workspaceId === "default" ? null : workspaceId;
+	const handleCreateSwarm = async (workingDir: string | null, model: string) => {
+		const workspaceId = workspaceIdFromDir(workingDir);
 		setActiveWorkspace(workspaceId);
 		setWorkingDir(workingDir);
-		await createRoleSession(
+
+		const coordinatorSessionId = await connect(
 			workingDir,
-			roleName.trim(),
-			model?.trim() || preferredModel || undefined,
-			workspaceId === "default"
-				? defaultWorkspaceMemoryEnabled
-				: (workspaceMemoryPrefs[workspaceId] ?? defaultWorkspaceMemoryEnabled),
+			model || undefined,
+			true,
 		);
+		for (const member of pendingSwarmMembers) {
+			await createRoleSession(workingDir, member.roleName, member.model, true);
+		}
+		if (coordinatorSessionId) {
+			switchSession(coordinatorSessionId);
+		}
+		await listSessions();
+		await openWorkspaceConversation(workspaceId, coordinatorSessionId || undefined);
+		setPendingSwarmMembers([]);
+	};
+
+	const handleAddSwarmMember = (roleName: string, model: string) => {
+		setPendingSwarmMembers((prev) => {
+			if (prev.some((member) => member.roleName === roleName)) return prev;
+			return [...prev, { roleName, model }];
+		});
+	};
+
+	const handleRemoveSwarmMember = (roleName: string) => {
+		setPendingSwarmMembers((prev) =>
+			prev.filter((member) => member.roleName !== roleName),
+		);
+	};
+
+	/** Open the create dialog pre-set to swarm mode for the current workspace. */
+	const handleAddAgentToWorkspace = () => {
+		setCreateDialogInitMode("swarm");
+		setCreateDialogOpen(true);
+	};
+
+	/** Remove an individual agent session from the workspace after confirmation. */
+	const handleRemoveAgentSession = async (sessionId: string) => {
+		const session = state.sessions.find((s) => s.sessionId === sessionId);
+		const name = session?.roleName || session?.title || sessionId.slice(0, 8);
+		const confirmed = window.confirm(`Remove agent "${name}" from this workspace?`);
+		if (!confirmed) return;
+		await deleteSession(sessionId);
+		// If we were viewing that DM, switch back to workspace thread
+		if (selectedConvId === sessionId) {
+			const wsid = workspaceIdFromDir(session?.workingDir);
+			void openWorkspaceConversation(wsid);
+		}
 		await listSessions();
 	};
 
-	const handleToggleSlackMode = (workspaceId: string) => {
-		const nextMode =
-			state.workspaceModes[workspaceId] === "slack" ? "normal" : "slack";
-		if (nextMode === "slack") {
-			// 合并该 workspace 下所有 session 的历史消息，按时间戳地回填到虚拟 session
-			const wsSessionInfos = state.sessions.filter(
-				(s) => (s.workingDir || "default") === workspaceId,
-			);
-			const merged: import("@/types").ChatMessage[] = [];
-			for (const sessionInfo of wsSessionInfos) {
-				const sessionData = state.sessionData[sessionInfo.sessionId];
-				if (!sessionData?.messages) continue;
-				for (const msg of sessionData.messages) {
-					merged.push({
-						...msg,
-						// 不覆盖已有的 roleName，对没有的添加对应 session 的 roleName
-						roleName: msg.roleName ?? sessionInfo.roleName ?? undefined,
-						roleSessionId: msg.roleSessionId ?? sessionInfo.sessionId,
-					});
-				}
-			}
-			// 按时间戳排序（无时间戳的大于 0）
-			merged.sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0));
-			setWorkspaceMode(workspaceId, "slack", merged);
-		} else {
-			setWorkspaceMode(workspaceId, "normal");
+	const resolveTargetSessionId = () => {
+		if (selectedConvId?.startsWith("workspace:")) {
+			const workspaceId = selectedConvId.slice("workspace:".length);
+			return findWorkspaceTargetSession(workspaceId)?.sessionId;
 		}
+		if (selectedConvId) return selectedConvId;
+		return state.sessionId || findWorkspaceTargetSession(currentWorkspaceId)?.sessionId;
 	};
 
-	const handleRenameSession = async (sessionId: string, newTitle: string) => {
-		try {
-			await invoke("rename_session", {
-				sessionId,
-				title: newTitle,
-			});
-			await listSessions();
-		} catch (err) {
-			// eslint-disable-next-line no-console
-			console.error("Failed to rename session:", err);
-		}
-	};
+	const handleSendMessage = async (content: string, images?: [string, string][]) => {
+		let targetSessionId: string | undefined = resolveTargetSessionId() || undefined;
 
-	const handleDeleteSession = async (session: SessionInfo) => {
-		const confirmed = window.confirm(
-			`Delete session "${session.title}"? This cannot be undone.`,
-		);
-		if (!confirmed) return;
-		await deleteSession(session.sessionId);
-	};
-
-	const handleDeleteWorkspace = async (workspaceId: string) => {
-		const label = workspaceId === "default" ? "Default" : workspaceId;
-		const confirmed = window.confirm(
-			`Delete all sessions in workspace "${label}"? This cannot be undone.`,
-		);
-		if (!confirmed) return;
-		await deleteWorkspaceSessions(
-			workspaceId === "default" ? null : workspaceId,
-		);
-	};
-
-	const handleSlashCommand = (command: string) => {
-		switch (command) {
-			case "compact":
-				compactContext(state.sessionId || undefined);
-				break;
-			case "clear":
-				clearChat(state.sessionId || undefined);
-				break;
-			case "rewind": {
-				const visibleCount = (
-					isSlackMode ? slackMessages : state.messages
-				).filter((m) => m.role === "user" || m.role === "assistant").length;
-				if (visibleCount > 0) {
-					rewindChat(visibleCount, state.sessionId || undefined);
+		// ── Slash command interceptor ─────────────────────────────────────────
+		const slashCmd = parseSlashCommand(content);
+		if (slashCmd) {
+			const { cmd, args } = slashCmd;
+			if (cmd === "/model" || cmd === "/models") {
+				// Switch model directly if name given, otherwise let backend handle
+				if (args) {
+					await setModel(args, undefined, targetSessionId);
 				}
-				break;
+				// If no args, still pass to backend so it shows the model list as a message
+				if (!args) {
+					if (targetSessionId) await sendMessage(content, images, targetSessionId);
+					return;
+				}
+				return;
 			}
-			case "memory-on":
-				void handleSetMemoryEnabled(true);
-				break;
-			case "memory-off":
-				void handleSetMemoryEnabled(false);
-				break;
-			case "interrupt":
-				if (isSlackMode) {
-					workspaceSessions
-						.filter((s) => state.sessionData[s.sessionId]?.isProcessing)
-						.forEach(
-							(s) =>
-								void sendSoftInterrupt(
-									"Pause execution to review the current state and respond to user input.",
-									s.sessionId,
-								),
+			if (cmd === "/effort") {
+				const effort = args || "medium";
+				await setReasoningEffort(effort, targetSessionId);
+				return;
+			}
+			if (cmd === "/memory") {
+				const current = state.memoryEnabled;
+				await setMemoryEnabled(!current, targetSessionId);
+				return;
+			}
+			if (cmd === "/clear") {
+				await clearChat(targetSessionId);
+				return;
+			}
+			if (cmd === "/compact") {
+				await compactContext(targetSessionId);
+				return;
+			}
+			if (cmd === "/rewind") {
+				const n = parseInt(args, 10);
+				if (!isNaN(n)) {
+					await rewindChat(n, targetSessionId);
+					return;
+				}
+				// /rewind undo — pass to backend
+			}
+			if (cmd === "/git") {
+				await gitStatus(state.workingDir);
+				// Display git output as a system message by sending to backend
+				if (targetSessionId) {
+					await sendMessage(`/git${args ? " " + args : ""}`, images, targetSessionId);
+				}
+				return;
+			}
+			if (cmd === "/help" || cmd === "/?" || cmd === "/commands") {
+				// Pass to backend for help text
+				if (targetSessionId) await sendMessage(content, images, targetSessionId);
+				return;
+			}
+			// All other commands pass through to backend
+		}
+		// ── End slash command interceptor ─────────────────────────────────────
+
+		// @AgentName routing: if in workspace thread and message starts with @Name,
+		// route directly to that agent's DM session
+		if (targetSessionId && selectedConvId?.startsWith("workspace:")) {
+			const mentionMatch = content.match(/^@(\w+)(?:\s|$)/);
+			if (mentionMatch) {
+				const mentionedName = mentionMatch[1].toLowerCase();
+				const agentSession = workspaceSessions.find(
+					(s) => s.roleName?.toLowerCase() === mentionedName,
+				);
+				if (agentSession) {
+					// Ensure the agent session is connected before sending
+					if (
+						state.sessionData[agentSession.sessionId]?.connectionPhase !== "connected"
+					) {
+						await resumeSession(
+							agentSession.sessionId,
+							agentSession.workingDir || null,
 						);
-				} else {
-					void sendSoftInterrupt(
-						"Pause execution to review the current state and respond to user input.",
-						state.sessionId || undefined,
-					);
-				}
-				break;
-			case "btw": {
-				const question = window.prompt("Ask a side question:");
-				if (question?.trim()) {
-					void sendSoftInterrupt(
-						`[btw] ${question.trim()}`,
-						state.sessionId || undefined,
-					);
-				}
-				break;
-			}
-			case "fix": {
-				void sendSoftInterrupt(
-					"The model seems stuck. Please attempt to recover and continue.",
-					state.sessionId || undefined,
-				);
-				break;
-			}
-			case "poke": {
-				void sendSoftInterrupt(
-					"Please check if there are any incomplete tasks and resume working on them.",
-					state.sessionId || undefined,
-				);
-				break;
-			}
-			case "git": {
-				void (async () => {
-					try {
-						const status = await invoke<string>("git_status", {
-							workingDir: state.workingDir,
-						});
-						window.alert(`Git status:\n${status}`);
-					} catch {
-						window.alert("Failed to get git status");
 					}
-				})();
-				break;
-			}
-			case "info": {
-				const info = [
-					`Session: ${state.sessionId || "none"}`,
-					`Model: ${state.providerModel || "unknown"}`,
-					`Provider: ${state.providerName || "unknown"}`,
-					`Tokens: ${state.totalTokens ? `↑${state.totalTokens[0]} ↓${state.totalTokens[1]}` : "unknown"}`,
-					`Messages: ${state.messages.length}`,
-					`Workspace: ${state.workingDir || "default"}`,
-				].join("\n");
-				window.alert(info);
-				break;
-			}
-			case "usage": {
-				void (async () => {
-					try {
-						const usage =
-							await invoke<Record<string, unknown>>("get_usage_info");
-						window.alert(`Usage info:\n${JSON.stringify(usage, null, 2)}`);
-					} catch {
-						window.alert("Failed to get usage info");
-					}
-				})();
-				break;
-			}
-			case "version": {
-				void (async () => {
-					try {
-						const version =
-							await invoke<Record<string, unknown>>("get_version_info");
-						window.alert(`Version:\n${JSON.stringify(version, null, 2)}`);
-					} catch {
-						window.alert("Failed to get version info");
-					}
-				})();
-				break;
-			}
-			case "auth": {
-				void (async () => {
-					try {
-						const auth =
-							await invoke<Record<string, unknown>>("get_auth_status");
-						window.alert(`Auth status:\n${JSON.stringify(auth, null, 2)}`);
-					} catch {
-						window.alert("Failed to get auth status");
-					}
-				})();
-				break;
-			}
-			case "goals": {
-				window.alert("Goals: Use the ActivityPanel to view and manage goals.");
-				break;
-			}
-			case "review": {
-				void sendSoftInterrupt(
-					"Please review the recent changes and provide feedback.",
-					state.sessionId || undefined,
-				);
-				break;
-			}
-			case "judge": {
-				void sendSoftInterrupt(
-					"Please judge the quality of the recent work and suggest improvements.",
-					state.sessionId || undefined,
-				);
-				break;
-			}
-			case "transfer": {
-				window.alert("Transfer: Use the SessionSidebar to manage sessions.");
-				break;
-			}
-			case "save": {
-				if (state.sessionId) {
-					void saveSessionState(state.sessionId, state.workingDir);
-					window.alert("Session saved.");
+					targetSessionId = agentSession.sessionId;
 				}
-				break;
-			}
-			case "rename": {
-				const newName = window.prompt("Enter new session name:");
-				if (newName?.trim() && state.sessionId) {
-					void handleRenameSession(state.sessionId, newName.trim());
-				}
-				break;
-			}
-			case "todos": {
-				window.alert("Todos: Check the ActivityPanel for the todo list.");
-				break;
-			}
-			case "workspace": {
-				window.alert(`Workspace: ${state.workingDir || "default"}`);
-				break;
-			}
-			case "effort": {
-				const effort = window.prompt(
-					"Set reasoning effort (none|low|medium|high|xhigh):",
-				);
-				if (effort?.trim()) {
-					void setReasoningEffort(effort.trim(), state.sessionId || undefined);
-				}
-				break;
-			}
-			case "fast": {
-				window.alert(
-					"Fast mode: Toggle via the model selector or provider settings.",
-				);
-				break;
 			}
 		}
+
+		if (!targetSessionId) {
+			const workingDir = workingDirFromWorkspaceId(currentWorkspaceId);
+			setActiveWorkspace(currentWorkspaceId);
+			setWorkingDir(workingDir);
+			targetSessionId =
+				(await connect(workingDir, preferredModel || undefined, true)) || undefined;
+			if (!targetSessionId) return;
+			switchSession(targetSessionId);
+			setSelectedConvId(targetSessionId);
+			await listSessions();
+		}
+		await sendMessage(content, images, targetSessionId);
 	};
-
-	const currentWorkspaceKey =
-		state.workingDir || state.activeWorkspaceId || "default";
-	const effectiveMemoryEnabled = state.connected
-		? state.memoryEnabled
-		: (workspaceMemoryPrefs[currentWorkspaceKey] ??
-			defaultWorkspaceMemoryEnabled);
-
-	// Slack mode state
-	const isSlackMode = state.workspaceModes[currentWorkspaceKey] === "slack";
-	const workspaceSessions = state.sessions.filter(
-		(s) => (s.workingDir || "default") === currentWorkspaceKey,
-	);
-	const workspaceRoleNames = workspaceSessions
-		.map((s) => s.roleName)
-		.filter(Boolean) as string[];
-	const virtualSessionId = `workspace:${currentWorkspaceKey}`;
-	const slackMessages = isSlackMode
-		? (state.sessionData[virtualSessionId]?.messages ?? [])
-		: [];
-	const slackIsProcessing = isSlackMode
-		? workspaceSessions.some(
-				(s) => state.sessionData[s.sessionId]?.isProcessing,
-			) ||
-			(state.sessionData[virtualSessionId]?.isProcessing ?? false)
-		: false;
-	// Slack 模式：哪些角色正在生成回复（用于骨架屏）
-	const respondingRoles = isSlackMode
-		? workspaceSessions
-				.filter((s) => state.sessionData[s.sessionId]?.isProcessing)
-				.map((s) => s.roleName)
-				.filter((r): r is string => Boolean(r))
-		: [];
-	// roleName → model 映射（用于 mention 下拉和模型切换）
-	const roleModels: Record<string, string> = {};
-	for (const s of workspaceSessions) {
-		if (s.roleName && s.model) {
-			roleModels[s.roleName] = s.model;
-		}
-	}
-	const visibleConversationCount = (
-		isSlackMode ? slackMessages : state.messages
-	).filter(
-		(message) => message.role === "user" || message.role === "assistant",
-	).length;
-
-	const findSessionIdByRoleName = (roleName: string): string | undefined => {
-		return workspaceSessions.find((s) => s.roleName === roleName)?.sessionId;
-	};
-
-	const getDefaultRoleSessionId = (): string | undefined => {
-		// Prefer the currently active session if it belongs to this workspace and has a role name
-		if (state.sessionId) {
-			const active = workspaceSessions.find(
-				(s) => s.sessionId === state.sessionId,
-			);
-			if (active?.roleName) return active.sessionId;
-		}
-		// Fall back to the first role in the workspace
-		return (
-			workspaceSessions.find((s) => s.roleName)?.sessionId ||
-			workspaceSessions[0]?.sessionId
-		);
-	};
-
-	const updateWorkspaceMemoryPreference = async (
-		workspaceKey: string,
-		enabled: boolean,
-	) => {
-		if (workspaceKey === "default") {
-			setDefaultWorkspaceMemoryEnabled(enabled);
-		} else {
-			setWorkspaceMemoryPrefs((current) => ({
-				...current,
-				[workspaceKey]: enabled,
-			}));
-		}
-		try {
-			await invoke("set_workspace_memory_preference", {
-				workingDir: workspaceKey === "default" ? null : workspaceKey,
-				enabled,
-			});
-		} catch {
-			// keep optimistic UI state; session toggle still applies immediately
-		}
-	};
-
-	const handleSetMemoryEnabled = async (enabled: boolean) => {
-		await updateWorkspaceMemoryPreference(currentWorkspaceKey, enabled);
-		if (state.connected) {
-			await setMemoryEnabled(enabled, state.sessionId || undefined);
-		}
-	};
-
-	// 自动连接：用户发送第一条消息时若未连接，先创建会话再发送
-	const pendingAutoSend = useRef<{
-		content: string;
-		images?: [string, string][];
-	} | null>(null);
-	useEffect(() => {
-		if (state.connected && state.sessionId && pendingAutoSend.current) {
-			const { content, images } = pendingAutoSend.current;
-			pendingAutoSend.current = null;
-			sendMessage(content, images, state.sessionId);
-		}
-	}, [state.connected, state.sessionId]);
 
 	const handleResume = (session: SessionInfo) => {
-		setActiveWorkspace(session.workingDir || "default");
+		setActiveWorkspace(workspaceIdFromDir(session.workingDir));
 		setWorkingDir(session.workingDir || null);
-		setSessionSwitcherOpen(false);
-		// If session is already active, just switch view without re-invoking backend
-		if (state.sessionId === session.sessionId) {
-			return;
-		}
-		// Check if session is already connected in our state
+		setSelectedConvId(session.sessionId);
+		// Mark conversation as read
+		setLastReadAt((prev) => ({ ...prev, [session.sessionId]: Date.now() }));
+		if (state.sessionId === session.sessionId) return;
 		const sessionData = state.sessionData[session.sessionId];
 		if (sessionData?.connectionPhase === "connected") {
 			switchSession(session.sessionId);
 		} else {
-			resumeSession(session.sessionId, session.workingDir || null);
+			void resumeSession(session.sessionId, session.workingDir || null);
 		}
 	};
 
-	const openSessionSwitcher = () => {
-		listSessions();
-		setSessionSwitcherOpen(true);
+	const handleSelectConversation = (convId: string) => {
+		setSelectedConvId(convId);
+		// Mark as read immediately
+		setLastReadAt((prev) => ({ ...prev, [convId]: Date.now() }));
+		if (convId.startsWith("workspace:")) {
+			const workspaceId = convId.slice("workspace:".length);
+			void openWorkspaceConversation(workspaceId);
+		}
 	};
 
+	const workspaces = useMemo(() => {
+		const ids = new Set<string>([DEFAULT_WORKSPACE_ID]);
+		for (const session of state.sessions) {
+			ids.add(workspaceIdFromDir(session.workingDir));
+		}
+		return Array.from(ids).sort((left, right) => {
+			if (left === DEFAULT_WORKSPACE_ID) return -1;
+			if (right === DEFAULT_WORKSPACE_ID) return 1;
+			return workspaceLabel(left).localeCompare(workspaceLabel(right));
+		});
+	}, [state.sessions]);
+
+	const workspaceSessions = useMemo(
+		() => getWorkspaceSessions(currentWorkspaceId),
+		[currentWorkspaceId, state.sessions],
+	);
+
+	const respondingRoles = workspaceSessions
+		.filter(
+			(session) =>
+				state.sessionData[session.sessionId]?.isProcessing || session.liveProcessing,
+		)
+		.map((session) => session.roleName)
+		.filter((role): role is string => Boolean(role));
+
+	// Compute last-message preview + unread count per session for ConversationsList
+	const sessionPreviewMap = useMemo(() => {
+		const map: Record<string, { text: string; timestamp: number; unread: number }> = {};
+		for (const [sessionId, data] of Object.entries(state.sessionData)) {
+			const msgs = data.messages.filter(
+				(m) => m.role === "user" || m.role === "assistant",
+			);
+			const last = msgs[msgs.length - 1];
+			if (last) {
+				const lastRead = lastReadAt[sessionId] ?? 0;
+				const unread = msgs.filter(
+					(m) => m.role === "assistant" && (m.timestamp ?? 0) > lastRead,
+				).length;
+				map[sessionId] = {
+					text: last.content.replace(/\n/g, " ").slice(0, 80),
+					timestamp: last.timestamp ?? Date.now(),
+					unread,
+				};
+			}
+		}
+		return map;
+	}, [state.sessionData, lastReadAt]);
+
+	const displayMessages = useMemo(() => {
+		if (!selectedConvId) return state.messages;
+		if (selectedConvId.startsWith("workspace:")) {
+			const workspaceId = selectedConvId.slice("workspace:".length);
+			const virtualSessionId = `workspace:${workspaceId}`;
+			return state.sessionData[virtualSessionId]?.messages || [];
+		}
+		const data = state.sessionData[selectedConvId];
+		if (data) return data.messages;
+		return state.messages;
+	}, [selectedConvId, state.messages, state.sessionData]);
+
+	const displayIsProcessing = useMemo(() => {
+		if (!selectedConvId) return state.isProcessing;
+		if (selectedConvId.startsWith("workspace:")) {
+			return respondingRoles.length > 0;
+		}
+		const data = state.sessionData[selectedConvId];
+		if (typeof data?.isProcessing === "boolean") return data.isProcessing;
+		return (
+			workspaceSessions.find((session) => session.sessionId === selectedConvId)
+				?.liveProcessing ?? false
+		);
+	}, [respondingRoles, selectedConvId, state.isProcessing, state.sessionData, workspaceSessions]);
+
+	// True while a DM session is in the process of loading its history
+	const displayIsLoading = useMemo(() => {
+		if (!selectedConvId || selectedConvId.startsWith("workspace:")) return false;
+		const phase = state.sessionData[selectedConvId]?.connectionPhase;
+		return phase === "initializing" || phase === "connecting";
+	}, [selectedConvId, state.sessionData]);
+
+	const selectedSession = useMemo(
+		() =>
+			selectedConvId && !selectedConvId.startsWith("workspace:")
+				? state.sessions.find((session) => session.sessionId === selectedConvId)
+				: undefined,
+		[selectedConvId, state.sessions],
+	);
+
+	const channelName = selectedConvId?.startsWith("workspace:")
+		? "Everyone"
+		: selectedSession?.roleName || selectedSession?.title || "Conversation";
+	const channelMembers = selectedConvId?.startsWith("workspace:")
+		? workspaceSessions
+				.map((session) => session.roleName)
+				.filter((role): role is string => Boolean(role))
+		: selectedSession?.roleName
+			? [selectedSession.roleName]
+			: undefined;
+
 	return (
-		<div className="flex flex-col h-screen bg-background">
+		<div className="h-screen bg-white flex flex-col overflow-hidden">
+			<div className="h-[38px] min-h-[38px] bg-[#F6F6F6] border-b border-[#E5E5E5] flex items-center justify-between px-4 select-none">
+				<div className="flex items-center gap-[6px]">
+					<div className="w-3 h-3 rounded-full bg-[#FF5F57]" />
+					<div className="w-3 h-3 rounded-full bg-[#FEBC2E]" />
+					<div className="w-3 h-3 rounded-full bg-[#28C840]" />
+				</div>
+
+				<div className="flex items-center gap-2 text-[11px] text-[#6B7280] font-medium">
+					<svg
+						viewBox="0 0 16 16"
+						fill="currentColor"
+						className="w-3.5 h-3.5 text-[#9CA3AF]"
+					>
+						<path d="M8 1a.75.75 0 01.75.75v5.5h5.5a.75.75 0 010 1.5h-5.5v5.5a.75.75 0 01-1.5 0v-5.5h-5.5a.75.75 0 010-1.5h5.5v-5.5A.75.75 0 018 1z" />
+					</svg>
+					Cumora — where agent teams gather
+				</div>
+
+				<label className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-white border border-[#E5E7EB] text-[11px] text-[#374151] font-medium hover:bg-[#F9FAFB] transition-colors">
+					<svg
+						viewBox="0 0 16 16"
+						fill="currentColor"
+						className="w-3.5 h-3.5 text-[#9CA3AF]"
+					>
+						<path
+							fillRule="evenodd"
+							d="M1.5 4.5a3 3 0 013-3h1.372c.86 0 1.61.586 1.819 1.42l1.105 4.423a1.875 1.875 0 01-.694 1.955l-1.22.972a7.857 7.857 0 004.189 4.19l.972-1.22a1.875 1.875 0 011.955-.694l4.423 1.105c.834.209 1.42.959 1.42 1.82V12.5a3 3 0 01-3 3h-1.5a10.5 10.5 0 01-10.5-10.5v-1.5z"
+							clipRule="evenodd"
+						/>
+					</svg>
+					<select
+						value={currentWorkspaceId}
+						onChange={(event) => {
+							void handleWorkspaceChange(event.target.value);
+						}}
+						className="bg-transparent text-[11px] text-[#374151] font-medium outline-none"
+					>
+						{workspaces.map((workspaceId) => (
+							<option key={workspaceId} value={workspaceId}>
+								{workspaceLabel(workspaceId)}
+							</option>
+						))}
+					</select>
+				</label>
+			</div>
+
+			<div className="flex flex-1 overflow-hidden">
+				<NavBar
+					activeTab={activeNavTab}
+					onTabChange={setActiveNavTab}
+					unreadCount={Object.values(sessionPreviewMap).reduce(
+						(sum, p) => sum + (p.unread > 0 ? 1 : 0),
+						0,
+					)}
+				/>
+
+				<ConversationsList
+					sessions={state.sessions}
+					onCreateSession={handleNewSession}
+					workspaceSessions={workspaceSessions}
+					selectedConvId={selectedConvId}
+					onSelectConversation={handleSelectConversation}
+					onSelectSession={handleResume}
+					activeSessionId={state.sessionId}
+					sessionPreviewMap={sessionPreviewMap}
+					onRemoveSession={handleRemoveAgentSession}
+				/>
+
+				<ChatArea
+					messages={displayMessages}
+					isProcessing={displayIsProcessing}
+					isLoading={displayIsLoading}
+					onSend={handleSendMessage}
+					onCancel={() => cancel(resolveTargetSessionId() || undefined)}
+					channelName={channelName}
+					channelMembers={channelMembers}
+					respondingRoles={respondingRoles}
+					workspaceSessions={workspaceSessions}
+					onAddAgent={handleAddAgentToWorkspace}
+					lastReadTimestamp={selectedConvId ? lastReadAt[selectedConvId] : undefined}
+					onConvene={() => {
+						void handleSendMessage("/convene");
+					}}
+					currentModel={state.providerModel}
+					reasoningEffort={state.reasoningEffort}
+					memoryEnabled={state.memoryEnabled}
+					availableModels={state.availableModels}
+					onSetModel={(m) => void setModel(m, undefined, resolveTargetSessionId() || undefined)}
+					onSetEffort={(e) => void setReasoningEffort(e, resolveTargetSessionId() || undefined)}
+					onToggleMemory={() => void setMemoryEnabled(!state.memoryEnabled, resolveTargetSessionId() || undefined)}
+					onCompact={() => void compactContext(resolveTargetSessionId() || undefined)}
+					onClearChat={() => void clearChat(resolveTargetSessionId() || undefined)}
+				/>
+			</div>
+
+			<CreateSessionDialog
+				open={createDialogOpen}
+				onOpenChange={setCreateDialogOpen}
+				workspaces={workspaces}
+				currentWorkingDir={state.workingDir}
+				availableModels={state.availableModels}
+				onCreateNormal={handleCreateNormal}
+				onCreateSwarm={handleCreateSwarm}
+				onAddSwarmMember={handleAddSwarmMember}
+				onRemoveSwarmMember={handleRemoveSwarmMember}
+				swarmMembers={pendingSwarmMembers.map((member) => member.roleName)}
+				initMode={createDialogInitMode}
+			/>
+
 			{state.stdinPrompt && (
 				<StdinInputModal
 					prompt={state.stdinPrompt}
@@ -649,323 +636,6 @@ export default function App() {
 				onOpenChange={setSessionSwitcherOpen}
 				onSelectSession={handleResume}
 			/>
-
-			<header className="flex items-center justify-between px-4 py-2 bg-card border-b min-h-12 gap-1">
-				<div className="flex items-center gap-3">
-					{state.connected && (
-						<Badge variant="default" className="h-5 text-[10px] gap-1">
-							<Zap className="w-2.5 h-2.5" />
-							connected
-						</Badge>
-					)}
-					{state.connecting && (
-						<Badge variant="secondary" className="h-5 text-[10px] gap-1">
-							<Loader2 className="w-2.5 h-2.5 animate-spin" />
-							connecting
-						</Badge>
-					)}
-					{!state.connected && !state.connecting && (
-						<Badge variant="outline" className="h-5 text-[10px] gap-1">
-							<ZapOff className="w-2.5 h-2.5" />
-							disconnected
-						</Badge>
-					)}
-					{state.workingDir && (
-						<span
-							className="text-[11px] text-muted-foreground font-mono bg-secondary px-2 py-0.5 rounded truncate max-w-[220px]"
-							title={state.workingDir}
-						>
-							{state.workingDir.length > 30
-								? "..." + state.workingDir.slice(-27)
-								: state.workingDir}
-						</span>
-					)}
-				</div>
-
-				<div className="flex items-center gap-2">
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={pickWorkspace}
-						className="gap-1.5 h-8 text-xs"
-					>
-						<FolderOpen className="w-3.5 h-3.5" />
-						{state.workingDir ? "Change" : "Select Workspace"}
-					</Button>
-					<Button
-						variant={effectiveMemoryEnabled ? "secondary" : "outline"}
-						size="sm"
-						onClick={() => void handleSetMemoryEnabled(!effectiveMemoryEnabled)}
-						className="h-8 text-xs gap-1.5"
-					>
-						<Brain className="w-3.5 h-3.5" />
-						Memory default {effectiveMemoryEnabled ? "on" : "off"}
-					</Button>
-					{state.availableModelRoutes.length > 0 && (
-						<Badge variant="secondary" className="h-5 text-[10px]">
-							{state.availableModelRoutes.length} routes
-						</Badge>
-					)}
-					{state.isProcessing && (
-						<Badge variant="default" className="h-5 text-[10px] gap-1">
-							<Wrench className="w-2.5 h-2.5" />
-							running
-						</Badge>
-					)}
-				</div>
-
-				<div className="flex items-center gap-2">
-					<Button
-						variant="ghost"
-						size="icon"
-						className="h-8 w-8"
-						onClick={toggleTheme}
-						title={
-							effectiveTheme === "dark" ? "Switch to light" : "Switch to dark"
-						}
-					>
-						{effectiveTheme === "dark" ? (
-							<Sun className="w-4 h-4" />
-						) : (
-							<Moon className="w-4 h-4" />
-						)}
-					</Button>
-					<Button
-						variant="outline"
-						size="sm"
-						className="h-8 text-xs gap-1.5"
-						onClick={openSessionSwitcher}
-					>
-						<Search className="w-3.5 h-3.5" />
-						Sessions
-					</Button>
-					{state.totalTokens && (
-						<span className="text-[10px] text-muted-foreground font-mono">
-							↑{state.totalTokens[0]} ↓{state.totalTokens[1]}
-						</span>
-					)}
-					{state.error && (
-						<Badge
-							variant="destructive"
-							className="h-5 text-[10px] gap-1 max-w-[200px] truncate"
-							title={state.error}
-						>
-							<AlertCircle className="w-2.5 h-2.5" />
-							{state.error.length > 30
-								? state.error.slice(0, 30) + "..."
-								: state.error}
-						</Badge>
-					)}
-				</div>
-			</header>
-
-			<div className="flex flex-1 overflow-hidden">
-				<SessionSidebar
-					sessions={state.sessions}
-					activeSessionId={state.sessionId}
-					expandedWorkspaces={state.expandedWorkspaces}
-					activeWorkspaceId={state.activeWorkspaceId}
-					activeMessages={state.messages}
-					activeError={state.error}
-					isProcessing={state.isProcessing}
-					queuedDraftCount={state.queuedDrafts.length}
-					stdinPromptActive={Boolean(state.stdinPrompt)}
-					availableRouteCount={state.availableModelRoutes.length}
-					workspaceModes={state.workspaceModes}
-					onSelectSession={handleResume}
-					onRefresh={listSessions}
-					onToggleWorkspace={toggleWorkspace}
-					onSelectWorkspace={(id) => {
-						setActiveWorkspace(id);
-						setWorkingDir(id === "default" ? null : id);
-					}}
-					onCreateWorkspace={handleCreateWorkspace}
-					onCreateSession={handleCreateSession}
-					onCreateRole={handleCreateRole}
-					onToggleSlackMode={handleToggleSlackMode}
-					onRenameSession={handleRenameSession}
-					onDeleteSession={(session) => {
-						void handleDeleteSession(session);
-					}}
-					onDeleteWorkspace={(workspaceId) => {
-						void handleDeleteWorkspace(workspaceId);
-					}}
-				/>
-				<Separator orientation="vertical" />
-				<ChatView
-					messages={isSlackMode ? slackMessages : state.messages}
-					isProcessing={isSlackMode ? slackIsProcessing : state.isProcessing}
-					isSlackMode={isSlackMode}
-					respondingRoles={respondingRoles}
-					reasoningEffort={state.reasoningEffort}
-					memoryEnabled={effectiveMemoryEnabled}
-					connectionType={state.connectionType}
-					statusDetail={state.statusDetail}
-					queuedDraftCount={state.queuedDrafts.length}
-					stdinPromptActive={Boolean(state.stdinPrompt)}
-					selectedMessageId={selectedMessageId}
-					availableRoles={workspaceRoleNames}
-					roleModels={roleModels}
-					onSend={(content, images, targetRole) => {
-						if (isSlackMode) {
-							const targetSessionId = targetRole
-								? findSessionIdByRoleName(targetRole)
-								: getDefaultRoleSessionId();
-							if (!targetSessionId) {
-								setError(
-									"No target session found. Create a role session first.",
-								);
-								return;
-							}
-							// 如果 preferredModel 有值且目标角色模型不同，先切换
-							void (async () => {
-								const targetSession = workspaceSessions.find(
-									(s) => s.sessionId === targetSessionId,
-								);
-								if (preferredModel && targetSession?.model !== preferredModel) {
-									await setModel(preferredModel, undefined, targetSessionId);
-								}
-								sendMessage(content, images, targetSessionId);
-							})();
-						} else {
-							// 普通模式：没有会话时自动创建
-							if (!state.connected && !state.connecting) {
-								pendingAutoSend.current = { content, images };
-								void connect(
-									state.workingDir,
-									preferredModel || undefined,
-									effectiveMemoryEnabled,
-									undefined,
-									preferredProfileId || undefined,
-								);
-								return;
-							}
-							sendMessage(content, images, state.sessionId || undefined);
-						}
-					}}
-					onQueueSend={(content, images, targetRole) => {
-						if (isSlackMode) {
-							const targetSessionId = targetRole
-								? findSessionIdByRoleName(targetRole)
-								: getDefaultRoleSessionId();
-							if (!targetSessionId) {
-								setError(
-									"No target session found. Create a role session first.",
-								);
-								return;
-							}
-							void (async () => {
-								const targetSession = workspaceSessions.find(
-									(s) => s.sessionId === targetSessionId,
-								);
-								if (preferredModel && targetSession?.model !== preferredModel) {
-									await setModel(preferredModel, undefined, targetSessionId);
-								}
-								sendMessage(content, images, targetSessionId);
-							})();
-						} else {
-							// 普通模式：没有会话时自动创建
-							if (!state.connected && !state.connecting) {
-								pendingAutoSend.current = { content, images };
-								void connect(
-									state.workingDir,
-									preferredModel || undefined,
-									effectiveMemoryEnabled,
-									undefined,
-									preferredProfileId || undefined,
-								);
-								return;
-							}
-							sendMessage(content, images, state.sessionId || undefined);
-						}
-					}}
-					onCancel={() => {
-						if (isSlackMode) {
-							// Slack 模式：取消 workspace 内所有正在处理的 session
-							workspaceSessions
-								.filter((s) => state.sessionData[s.sessionId]?.isProcessing)
-								.forEach((s) => void cancel(s.sessionId));
-						} else {
-							void cancel(state.sessionId || undefined);
-						}
-					}}
-					onSoftInterrupt={(content) => {
-						if (isSlackMode) {
-							workspaceSessions
-								.filter((s) => state.sessionData[s.sessionId]?.isProcessing)
-								.forEach((s) => void sendSoftInterrupt(content, s.sessionId));
-						} else {
-							void sendSoftInterrupt(content, state.sessionId || undefined);
-						}
-					}}
-					onClearChat={() => clearChat(state.sessionId || undefined)}
-					onRewindChat={() => {
-						if (visibleConversationCount > 0) {
-							rewindChat(
-								visibleConversationCount,
-								state.sessionId || undefined,
-							);
-						}
-					}}
-					onSetReasoningEffort={(effort) =>
-						setReasoningEffort(effort, state.sessionId || undefined)
-					}
-					onSetMemoryEnabled={handleSetMemoryEnabled}
-					onCompactContext={() => compactContext(state.sessionId || undefined)}
-					onDictate={runDictation}
-					workspaceFiles={workspaceFiles}
-					onSlashCommand={handleSlashCommand}
-					currentModel={state.providerModel || preferredModel || null}
-					currentProvider={state.providerName || preferredProfileId || null}
-					onSelectModel={(model, profileId) => {
-						setPreferredModel(model);
-						setPreferredProfileId(profileId);
-						if (state.sessionId) {
-							setModel(model, profileId, state.sessionId);
-						}
-					}}
-				/>
-				<Separator orientation="vertical" className="hidden xl:flex" />
-				<ActivityPanel
-					messages={state.messages}
-					isProcessing={state.isProcessing}
-					queuedDraftCount={state.queuedDrafts.length}
-					stdinPrompt={state.stdinPrompt}
-					providerName={state.providerName}
-					providerModel={state.providerModel}
-					availableModels={state.availableModels}
-					availableModelRoutes={state.availableModelRoutes}
-					sessionId={state.sessionId}
-					reasoningEffort={state.reasoningEffort}
-					connectionType={state.connectionType}
-					statusDetail={state.statusDetail}
-					totalTokens={state.totalTokens}
-					sessions={state.sessions}
-					activeWorkspaceId={state.activeWorkspaceId}
-					activeSessionId={state.sessionId}
-					onSelectSession={(sessionId) => {
-						const session = state.sessions.find(
-							(item) => item.sessionId === sessionId,
-						);
-						if (session) handleResume(session);
-					}}
-					selectedMessageId={selectedMessageId}
-					onSelectMessage={setSelectedMessageId}
-					exportMemories={exportMemories}
-					importMemories={importMemories}
-					listBackgroundTasks={listBackgroundTasks}
-					cancelBackgroundTask={cancelBackgroundTask}
-					runAuthDoctor={runAuthDoctor}
-					getPermissionRequests={getPermissionRequests}
-					respondToPermission={respondToPermission}
-					triggerAmbient={triggerAmbient}
-					stopAmbient={stopAmbient}
-					addProviderProfile={addProviderProfile}
-					sendTranscript={sendTranscript}
-					getBrowserStatus={getBrowserStatus}
-					setupBrowser={setupBrowser}
-				/>
-			</div>
 		</div>
 	);
 }

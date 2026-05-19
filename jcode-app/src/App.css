@@ -3,6 +3,14 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
 
+/* ============================================================================
+   Smooth loading animation for the entire app
+   ============================================================================ */
+@keyframes fadeIn {
+	from { opacity: 0; }
+	to { opacity: 1; }
+} 
+
 @theme inline {
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
@@ -313,6 +321,13 @@ textarea,
 
 * {
 	border-color: var(--border);
+}
+
+html,
+body,
+#root {
+	height: 100%;
+	overflow: hidden;
 }
 
 body {

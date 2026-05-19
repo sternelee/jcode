@@ -329,6 +329,7 @@ impl Client {
             Request::Subscribe { id, .. } => *id,
             Request::GetHistory { id } => *id,
             Request::GetCompactedHistory { id, .. } => *id,
+            Request::GetModelCatalog { id } => *id,
             Request::Reload { id } => *id,
             Request::ResumeSession { id, .. } => *id,
             Request::NotifySession { id, .. } => *id,
