@@ -8,13 +8,11 @@
     <title>JCode Desktop</title>
     <script>
       (function() {
-        var theme = 'system';
+        var theme = 'light';
         try {
-          theme = localStorage.getItem('jcode-theme') || 'system';
+          theme = localStorage.getItem('jcode-theme') || 'light';
         } catch (e) {}
-        var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var effective = theme === 'system' ? (systemDark ? 'dark' : 'light') : theme;
-        if (effective === 'dark') {
+        if (theme === 'dark') {
           document.documentElement.classList.add('dark');
           document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0a0a0a');
         }

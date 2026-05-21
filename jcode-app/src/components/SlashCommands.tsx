@@ -1,6 +1,7 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
-import type { SessionInfo } from "@/types";
+import type { SessionInfo, ModelRoute } from "@/types";
 
 // ── Slash command catalogue ──────────────────────────────────────────────
 export interface SlashCommand {
@@ -151,14 +152,29 @@ export function ModelPickerModal({
 	onSelectModel,
 }: ModelPickerModalProps) {
 	const [search, setSearch] = useState("");
+	const [routes, setRoutes] = useState<ModelRoute[]>([]);
+	const [loading, setLoading] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
+
+	const loadModels = useCallback(async () => {
+		setLoading(true);
+		try {
+			const data = await invoke<{ routes: ModelRoute[] }>("get_models");
+			setRoutes(data.routes || []);
+		} catch {
+			// fallback to prop if backend call fails
+		} finally {
+			setLoading(false);
+		}
+	}, []);
 
 	useEffect(() => {
 		if (open) {
 			setSearch("");
+			void loadModels();
 			setTimeout(() => inputRef.current?.focus(), 50);
 		}
-	}, [open]);
+	}, [open, loadModels]);
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -168,10 +184,17 @@ export function ModelPickerModal({
 		return () => window.removeEventListener("keydown", onKey);
 	}, [open, onClose]);
 
-	// ALL hooks must be called before any early return (Rules of Hooks)
+	// Build model list from routes (prefer backend data, fallback to prop)
+	const allModels = useMemo(() => {
+		if (routes.length > 0) {
+			return routes.map((r) => r.model);
+		}
+		return availableModels;
+	}, [routes, availableModels]);
+
 	const filtered = useMemo(
-		() => availableModels.filter((m) => m.toLowerCase().includes(search.toLowerCase())),
-		[availableModels, search],
+		() => allModels.filter((m) => m.toLowerCase().includes(search.toLowerCase())),
+		[allModels, search],
 	);
 
 	const grouped = useMemo(() => {
@@ -199,15 +222,15 @@ export function ModelPickerModal({
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center">
 			<div className="absolute inset-0 bg-black/30" onClick={onClose} />
-			<div className="relative w-[480px] max-h-[600px] bg-white rounded-2xl shadow-xl border border-[#E5E7EB] flex flex-col overflow-hidden">
+			<div className="relative w-[480px] max-h-[600px] bg-card rounded-2xl shadow-xl border border-border flex flex-col overflow-hidden">
 				{/* Header */}
-				<div className="px-5 pt-4 pb-3 border-b border-[#F3F4F6] shrink-0">
+				<div className="px-5 pt-4 pb-3 border-b border-border shrink-0">
 					<div className="flex items-center justify-between mb-3">
-						<h2 className="text-[16px] font-bold text-[#111827]">Switch Model</h2>
+						<h2 className="text-[16px] font-bold text-foreground">Switch Model</h2>
 						<button
 							type="button"
 							onClick={onClose}
-							className="w-7 h-7 rounded-lg flex items-center justify-center text-[#9CA3AF] hover:text-[#374151] hover:bg-[#F3F4F6] transition-colors"
+							className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
 						>
 							<svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
 								<path d="M2.22 2.22a.75.75 0 011.06 0L6 4.94l2.72-2.72a.75.75 0 111.06 1.06L7.06 6l2.72 2.72a.75.75 0 11-1.06 1.06L6 7.06l-2.72 2.72a.75.75 0 01-1.06-1.06L4.94 6 2.22 3.28a.75.75 0 010-1.06z" />
@@ -215,7 +238,7 @@ export function ModelPickerModal({
 						</button>
 					</div>
 					<div className="relative">
-						<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-[#9CA3AF] absolute left-3 top-1/2 -translate-y-1/2">
+						<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2">
 							<path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
 						</svg>
 						<input
@@ -223,17 +246,22 @@ export function ModelPickerModal({
 							type="text"
 							value={search}
 							onChange={(e) => setSearch(e.target.value)}
-							placeholder="Search models…"
-							className="w-full h-9 pl-9 pr-3 rounded-xl bg-[#F9FAFB] border border-[#E5E7EB] text-[13px] text-[#111827] placeholder-[#9CA3AF] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/20 transition-all"
+							placeholder={loading ? "Loading models…" : "Search models…"}
+							className="w-full h-9 pl-9 pr-3 rounded-xl bg-muted border border-border text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
 						/>
 					</div>
 				</div>
 
 				{/* Model list */}
 				<div className="flex-1 overflow-y-auto px-2 py-2">
+					{loading && routes.length === 0 && (
+						<div className="text-center py-8 text-[12px] text-muted-foreground">
+							Loading models…
+						</div>
+					)}
 					{Object.entries(grouped).map(([group, models]) => (
 						<div key={group} className="mb-2">
-							<div className="px-3 py-1.5 text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider">
+							<div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
 								{group}
 							</div>
 							{models.map((m) => {
@@ -249,13 +277,13 @@ export function ModelPickerModal({
 										className={cn(
 											"w-full text-left px-3 py-2.5 rounded-xl text-[13px] flex items-center gap-3 transition-colors",
 											isCurrent
-												? "bg-[#EFF6FF] text-[#2563EB]"
-												: "text-[#374151] hover:bg-[#F9FAFB]",
+												? "bg-primary/10 text-primary"
+												: "text-foreground hover:bg-muted",
 										)}
 									>
 										<span className="font-mono flex-1 truncate">{m}</span>
 										{isCurrent && (
-											<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-[#3B82F6] shrink-0">
+											<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-primary shrink-0">
 												<path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
 											</svg>
 										)}
@@ -264,16 +292,16 @@ export function ModelPickerModal({
 							})}
 						</div>
 					))}
-					{filtered.length === 0 && (
-						<div className="text-center py-8 text-[12px] text-[#9CA3AF]">
+					{!loading && filtered.length === 0 && (
+						<div className="text-center py-8 text-[12px] text-muted-foreground">
 							No models match "{search}"
 						</div>
 					)}
 				</div>
 
 				{/* Footer hint */}
-				<div className="px-5 py-3 border-t border-[#F3F4F6] text-[11px] text-[#9CA3AF] shrink-0">
-					Use <kbd className="px-1.5 py-0.5 rounded bg-[#F3F4F6] text-[10px] font-mono text-[#374151]">/model &lt;name&gt;</kbd> in the chat to switch directly
+				<div className="px-5 py-3 border-t border-border text-[11px] text-muted-foreground shrink-0">
+					Use <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono text-foreground">/model &lt;name&gt;</kbd> in the chat to switch directly
 				</div>
 			</div>
 		</div>

@@ -26,24 +26,38 @@ export interface ConversationItemData {
 }
 
 interface ConversationsListProps {
+	/** All workspace ids */
+	workspaces: string[];
+	/** All sessions across all workspaces */
 	sessions: SessionInfo[];
-	onCreateSession: () => void;
-	/** Active workspace sessions for swarm display */
-	workspaceSessions?: SessionInfo[];
-	/** parent-controlled selection */
+	/** Currently active workspace */
+	activeWorkspaceId: string;
+	/** Which workspaces are expanded */
+	expandedWorkspaces: Set<string>;
+	/** Parent-controlled selection */
 	selectedConvId?: string;
+	/** Last-message preview per sessionId (including workspace virtual ids) */
+	sessionPreviewMap?: Record<string, SessionPreview>;
+	onToggleWorkspace: (workspaceId: string) => void;
+	onSelectWorkspace: (workspaceId: string) => void;
 	onSelectConversation: (id: string) => void;
 	/** callback for selecting individual agent (DM) sessions */
 	onSelectSession?: (session: SessionInfo) => void;
-	/** current active session id */
-	activeSessionId?: string | null;
-	/** Last-message preview per sessionId (including workspace virtual ids) */
-	sessionPreviewMap?: Record<string, SessionPreview>;
+	onCreateSession: () => void;
 	/** Remove an individual agent session (DM) from the workspace */
 	onRemoveSession?: (sessionId: string) => void;
 }
 
-const FILTER_TABS = ["All", "Unread", "Agents", "Humans", "Groups"] as const;
+const DEFAULT_WORKSPACE_ID = "default";
+
+function workspaceIdFromDir(workingDir?: string | null): string {
+	return workingDir || DEFAULT_WORKSPACE_ID;
+}
+
+function workspaceLabel(workspaceId: string): string {
+	if (workspaceId === DEFAULT_WORKSPACE_ID) return "Default";
+	return workspaceId.split("/").pop() || workspaceId;
+}
 
 function formatPreviewTime(ts?: number): string {
 	if (!ts) return "";
@@ -58,164 +72,195 @@ function formatPreviewTime(ts?: number): string {
 	return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** Check if a workspace is in swarm mode */
+function isSwarmWorkspace(
+	sessions: SessionInfo[],
+	workspaceId: string,
+): boolean {
+	const wsSessions = sessions.filter(
+		(s) => workspaceIdFromDir(s.workingDir) === workspaceId,
+	);
+	return wsSessions.filter((s) => s.roleName).length >= 2;
+}
+
+/** Build conversation items for a swarm workspace */
+function buildSwarmItems(
+	sessions: SessionInfo[],
+	workspaceId: string,
+	sessionPreviewMap: Record<string, SessionPreview>,
+): ConversationItemData[] {
+	const items: ConversationItemData[] = [];
+	const wsSessions = sessions.filter(
+		(s) => workspaceIdFromDir(s.workingDir) === workspaceId,
+	);
+	const swarmSessions = wsSessions.filter((s) => s.roleName);
+
+	// 1. Workspace Thread (pinned group chat)
+	const virtualId = `workspace:${workspaceId}`;
+	const preview = sessionPreviewMap[virtualId];
+	const anyResponding = swarmSessions.some((s) => s.liveProcessing);
+	items.push({
+		id: virtualId,
+		name: `${workspaceLabel(workspaceId)} Thread`,
+		avatarType: "group",
+		members: swarmSessions.map((s) => s.roleName!),
+		time: preview
+			? formatPreviewTime(preview.timestamp)
+			: anyResponding
+				? "now"
+				: "",
+		preview: anyResponding
+			? swarmSessions
+					.filter((s) => s.liveProcessing)
+					.map((s) => s.roleName)
+					.filter(Boolean)
+					.join(", ") + " is responding…"
+			: (preview?.text ?? `${swarmSessions.length} agents`),
+		previewType: anyResponding ? "typing" : "text",
+		typingRole: anyResponding
+			? (swarmSessions.find((s) => s.liveProcessing)?.roleName ?? undefined)
+			: undefined,
+		isActive: anyResponding,
+	});
+
+	// 2. Agent DM items
+	for (const session of wsSessions) {
+		if (!session.roleName) continue;
+		const preview = sessionPreviewMap[session.sessionId];
+		const isProcessing = session.liveProcessing;
+		items.push({
+			id: session.sessionId,
+			name: session.roleName,
+			avatarType: "single",
+			members: [session.roleName],
+			time: isProcessing ? "now" : formatPreviewTime(preview?.timestamp) || "—",
+			preview: isProcessing
+				? session.liveStatusDetail || "thinking…"
+				: (preview?.text ??
+						session.detail ??
+						`${session.model || "assistant"} ready`),
+			previewType: isProcessing ? "typing" : "text",
+			typingRole: isProcessing ? session.roleName : undefined,
+			isActive: isProcessing,
+		});
+	}
+
+	// 3. Coordinator (non-role session that orchestrates the swarm)
+	const coordinator = wsSessions.find(
+		(s) => !s.roleName && s.swarmRole === "coordinator",
+	);
+	if (coordinator) {
+		const preview = sessionPreviewMap[coordinator.sessionId];
+		const isProcessing = coordinator.liveProcessing;
+		items.push({
+			id: coordinator.sessionId,
+			name: coordinator.title || "JCode (Lead)",
+			avatarType: "single",
+			members: [],
+			time: isProcessing ? "now" : formatPreviewTime(preview?.timestamp) || "—",
+			preview: isProcessing
+				? coordinator.liveStatusDetail || "coordinating…"
+				: (preview?.text ?? coordinator.detail ?? "Lead agent — ready"),
+			previewType: isProcessing ? "typing" : "text",
+			typingRole: isProcessing ? "JCode" : undefined,
+			isActive: isProcessing,
+		});
+	}
+
+	return items;
+}
+
+/** Build conversation items for a normal workspace */
+function buildNormalItems(
+	sessions: SessionInfo[],
+	workspaceId: string,
+	sessionPreviewMap: Record<string, SessionPreview>,
+): ConversationItemData[] {
+	const items: ConversationItemData[] = [];
+	const wsSessions = sessions.filter(
+		(s) => workspaceIdFromDir(s.workingDir) === workspaceId,
+	);
+
+	for (const session of wsSessions) {
+		const preview = sessionPreviewMap[session.sessionId];
+		items.push({
+			id: session.sessionId,
+			name: session.title || session.model || "Session",
+			avatarType: "single",
+			members: [],
+			time: formatPreviewTime(preview?.timestamp) || "—",
+			preview:
+				preview?.text ??
+				session.detail ??
+				session.model ??
+				"ready",
+			previewType: session.liveProcessing ? "typing" : "text",
+			isActive: session.liveProcessing,
+		});
+	}
+
+	return items;
+}
+
 export function ConversationsList({
+	workspaces,
 	sessions,
-	onCreateSession,
-	workspaceSessions = [],
+	activeWorkspaceId,
+	expandedWorkspaces,
 	selectedConvId,
+	onToggleWorkspace,
+	onSelectWorkspace,
 	onSelectConversation,
 	onSelectSession,
-	// activeSessionId kept for future unread tracking
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	activeSessionId: _activeSessionId,
-	sessionPreviewMap = {},
+	onCreateSession,
 	onRemoveSession,
+	sessionPreviewMap = {},
 }: ConversationsListProps) {
-	const [activeFilter, setActiveFilter] = useState<string>("All");
 	const [searchQuery, setSearchQuery] = useState("");
 
-	// Build conversation items from real sessions
-	const conversationItems = useMemo<ConversationItemData[]>(() => {
-		const items: ConversationItemData[] = [];
-		const sourceSessions =
-			workspaceSessions.length > 0 ? workspaceSessions : sessions;
-
-		// If we have sessions with role names, add a pinned workspace thread
-		const swarmSessions = sourceSessions.filter((s) => s.roleName);
-		if (swarmSessions.length >= 2) {
-			const workspaceId = swarmSessions[0]?.workingDir || "default";
-			const virtualId = `workspace:${workspaceId}`;
-			const preview = sessionPreviewMap[virtualId];
-			const anyResponding = swarmSessions.some((s) => s.liveProcessing);
-			items.push({
-				id: virtualId,
-				name: `${
-					workspaceId === "default"
-						? "Workspace"
-						: (workspaceId.split("/").pop() ?? "team")
-				} Thread`,
-				avatarType: "group",
-				members: swarmSessions.map((s) => s.roleName!),
-				time: preview
-					? formatPreviewTime(preview.timestamp)
-					: anyResponding
-						? "now"
-						: "",
-				preview: anyResponding
-					? swarmSessions
-							.filter((s) => s.liveProcessing)
-							.map((s) => s.roleName)
-							.filter(Boolean)
-							.join(", ") + " is responding…"
-					: (preview?.text ?? `${swarmSessions.length} agents`),
-				previewType: anyResponding ? "typing" : "text",
-				typingRole: anyResponding
-					? (swarmSessions.find((s) => s.liveProcessing)?.roleName ?? undefined)
-					: undefined,
-				isActive: anyResponding,
-			});
+	// Group items by workspace
+	const workspaceItems = useMemo(() => {
+		const map = new Map<string, ConversationItemData[]>();
+		for (const wsId of workspaces) {
+			const isSwarm = isSwarmWorkspace(sessions, wsId);
+			const items = isSwarm
+				? buildSwarmItems(sessions, wsId, sessionPreviewMap)
+				: buildNormalItems(sessions, wsId, sessionPreviewMap);
+			map.set(wsId, items);
 		}
+		return map;
+	}, [workspaces, sessions, sessionPreviewMap]);
 
-		// Individual agent DM items
-		for (const session of sourceSessions) {
-			if (!session.roleName) continue;
-			if (items.find((i) => i.id === session.sessionId)) continue;
-
-			const preview = sessionPreviewMap[session.sessionId];
-			const isProcessing = session.liveProcessing;
-			items.push({
-				id: session.sessionId,
-				name: session.roleName,
-				avatarType: "single",
-				members: [session.roleName],
-				time: isProcessing
-					? "now"
-					: formatPreviewTime(preview?.timestamp) || "—",
-				preview: isProcessing
-					? session.liveStatusDetail || "thinking…"
-					: (preview?.text ??
-							session.detail ??
-							`${session.model || "assistant"} ready`),
-				previewType: isProcessing ? "typing" : "text",
-				typingRole: isProcessing ? session.roleName : undefined,
-				isActive: isProcessing,
-			});
-		}
-
-		// Coordinator (non-role session that orchestrates the swarm)
-		if (swarmSessions.length >= 2) {
-			const coordinator = sourceSessions.find(
-				(s) => !s.roleName && s.swarmRole === "coordinator",
-			);
-			if (coordinator) {
-				const preview = sessionPreviewMap[coordinator.sessionId];
-				const isProcessing = coordinator.liveProcessing;
-				items.push({
-					id: coordinator.sessionId,
-					name: coordinator.title || "JCode (Lead)",
-					avatarType: "single",
-					members: [],
-					time: isProcessing ? "now" : formatPreviewTime(preview?.timestamp) || "—",
-					preview: isProcessing
-						? coordinator.liveStatusDetail || "coordinating…"
-						: (preview?.text ?? coordinator.detail ?? "Lead agent — ready"),
-					previewType: isProcessing ? "typing" : "text",
-					typingRole: isProcessing ? "JCode" : undefined,
-					isActive: isProcessing,
-				});
-			}
-		}
-
-		if (items.length === 0) {
-			for (const session of sourceSessions.slice(0, 10)) {
-				const preview = sessionPreviewMap[session.sessionId];
-				items.push({
-					id: session.sessionId,
-					name: session.title || session.model || "Session",
-					avatarType: "single",
-					members: [],
-					time: formatPreviewTime(preview?.timestamp) || "—",
-					preview:
-						preview?.text ??
-						session.detail ??
-						session.model ??
-						"ready",
-					previewType: session.liveProcessing ? "typing" : "text",
-					isActive: session.liveProcessing,
-				});
-			}
-		}
-
-		return items;
-	}, [sessions, workspaceSessions, sessionPreviewMap]);
-
-	const filteredItems = useMemo(() => {
-		if (!searchQuery) return conversationItems;
+	// Filter by search
+	const filteredWorkspaces = useMemo(() => {
+		if (!searchQuery.trim()) return workspaces;
 		const q = searchQuery.toLowerCase();
-		return conversationItems.filter(
-			(i) =>
-				i.name.toLowerCase().includes(q) ||
-				i.members.some((m) => m.toLowerCase().includes(q)) ||
-				i.preview.toLowerCase().includes(q),
-		);
-	}, [conversationItems, searchQuery]);
-
-	// First item = workspace thread (pinned), rest = DMs
-	const pinnedItems = filteredItems.slice(0, 1);
-	const regularItems = filteredItems.slice(1);
+		return workspaces.filter((wsId) => {
+			const label = workspaceLabel(wsId).toLowerCase();
+			const items = workspaceItems.get(wsId) || [];
+			return (
+				label.includes(q) ||
+				items.some(
+					(i) =>
+						i.name.toLowerCase().includes(q) ||
+						i.preview.toLowerCase().includes(q),
+				)
+			);
+		});
+	}, [workspaces, workspaceItems, searchQuery]);
 
 	return (
-		<div className="w-[320px] min-w-[280px] bg-[#FAFBFC] border-r border-[#E5E5E5] flex flex-col overflow-hidden">
+		<div className="w-[300px] min-w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col overflow-hidden">
 			{/* Header */}
-			<div className="px-5 pt-5 pb-3">
-				<div className="flex items-center justify-between mb-4">
-					<h1 className="text-[17px] font-bold text-[#111827] tracking-tight">
-						Conversations
+			<div className="px-4 pt-4 pb-3">
+				<div className="flex items-center justify-between mb-3">
+					<h1 className="text-[15px] font-bold text-foreground tracking-tight">
+						Workspaces
 					</h1>
 					<button
 						type="button"
 						onClick={onCreateSession}
-						className="w-7 h-7 rounded-lg bg-[#EFF6FF] flex items-center justify-center text-[#3B82F6] hover:bg-[#DBEAFE] transition-colors"
+						className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
 						title="New conversation"
 					>
 						<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -225,11 +270,11 @@ export function ConversationsList({
 				</div>
 
 				{/* Search bar */}
-				<div className="relative mb-3">
+				<div className="relative">
 					<svg
 						viewBox="0 0 20 20"
 						fill="currentColor"
-						className="w-4 h-4 text-[#9CA3AF] absolute left-3 top-1/2 -translate-y-1/2"
+						className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"
 					>
 						<path
 							fillRule="evenodd"
@@ -241,97 +286,138 @@ export function ConversationsList({
 						type="text"
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
-						placeholder="Q Find a conversation, agent, or human..."
-						className="w-full h-9 pl-9 pr-3 rounded-xl bg-white border border-[#E5E7EB] text-[13px] text-[#111827] placeholder-[#9CA3AF] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/20 transition-all"
+						placeholder="Search workspaces..."
+						className="w-full h-9 pl-9 pr-3 rounded-xl bg-background border border-border text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
 					/>
-					<div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-						<kbd className="hidden sm:inline-flex px-1.5 py-0.5 text-[10px] font-mono bg-[#F3F4F6] text-[#9CA3AF] rounded border border-[#E5E7EB]">
-							⌘K
-						</kbd>
-					</div>
-				</div>
-
-				{/* Filter tabs */}
-				<div className="flex gap-1.5 flex-wrap">
-					{FILTER_TABS.map((tab) => (
-						<button
-							key={tab}
-							type="button"
-							onClick={() => setActiveFilter(tab)}
-							className={cn(
-								"px-3 py-1.5 rounded-full text-[12px] font-medium transition-all",
-								activeFilter === tab
-									? "bg-[#EFF6FF] text-[#2563EB]"
-									: "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#374151]",
-							)}
-						>
-							{tab}
-							{tab === "Unread" && (
-								<span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full">
-									5
-								</span>
-							)}
-						</button>
-					))}
 				</div>
 			</div>
 
-			{/* Conversation list */}
-			<div className="flex-1 overflow-y-auto px-3 pb-2 space-y-0.5">
-				{/* Pinned section (workspace thread) */}
-				{pinnedItems.length > 0 && (
-					<>
-						<div className="px-2 py-2 text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wider">
-							PINNED
+			{/* Workspace list */}
+			<div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
+				{filteredWorkspaces.map((wsId) => {
+					const isExpanded = expandedWorkspaces.has(wsId);
+					const isActive = wsId === activeWorkspaceId;
+					const isSwarm = isSwarmWorkspace(sessions, wsId);
+					const items = workspaceItems.get(wsId) || [];
+					const label = workspaceLabel(wsId);
+
+					return (
+						<div key={wsId} className="rounded-xl overflow-hidden">
+							{/* Workspace header — clickable to switch workspace */}
+							<div
+								className={cn(
+									"flex items-center gap-1 px-2 py-2 rounded-xl transition-colors",
+									isActive
+										? "bg-primary/10"
+										: "hover:bg-muted",
+								)}
+							>
+								{/* Expand/collapse toggle */}
+								<button
+									type="button"
+									onClick={() => onToggleWorkspace(wsId)}
+									className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-muted-foreground hover:bg-border/50 transition-colors shrink-0"
+								>
+									<svg
+										viewBox="0 0 20 20"
+										fill="currentColor"
+										className={cn(
+											"w-4 h-4 transition-transform",
+											isExpanded && "rotate-90",
+										)}
+									>
+										<path
+											fillRule="evenodd"
+											d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+											clipRule="evenodd"
+										/>
+									</svg>
+								</button>
+
+								{/* Workspace name — click to switch */}
+								<button
+									type="button"
+									onClick={() => onSelectWorkspace(wsId)}
+									className="flex-1 text-left min-w-0"
+								>
+									<div className="flex items-center gap-2">
+										{isSwarm ? (
+											<span className="text-[13px] font-semibold text-primary truncate">
+												#{label}
+											</span>
+										) : (
+											<span
+												className={cn(
+													"text-[13px] font-semibold truncate",
+													isActive
+														? "text-primary"
+														: "text-foreground",
+												)}
+											>
+												{label}
+											</span>
+										)}
+										{isSwarm && (
+											<span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+												swarm
+											</span>
+										)}
+									</div>
+								</button>
+
+								{/* Session count */}
+								<span className="text-[11px] text-muted-foreground shrink-0">
+									{items.length}
+								</span>
+							</div>
+
+							{/* Expanded items */}
+							{isExpanded && (
+								<div className="pl-4 pr-1 pb-1 space-y-0.5">
+									{isSwarm && (
+										<div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+											Agents
+										</div>
+									)}
+									{items.map((item) => (
+										<ConversationItem
+											key={item.id}
+											item={item}
+											isSelected={selectedConvId === item.id}
+											onRemove={
+												onRemoveSession && item.avatarType === "single"
+													? () => onRemoveSession(item.id)
+													: undefined
+											}
+											onSelect={() => {
+												onSelectConversation(item.id);
+												if (onSelectSession) {
+													const session = sessions.find(
+														(s) => s.sessionId === item.id,
+													);
+													if (session) {
+														onSelectSession(session);
+													}
+												}
+											}}
+										/>
+									))}
+									{items.length === 0 && (
+										<div className="px-3 py-2 text-[12px] text-muted-foreground">
+											No sessions
+										</div>
+									)}
+								</div>
+							)}
 						</div>
-						{pinnedItems.map((item) => (
-							<ConversationItem
-								key={item.id}
-								item={item}
-								isSelected={selectedConvId === item.id}
-								onSelect={() => onSelectConversation(item.id)}
-							/>
-						))}
-					</>
-				)}
+					);
+				})}
 
-				{/* Regular section (DM conversations) */}
-				{regularItems.length > 0 && (
-					<div className="pt-1">
-						{regularItems.map((item) => (
-							<ConversationItem
-								key={item.id}
-								item={item}
-								isSelected={selectedConvId === item.id}
-								onRemove={
-									onRemoveSession
-										? () => onRemoveSession(item.id)
-										: undefined
-								}
-								onSelect={() => {
-									onSelectConversation(item.id);
-									if (onSelectSession) {
-										const session = (
-											workspaceSessions.length > 0
-												? workspaceSessions
-												: sessions
-										).find((s) => s.sessionId === item.id);
-										if (session) {
-											onSelectSession(session);
-										}
-									}
-								}}
-							/>
-						))}
-					</div>
-				)}
-
-				{/* Empty state */}
-				{filteredItems.length === 0 && (
-					<div className="text-center text-[12px] text-[#9CA3AF] py-8">
+				{filteredWorkspaces.length === 0 && (
+					<div className="text-center text-[12px] text-muted-foreground py-8">
 						{searchQuery
-							? "No matching conversations"
-							: "No active sessions — create one to get started"}
+							? "No matching workspaces"
+							: "No workspaces — create one to get started"}
 					</div>
 				)}
 			</div>
@@ -356,8 +442,10 @@ function ConversationItem({
 				type="button"
 				onClick={onSelect}
 				className={cn(
-					"w-full text-left px-3 py-2.5 rounded-xl transition-all flex items-start gap-3 group",
-					isSelected ? "bg-[#EFF6FF]" : "hover:bg-[#F3F4F6]",
+					"w-full text-left px-3 py-2 rounded-xl transition-all flex items-start gap-3",
+					isSelected
+						? "bg-primary/10"
+						: "hover:bg-muted",
 				)}
 			>
 				{/* Avatar */}
@@ -372,19 +460,30 @@ function ConversationItem({
 				{/* Content */}
 				<div className="flex-1 min-w-0 pr-6">
 					<div className="flex items-center justify-between gap-2">
-						<span className="text-[13px] font-semibold truncate text-[#111827]">{item.name}</span>
-						<span className="text-[11px] text-[#9CA3AF] shrink-0">{item.time}</span>
+						<span
+							className={cn(
+								"text-[13px] font-semibold truncate",
+								isSelected ? "text-primary" : "text-foreground",
+							)}
+						>
+							{item.name}
+						</span>
+						<span className="text-[11px] text-muted-foreground shrink-0">
+							{item.time}
+						</span>
 					</div>
 					<div className="mt-0.5 flex items-center gap-2">
 						{item.previewType === "typing" ? (
-							<span className="text-[12px] text-transparent bg-clip-text bg-gradient-to-r from-[#3B82F6] to-[#8B5CF6] truncate font-medium">
+							<span className="text-[12px] text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary/60 truncate font-medium">
 								{item.preview}
 							</span>
 						) : (
-							<span className="text-[12px] text-[#6B7280] truncate">{item.preview}</span>
+							<span className="text-[12px] text-muted-foreground truncate">
+								{item.preview}
+							</span>
 						)}
 						{item.unread && item.unread > 0 ? (
-							<span className="ml-auto w-5 h-5 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center shrink-0">
+							<span className="ml-auto w-5 h-5 bg-primary text-white text-[9px] font-bold rounded-full flex items-center justify-center shrink-0">
 								{item.unread > 99 ? "99+" : item.unread}
 							</span>
 						) : null}
@@ -396,8 +495,11 @@ function ConversationItem({
 			{onRemove && item.avatarType === "single" && (
 				<button
 					type="button"
-					onClick={(e) => { e.stopPropagation(); onRemove(); }}
-					className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white border border-[#E5E7EB] flex items-center justify-center text-[#9CA3AF] hover:text-[#EF4444] hover:border-[#FCA5A5] transition-colors opacity-0 group-hover/item:opacity-100 shadow-sm"
+					onClick={(e) => {
+						e.stopPropagation();
+						onRemove();
+					}}
+					className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive transition-colors opacity-0 group-hover/item:opacity-100 shadow-sm"
 					title={`Remove ${item.name}`}
 				>
 					<svg viewBox="0 0 12 12" fill="currentColor" className="w-2.5 h-2.5">

@@ -17,6 +17,7 @@ import {
 	Keyboard,
 	Layers3,
 	RotateCcw,
+	TriangleAlert,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -97,7 +98,7 @@ export function SkeletonMessage({ roleName }: { roleName?: string }) {
 			>
 				{initial}
 			</div>
-			<div style={{ color: "#111827" }} className="flex-1 min-w-0 py-0.5">
+			<div className="flex-1 min-w-0 py-0.5 text-foreground">
 				{/* 角色名 + 时间戳占位 */}
 				{roleName && (
 					<div className={cn("text-sm font-bold mb-2", palette?.name)}>
@@ -134,6 +135,7 @@ type SystemMessageKind =
 	| "queue"
 	| "memory"
 	| "reasoning"
+	| "error"
 	| "generic";
 
 function imageSrc(image: AttachedImage): string {
@@ -176,6 +178,9 @@ function classifySystemMessage(content: string): {
 	}
 	if (content.includes("Reasoning effort")) {
 		return { kind: "reasoning", title: "Reasoning updated", icon: Clock3 };
+	}
+	if (content.startsWith("⚠️")) {
+		return { kind: "error", title: "Error", icon: TriangleAlert };
 	}
 	return { kind: "generic", title: "Runtime notice", icon: Clock3 };
 }
@@ -251,6 +256,8 @@ export function MessageBubble({
 							"bg-emerald-500/5 border-emerald-500/20",
 						systemMeta.kind === "reasoning" &&
 							"bg-violet-500/5 border-violet-500/20",
+						systemMeta.kind === "error" &&
+							"bg-destructive/5 border-destructive/20",
 						systemMeta.kind === "generic" && "bg-card/60 border-border",
 					)}
 				>
@@ -284,7 +291,7 @@ export function MessageBubble({
 		if (hideHeader) {
 			// Explicit text color so content stays readable regardless of dark/light CSS vars
 			return (
-				<div style={{ color: "#111827" }} className="space-y-2">
+				<div className="space-y-2 text-foreground">
 					{message.images && message.images.length > 0 && (
 						<div className="flex gap-2 flex-wrap">
 							{message.images.map((img) => (
@@ -299,7 +306,7 @@ export function MessageBubble({
 					)}
 					{message.content && (
 						<div className="relative">
-							<div style={{ color: "inherit" }}><MessageResponse>{message.content}</MessageResponse></div>
+							<div ><MessageResponse>{message.content}</MessageResponse></div>
 							{isStreaming && (
 								<span className="text-primary animate-blink ml-0.5">◌</span>
 							)}
@@ -344,7 +351,7 @@ export function MessageBubble({
 					{initial}
 				</div>
 
-				<div style={{ color: "#111827" }} className="flex-1 min-w-0">
+				<div className="flex-1 min-w-0 text-foreground">
 
 					<div className="flex items-baseline gap-2 mb-1.5">
 						<span
@@ -408,7 +415,7 @@ export function MessageBubble({
 					{/* 消息内容 */}
 					{message.content && (
 						<div className="relative">
-							<div style={{ color: "inherit" }}><MessageResponse>{message.content}</MessageResponse></div>
+							<div ><MessageResponse>{message.content}</MessageResponse></div>
 							{isStreaming && (
 								<span className="text-primary animate-blink ml-0.5">▌</span>
 							)}
@@ -447,7 +454,7 @@ export function MessageBubble({
 			)}
 		>
 		<Message from={message.role}>
-				<MessageContent style={{ color: "#111827" }}>
+				<MessageContent className="text-foreground">
 
 					{isUser ? (
 						<>
@@ -469,7 +476,7 @@ export function MessageBubble({
 									))}
 								</div>
 							)}
-							<div style={{ color: "inherit" }}><MessageResponse>{message.content}</MessageResponse></div>
+							<div ><MessageResponse>{message.content}</MessageResponse></div>
 						</>
 					) : (
 						<>
@@ -531,7 +538,7 @@ export function MessageBubble({
 							)}
 							{message.content && (
 								<>
-									<div style={{ color: "inherit" }}><MessageResponse>{message.content}</MessageResponse></div>
+									<div ><MessageResponse>{message.content}</MessageResponse></div>
 									{isStreaming && (
 										<span className="text-primary animate-blink ml-0.5">▌</span>
 									)}

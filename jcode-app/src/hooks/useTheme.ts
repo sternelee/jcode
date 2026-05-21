@@ -19,7 +19,7 @@ function getInitialTheme(): Theme {
   } catch {
     // ignore
   }
-  return "system";
+  return "light";
 }
 
 export function useTheme() {
@@ -40,7 +40,7 @@ export function useTheme() {
     if (metaThemeColor) {
       metaThemeColor.setAttribute(
         "content",
-        effective === "dark" ? "#0a0a0a" : "#ffffff"
+        effective === "dark" ? "#0a0a0a" : "#F5F5F5"
       );
     }
   }, []);

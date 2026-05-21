@@ -25,6 +25,7 @@ type Action =
 			message: string;
 			sessionId?: string;
 			roleSessionId?: string;
+			roleName?: string;
 	  }
 	| { type: "CLEAR_ERROR"; sessionId?: string }
 	| { type: "SET_PHASE"; phase: string; sessionId?: string }
@@ -416,11 +417,51 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 				isProcessing: false,
 			}));
 		case "SET_ERROR":
-			return updateSessionData(state, action.sessionId, (data) => ({
-				...data,
-				error: action.message,
-				isProcessing: false,
-			}));
+			return updateSessionData(state, action.sessionId, (data) => {
+				const ms = [...data.messages];
+				// Mark any streaming assistant message as done to prevent future
+				// append-text from continuing the aborted message
+				if (action.roleSessionId) {
+					for (let i = ms.length - 1; i >= 0; i--) {
+						const m = ms[i];
+						if (
+							m?.role === "assistant" &&
+							m?.isStreaming &&
+							m?.roleSessionId === action.roleSessionId
+						) {
+							ms[i] = { ...m, isStreaming: false };
+							break;
+						}
+					}
+				} else {
+					const last = ms[ms.length - 1];
+					if (last?.role === "assistant" && last?.isStreaming) {
+						ms[ms.length - 1] = { ...last, isStreaming: false };
+					}
+				}
+				// Add error as a visible system message in the chat stream
+				ms.push({
+					id: nextMsgId(),
+					role: "system",
+					content: action.roleName
+						? `⚠️ ${action.roleName} error: ${action.message}`
+						: `⚠️ Error: ${action.message}`,
+					toolExecutions: [],
+					isStreaming: false,
+					roleSessionId: action.roleSessionId,
+					roleName: action.roleName,
+					timestamp: Date.now(),
+				});
+				const stillStreaming = ms.some(
+					(m) => m.role === "assistant" && m.isStreaming,
+				);
+				return {
+					...data,
+					error: action.message,
+					isProcessing: stillStreaming,
+					messages: ms,
+				};
+			});
 		case "CLEAR_ERROR":
 			return updateSessionData(state, action.sessionId, (data) => ({
 				...data,
@@ -2047,6 +2088,7 @@ function processEvent(
 					message: desktopEvent.message,
 					sessionId: sid,
 					roleSessionId,
+					roleName,
 				});
 				break;
 			case "session-id":

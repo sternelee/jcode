@@ -24,7 +24,7 @@ export function NavBar({
 	onLogout,
 }: NavBarProps) {
 	return (
-		<nav className="w-[60px] min-w-[60px] bg-white border-r border-[#E5E5E5] flex flex-col items-center py-3 select-none">
+		<nav className="w-[60px] min-w-[60px] bg-sidebar border-r border-sidebar-border flex flex-col items-center py-3 select-none">
 			{/* User avatar */}
 			<div className="relative mb-6">
 				<AgentAvatar name="You" size="lg" />
@@ -41,8 +41,8 @@ export function NavBar({
 						className={cn(
 							"relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
 							activeTab === item.id
-								? "bg-[#EFF6FF] text-[#2563EB]"
-								: "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#374151]",
+								? "bg-sidebar-accent text-sidebar-primary"
+								: "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
 						)}
 						title={item.id}
 					>
@@ -60,7 +60,7 @@ export function NavBar({
 			<button
 				type="button"
 				onClick={onLogout}
-				className="w-10 h-10 rounded-xl flex items-center justify-center text-[#9CA3AF] hover:bg-[#F3F4F6] hover:text-[#6B7280] transition-colors"
+				className="w-10 h-10 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
 				title="Logout / Collapse"
 			>
 				<LogoutIcon className="w-5 h-5" />

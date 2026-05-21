@@ -344,26 +344,26 @@ export function ChatArea({
 	// ── Presence dot color ─────────────────────────────────────────────────
 	const presenceDot = (roleName: string) => {
 		const session = sessionByRoleName.get(roleName);
-		if (!session) return "bg-[#D1D5DB]"; // offline / unknown
+		if (!session) return "bg-border"; // offline / unknown
 		if (session.liveProcessing) return "bg-amber-400 animate-pulse"; // typing/thinking
 		return "bg-emerald-500"; // idle but connected
 	};
 
 	return (
 		<>
-		<div className="flex-1 flex flex-col overflow-hidden bg-white">
+		<div className="flex-1 flex flex-col overflow-hidden bg-card">
 			{/* ── Channel Header ── */}
-			<div className="px-6 py-3 border-b border-[#E5E5E5] bg-white flex items-center justify-between shrink-0">
+			<div className="px-6 py-3 border-b border-border bg-card flex items-center justify-between shrink-0">
 				<div className="flex items-center gap-3 min-w-0">
 					<svg viewBox="0 0 20 20" fill="#F59E0B" className="w-5 h-5 shrink-0">
 						<path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
 					</svg>
 					<div className="min-w-0">
-						<h2 className="text-[17px] font-bold text-[#111827] leading-tight">
+						<h2 className="text-[17px] font-bold text-foreground leading-tight">
 							{channelName}
 						</h2>
 						{channelMembers.length > 0 && (
-							<p className="text-[12px] text-[#6B7280] mt-0.5 truncate">
+							<p className="text-[12px] text-muted-foreground mt-0.5 truncate">
 								{channelMembers.join(", ")} + you
 							</p>
 						)}
@@ -379,14 +379,14 @@ export function ChatArea({
 									<AgentAvatar name={name} size="sm" />
 									<span
 										className={cn(
-											"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white",
+											"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-background",
 											presenceDot(name),
 										)}
 									/>
 								</div>
 							))}
 							{channelMembers.length > 5 && (
-								<div className="w-6 h-6 rounded-full bg-[#F3F4F6] border-2 border-white flex items-center justify-center text-[9px] font-medium text-[#6B7280] -ml-1.5">
+								<div className="w-6 h-6 rounded-full bg-muted border-2 border-background flex items-center justify-center text-[9px] font-medium text-muted-foreground -ml-1.5">
 									+{channelMembers.length - 5}
 								</div>
 							)}
@@ -401,8 +401,8 @@ export function ChatArea({
 						className={cn(
 							"w-7 h-7 rounded-lg flex items-center justify-center transition-colors",
 							searchOpen
-								? "bg-[#EFF6FF] text-[#3B82F6]"
-								: "text-[#9CA3AF] hover:text-[#6B7280] hover:bg-[#F3F4F6]",
+								? "bg-primary/10 text-primary"
+								: "text-muted-foreground hover:text-muted-foreground hover:bg-muted",
 						)}
 					>
 						<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -419,8 +419,8 @@ export function ChatArea({
 							className={cn(
 								"w-7 h-7 rounded-lg flex items-center justify-center transition-colors",
 								settingsOpen
-									? "bg-[#EFF6FF] text-[#3B82F6]"
-									: "text-[#9CA3AF] hover:text-[#6B7280] hover:bg-[#F3F4F6]",
+									? "bg-primary/10 text-primary"
+									: "text-muted-foreground hover:text-muted-foreground hover:bg-muted",
 							)}
 						>
 							<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -450,7 +450,7 @@ export function ChatArea({
 							setConvening(true);
 							setTimeout(() => setConvening(false), 4000);
 						}}
-						className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#3B82F6] text-white text-[13px] font-medium hover:bg-[#2563EB] transition-colors"
+						className="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-[13px] font-medium hover:bg-primary/90 transition-colors"
 					>
 						<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
 							<path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
@@ -462,7 +462,7 @@ export function ChatArea({
 
 			{/* ── Status Bar ── */}
 			{workspaceSessions.some((s) => s.roleName) && (
-				<div className="px-6 py-1.5 border-b border-[#F3F4F6] bg-[#FAFBFC] flex items-center gap-4 text-[11px] text-[#6B7280] shrink-0">
+				<div className="px-6 py-1.5 border-b border-border bg-muted flex items-center gap-4 text-[11px] text-muted-foreground shrink-0">
 					<span>{channelMembers.length} agents</span>
 					{respondingRoles.length > 0 ? (
 						<span className="flex items-center gap-1.5 text-amber-600">
@@ -487,7 +487,7 @@ export function ChatArea({
 						<button
 							type="button"
 							onClick={onAddAgent}
-							className="ml-auto flex items-center gap-1 text-[11px] text-[#3B82F6] hover:text-[#2563EB] font-medium transition-colors"
+							className="ml-auto flex items-center gap-1 text-[11px] text-primary hover:text-primary/80 font-medium transition-colors"
 							title="Add an agent to this workspace"
 						>
 							<svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
@@ -502,8 +502,8 @@ export function ChatArea({
 			{/* ── Message Feed ── */}
 			{/* Search bar */}
 			{searchOpen && (
-				<div className="flex items-center gap-2 px-6 py-2 border-b border-[#F3F4F6] bg-[#FAFBFC] shrink-0">
-					<svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-[#9CA3AF] shrink-0">
+				<div className="flex items-center gap-2 px-6 py-2 border-b border-border bg-muted shrink-0">
+					<svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 text-muted-foreground shrink-0">
 						<path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
 					</svg>
 					<input
@@ -512,7 +512,7 @@ export function ChatArea({
 						value={searchText}
 						onChange={(e) => setSearchText(e.target.value)}
 						placeholder="Search messages…"
-						className="flex-1 text-[13px] text-[#111827] bg-transparent outline-none placeholder-[#9CA3AF]"
+						className="flex-1 text-[13px] text-foreground bg-transparent outline-none placeholder-muted-foreground"
 						onKeyDown={(e) => {
 							if (e.key === "Enter") {
 								e.preventDefault();
@@ -526,36 +526,36 @@ export function ChatArea({
 						}}
 					/>
 					{searchText.trim() && (
-						<span className="text-[11px] text-[#9CA3AF] shrink-0">
+						<span className="text-[11px] text-muted-foreground shrink-0">
 							{searchMatchIds.length === 0
 								? "No results"
 								: `${searchMatchIdx + 1} / ${searchMatchIds.length}`}
 						</span>
 					)}
 					<div className="flex items-center gap-1 shrink-0">
-						<button type="button" onClick={() => setSearchMatchIdx((i) => (i - 1 + searchMatchIds.length) % Math.max(searchMatchIds.length, 1))} className="w-6 h-6 rounded flex items-center justify-center text-[#9CA3AF] hover:text-[#374151] hover:bg-[#F3F4F6] transition-colors" title="Previous (Shift+Enter)">
+						<button type="button" onClick={() => setSearchMatchIdx((i) => (i - 1 + searchMatchIds.length) % Math.max(searchMatchIds.length, 1))} className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title="Previous (Shift+Enter)">
 							<svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M8 14a.75.75 0 01-.75-.75V4.56L4.03 7.78a.75.75 0 01-1.06-1.06l4.5-4.5a.75.75 0 011.06 0l4.5 4.5a.75.75 0 01-1.06 1.06L8.75 4.56v8.69A.75.75 0 018 14z" clipRule="evenodd" /></svg>
 						</button>
-						<button type="button" onClick={() => setSearchMatchIdx((i) => (i + 1) % Math.max(searchMatchIds.length, 1))} className="w-6 h-6 rounded flex items-center justify-center text-[#9CA3AF] hover:text-[#374151] hover:bg-[#F3F4F6] transition-colors" title="Next (Enter)">
+						<button type="button" onClick={() => setSearchMatchIdx((i) => (i + 1) % Math.max(searchMatchIds.length, 1))} className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors" title="Next (Enter)">
 							<svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3"><path fillRule="evenodd" d="M8 2a.75.75 0 01.75.75v8.69l3.22-3.22a.75.75 0 111.06 1.06l-4.5 4.5a.75.75 0 01-1.06 0l-4.5-4.5a.75.75 0 111.06-1.06L7.25 11.44V2.75A.75.75 0 018 2z" clipRule="evenodd" /></svg>
 						</button>
-						<button type="button" onClick={() => setSearchOpen(false)} className="w-6 h-6 rounded flex items-center justify-center text-[#9CA3AF] hover:text-[#EF4444] hover:bg-[#FEF2F2] transition-colors" title="Close (Esc)">
+						<button type="button" onClick={() => setSearchOpen(false)} className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors" title="Close (Esc)">
 							<svg viewBox="0 0 12 12" fill="currentColor" className="w-2.5 h-2.5"><path d="M2.22 2.22a.75.75 0 011.06 0L6 4.94l2.72-2.72a.75.75 0 111.06 1.06L7.06 6l2.72 2.72a.75.75 0 11-1.06 1.06L6 7.06l-2.72 2.72a.75.75 0 01-1.06-1.06L4.94 6 2.22 3.28a.75.75 0 010-1.06z" /></svg>
 						</button>
 					</div>
 				</div>
 			)}
-			<div ref={feedRef} style={{ color: "#111827" }} className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+			<div ref={feedRef} style={{ color: "var(--foreground)" }} className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
 				{/* Loading skeleton while DM history is being fetched */}
 				{isLoading && messages.length === 0 && (
 					<div className="space-y-6 pt-2">
 						{[0.7, 1, 0.5, 0.85].map((w, i) => (
 							<div key={i} className="flex gap-3 animate-pulse">
-								<div className="w-9 h-9 rounded-xl bg-[#E5E7EB] shrink-0" />
+								<div className="w-9 h-9 rounded-xl bg-border shrink-0" />
 								<div className="flex-1 space-y-2">
-									<div className="h-3 bg-[#E5E7EB] rounded" style={{ width: `${w * 40 + 15}%` }} />
-									<div className="h-3 bg-[#F3F4F6] rounded" style={{ width: `${w * 60 + 10}%` }} />
-									{i % 2 === 0 && <div className="h-3 bg-[#F3F4F6] rounded" style={{ width: `${w * 30 + 5}%` }} />}
+									<div className="h-3 bg-border rounded" style={{ width: `${w * 40 + 15}%` }} />
+									<div className="h-3 bg-muted rounded" style={{ width: `${w * 60 + 10}%` }} />
+									{i % 2 === 0 && <div className="h-3 bg-muted rounded" style={{ width: `${w * 30 + 5}%` }} />}
 								</div>
 							</div>
 						))}
@@ -566,12 +566,12 @@ export function ChatArea({
 				{messages.length === 0 && !isLoading && (
 					<div className="h-full min-h-[240px] flex items-center justify-center">
 						<div className="max-w-sm text-center">
-							<div className="text-[15px] font-semibold text-[#111827]">
+							<div className="text-[15px] font-semibold text-foreground">
 								No messages yet
 							</div>
-							<div className="mt-2 text-[13px] text-[#6B7280] leading-6">
+							<div className="mt-2 text-[13px] text-muted-foreground leading-6">
 								Start the conversation, type{" "}
-								<kbd className="px-1.5 py-0.5 rounded bg-[#F3F4F6] text-[11px] font-mono text-[#374151]">
+								<kbd className="px-1.5 py-0.5 rounded bg-muted text-[11px] font-mono text-foreground">
 									@
 								</kbd>{" "}
 								to summon an agent, or Convene the team.
@@ -609,10 +609,10 @@ export function ChatArea({
 												))}
 											</div>
 										)}
-										<div className={cn("bg-[#3B82F6] text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-[14px] leading-relaxed break-words whitespace-pre-wrap", isSearchMatch && !isCurrentMatch && "ring-2 ring-yellow-300")}>
+										<div className={cn("bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5 text-[14px] leading-relaxed break-words whitespace-pre-wrap", isSearchMatch && !isCurrentMatch && "ring-2 ring-yellow-300")}>
 											{msg.content}
 										</div>
-										<div className="text-[11px] text-[#9CA3AF] text-right mt-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity">
+										<div className="text-[11px] text-muted-foreground text-right mt-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity">
 											{relativeTime(msg.timestamp)}
 										</div>
 									</div>
@@ -641,7 +641,7 @@ export function ChatArea({
 									</div>
 									<div className="flex-1 min-w-0">
 										<div className="flex items-center gap-2 mb-1">
-											<span className="text-[14px] font-bold text-[#111827]">{role.name}</span>
+											<span className="text-[14px] font-bold text-foreground">{role.name}</span>
 											<span
 												className="px-1.5 py-0.5 rounded text-[10px] font-semibold text-white"
 												style={{ backgroundColor: role.tagColor }}
@@ -655,11 +655,11 @@ export function ChatArea({
 											)}
 											<div className="ml-auto flex items-center gap-1.5 opacity-0 group-hover/msg:opacity-100 transition-opacity">
 												{msg.tokenUsage && (
-													<span className="text-[10px] font-mono text-[#9CA3AF] bg-[#F3F4F6] px-1.5 py-0.5 rounded">
+													<span className="text-[10px] font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
 														↑{msg.tokenUsage.input.toLocaleString()} ↓{msg.tokenUsage.output.toLocaleString()}
 													</span>
 												)}
-												<span className="text-[11px] text-[#9CA3AF]">
+												<span className="text-[11px] text-muted-foreground">
 													{relativeTime(msg.timestamp)}
 												</span>
 											</div>
@@ -681,11 +681,11 @@ export function ChatArea({
 								</div>
 								<div className="flex-1 min-w-0">
 									<div className="flex items-center gap-2 mb-1">
-										<span className="text-[14px] font-bold text-[#111827]">JCode</span>
+										<span className="text-[14px] font-bold text-foreground">JCode</span>
 										<span className="px-1 py-0.5 rounded text-[9px] font-bold text-white bg-violet-500">
 											LEAD
 										</span>
-										<span className="text-[11px] text-[#9CA3AF] ml-auto opacity-0 group-hover/msg:opacity-100 transition-opacity">
+										<span className="text-[11px] text-muted-foreground ml-auto opacity-0 group-hover/msg:opacity-100 transition-opacity">
 											{relativeTime(msg.timestamp)}
 										</span>
 									</div>
@@ -708,19 +708,19 @@ export function ChatArea({
 									<div className="flex items-center gap-2">
 										<div className="flex gap-1">
 											<span
-												className="w-1.5 h-1.5 bg-[#3B82F6] rounded-full animate-bounce"
+												className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"
 												style={{ animationDelay: `${idx * 80}ms` }}
 											/>
 											<span
-												className="w-1.5 h-1.5 bg-[#3B82F6] rounded-full animate-bounce"
+												className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"
 												style={{ animationDelay: `${idx * 80 + 150}ms` }}
 											/>
 											<span
-												className="w-1.5 h-1.5 bg-[#3B82F6] rounded-full animate-bounce"
+												className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"
 												style={{ animationDelay: `${idx * 80 + 300}ms` }}
 											/>
 										</div>
-										<span className="text-[13px] font-medium text-transparent bg-clip-text bg-gradient-to-r from-[#3B82F6] to-[#8B5CF6]">
+										<span className="text-[13px] font-medium text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary/60">
 											{role ? `${role} is typing…` : "Processing…"}
 										</span>
 									</div>
@@ -733,7 +733,7 @@ export function ChatArea({
 			</div>
 
 			{/* ── Input Area ── */}
-			<div className="px-4 pb-4 pt-2 bg-white border-t border-[#E5E5E5]">
+			<div className="px-4 pb-4 pt-2 bg-card border-t border-border">
 				<div className="max-w-full mx-auto relative">
 					{/* Slash command palette */}
 					{slashQuery !== null && (
@@ -747,7 +747,7 @@ export function ChatArea({
 					{/* @mention dropdown – floats above the input box */}
 					{mentionQuery !== null && mentionMatches.length > 0 && (
 						<div className="absolute bottom-full left-0 right-0 mb-1.5 bg-white border border-[#E5E7EB] rounded-xl shadow-xl overflow-hidden z-50">
-							<div className="px-3 py-1.5 border-b border-[#F3F4F6] text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider">
+							<div className="px-3 py-1.5 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
 								Agents — ↑↓ navigate · Enter insert
 							</div>
 							{mentionMatches.map((name, i) => {
@@ -764,15 +764,15 @@ export function ChatArea({
 										className={cn(
 											"w-full text-left px-3 py-2.5 flex items-center gap-3 text-[13px] transition-colors",
 											i === mentionIndex
-												? "bg-[#EFF6FF]"
-												: "hover:bg-[#F9FAFB]",
+												? "bg-primary/10"
+												: "hover:bg-muted",
 										)}
 									>
 										<div className="relative shrink-0">
 											<AgentAvatar name={name} size="sm" />
 											<span
 												className={cn(
-													"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white",
+													"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-background",
 													agentSession?.liveProcessing
 														? "bg-amber-400"
 														: "bg-emerald-500",
@@ -785,7 +785,7 @@ export function ChatArea({
 													"font-semibold",
 													i === mentionIndex
 														? "text-[#2563EB]"
-														: "text-[#111827]",
+														: "text-foreground",
 												)}
 											>
 												{name}
@@ -812,15 +812,15 @@ export function ChatArea({
 							onKeyDown={handleKeyDown}
 							placeholder="Message the team — type @ to mention an agent"
 							rows={1}
-							className="w-full px-4 pt-3 pb-2 text-[14px] text-[#111827] placeholder-[#9CA3AF] outline-none resize-none bg-transparent"
+							className="w-full px-4 pt-3 pb-2 text-[14px] text-foreground placeholder-muted-foreground outline-none resize-none bg-transparent"
 							style={{ minHeight: 44, maxHeight: 120 }}
 						/>
-						<div className="flex items-center justify-between px-3 py-2 border-t border-[#F3F4F6]">
+						<div className="flex items-center justify-between px-3 py-2 border-t border-border">
 							<div className="flex items-center gap-1">
 								{/* Attach */}
 								<button
 									type="button"
-									className="w-8 h-8 rounded-lg flex items-center justify-center text-[#9CA3AF] hover:text-[#6B7280] hover:bg-[#F3F4F6] transition-colors"
+									className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-muted-foreground hover:bg-muted transition-colors"
 									title="Attach file"
 								>
 									<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -850,7 +850,7 @@ export function ChatArea({
 											ta.focus();
 										}, 0);
 									}}
-									className="w-8 h-8 rounded-lg flex items-center justify-center text-[#9CA3AF] hover:text-[#6B7280] hover:bg-[#F3F4F6] transition-colors"
+									className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-muted-foreground hover:bg-muted transition-colors"
 								>
 									<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
 										<path
@@ -867,7 +867,7 @@ export function ChatArea({
 									<button
 										type="button"
 										onClick={onCancel}
-										className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-[#6B7280] hover:text-[#EF4444] hover:bg-[#FEF2F2] transition-colors"
+										className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
 									>
 										Cancel
 									</button>
@@ -879,8 +879,8 @@ export function ChatArea({
 									className={cn(
 										"inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-medium transition-all",
 										text.trim()
-											? "bg-[#3B82F6] text-white hover:bg-[#2563EB] shadow-sm"
-											: "bg-[#F3F4F6] text-[#9CA3AF] cursor-not-allowed",
+											? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+											: "bg-muted text-muted-foreground cursor-not-allowed",
 									)}
 								>
 									<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
