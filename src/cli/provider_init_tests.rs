@@ -455,6 +455,88 @@ fn resolved_profile_default_model_uses_openai_compatible_override() {
     }
 }
 
+#[test]
+fn apply_login_provider_profile_env_locks_compatible_profile_for_auto_spawn() {
+    let _guard = lock_env();
+    let _env_guard = crate::storage::lock_test_env();
+    let saved: Vec<(String, Option<String>)> = [
+        "JCODE_OPENROUTER_API_BASE",
+        "JCODE_OPENROUTER_API_KEY_NAME",
+        "JCODE_OPENROUTER_ENV_FILE",
+        "JCODE_OPENROUTER_CACHE_NAMESPACE",
+        "JCODE_OPENROUTER_PROVIDER_FEATURES",
+        "JCODE_OPENROUTER_ALLOW_NO_AUTH",
+        "JCODE_OPENROUTER_STATIC_MODELS",
+        "JCODE_PROVIDER_PROFILE_ACTIVE",
+        "JCODE_PROVIDER_PROFILE_NAME",
+        "JCODE_NAMED_PROVIDER_PROFILE",
+    ]
+    .iter()
+    .map(|k| (k.to_string(), std::env::var(k).ok()))
+    .collect();
+
+    for (key, _) in &saved {
+        crate::env::remove_var(key);
+    }
+
+    apply_login_provider_profile_env(provider_catalog::OPENCODE_GO_LOGIN_PROVIDER);
+
+    assert_eq!(
+        std::env::var("JCODE_OPENROUTER_API_BASE").ok().as_deref(),
+        Some("https://opencode.ai/zen/go/v1")
+    );
+    assert_eq!(
+        std::env::var("JCODE_OPENROUTER_API_KEY_NAME")
+            .ok()
+            .as_deref(),
+        Some("OPENCODE_GO_API_KEY")
+    );
+    assert_eq!(
+        std::env::var("JCODE_OPENROUTER_ENV_FILE").ok().as_deref(),
+        Some("opencode-go.env")
+    );
+    assert_eq!(
+        std::env::var("JCODE_PROVIDER_PROFILE_ACTIVE")
+            .ok()
+            .as_deref(),
+        Some("1")
+    );
+
+    // Mirrors the daemon child process starting with `--provider auto`: with the
+    // active marker present, auto init must not erase the selected profile env.
+    provider_catalog::apply_openai_compatible_profile_env(None);
+    assert_eq!(
+        std::env::var("JCODE_OPENROUTER_API_KEY_NAME")
+            .ok()
+            .as_deref(),
+        Some("OPENCODE_GO_API_KEY")
+    );
+
+    // A later explicit compatible-provider selection in the same process must
+    // still replace the active profile instead of being blocked by the marker.
+    apply_login_provider_profile_env(provider_catalog::OPENCODE_LOGIN_PROVIDER);
+    assert_eq!(
+        std::env::var("JCODE_OPENROUTER_API_KEY_NAME")
+            .ok()
+            .as_deref(),
+        Some("OPENCODE_API_KEY")
+    );
+    assert_eq!(
+        std::env::var("JCODE_PROVIDER_PROFILE_ACTIVE")
+            .ok()
+            .as_deref(),
+        Some("1")
+    );
+
+    for (key, value) in saved {
+        if let Some(value) = value {
+            crate::env::set_var(&key, value);
+        } else {
+            crate::env::remove_var(&key);
+        }
+    }
+}
+
 #[tokio::test]
 #[expect(
     clippy::await_holding_lock,
@@ -530,6 +612,105 @@ async fn init_provider_for_ollama_reapplies_local_compat_runtime_env_after_disab
             crate::env::remove_var(&key);
         }
     }
+}
+
+#[tokio::test]
+#[expect(
+    clippy::await_holding_lock,
+    reason = "test env locks intentionally stay held across provider init to isolate process-global runtime env"
+)]
+async fn auto_provider_uses_config_default_named_no_auth_provider() {
+    let _guard = lock_env();
+    let _env_guard = crate::storage::lock_test_env();
+    let dir = TempDir::new().expect("temp dir");
+    let saved: Vec<(String, Option<String>)> = [
+        "JCODE_HOME",
+        "JCODE_NON_INTERACTIVE",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "GITHUB_TOKEN",
+        "GEMINI_API_KEY",
+        "CURSOR_API_KEY",
+        "JCODE_OPENROUTER_API_BASE",
+        "JCODE_OPENROUTER_API_KEY_NAME",
+        "JCODE_OPENROUTER_ALLOW_NO_AUTH",
+        "JCODE_OPENROUTER_ENV_FILE",
+        "JCODE_OPENROUTER_DEFAULT_MODEL",
+        "JCODE_OPENROUTER_CACHE_NAMESPACE",
+        "JCODE_PROVIDER_PROFILE_ACTIVE",
+        "JCODE_PROVIDER_PROFILE_NAME",
+        "JCODE_NAMED_PROVIDER_PROFILE",
+        "JCODE_RUNTIME_PROVIDER",
+        "JCODE_ACTIVE_PROVIDER",
+        "JCODE_FORCE_PROVIDER",
+    ]
+    .iter()
+    .map(|k| (k.to_string(), std::env::var(k).ok()))
+    .collect();
+
+    crate::env::set_var("JCODE_HOME", dir.path());
+    crate::env::set_var("JCODE_NON_INTERACTIVE", "1");
+    for key in [
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "GITHUB_TOKEN",
+        "GEMINI_API_KEY",
+        "CURSOR_API_KEY",
+        "JCODE_OPENROUTER_API_BASE",
+        "JCODE_OPENROUTER_API_KEY_NAME",
+        "JCODE_OPENROUTER_ALLOW_NO_AUTH",
+        "JCODE_OPENROUTER_ENV_FILE",
+        "JCODE_OPENROUTER_DEFAULT_MODEL",
+        "JCODE_OPENROUTER_CACHE_NAMESPACE",
+        "JCODE_PROVIDER_PROFILE_ACTIVE",
+        "JCODE_PROVIDER_PROFILE_NAME",
+        "JCODE_NAMED_PROVIDER_PROFILE",
+        "JCODE_RUNTIME_PROVIDER",
+        "JCODE_ACTIVE_PROVIDER",
+        "JCODE_FORCE_PROVIDER",
+    ] {
+        crate::env::remove_var(key);
+    }
+    std::fs::write(
+        dir.path().join("config.toml"),
+        r#"
+[provider]
+default_provider = "ollama-local"
+default_model = "llama3.1:8b"
+
+[providers.ollama-local]
+type = "openai-compatible"
+base_url = "http://localhost:11434/v1"
+auth = "none"
+default_model = "llama3.1:8b"
+requires_api_key = false
+
+[[providers.ollama-local.models]]
+id = "llama3.1:8b"
+"#,
+    )
+    .expect("write config");
+    crate::config::invalidate_config_cache();
+
+    let provider = init_provider_for_validation(&ProviderChoice::Auto, None)
+        .await
+        .expect("auto provider should honor config default_provider named profile");
+
+    assert_eq!(provider.model(), "llama3.1:8b");
+    assert!(provider.model_routes().iter().any(|route| {
+        route.provider == "ollama-local" && route.model == "llama3.1:8b" && route.available
+    }));
+
+    for (key, value) in saved {
+        if let Some(value) = value {
+            crate::env::set_var(&key, value);
+        } else {
+            crate::env::remove_var(&key);
+        }
+    }
+    crate::config::invalidate_config_cache();
 }
 
 #[tokio::test]

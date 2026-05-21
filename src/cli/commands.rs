@@ -14,14 +14,14 @@ pub mod provider_setup;
 mod report_info;
 mod restart;
 
-pub use super::auth_test::run_auth_test_command;
 pub(crate) use super::auth_test::run_post_login_validation;
 #[cfg(test)]
 pub(crate) use super::auth_test::{
     AuthTestChoicePlan, AuthTestTarget, ResolvedAuthTestTarget, auth_test_choice_plan,
     auth_test_error_is_retryable, configured_auth_test_targets, resolve_auth_test_targets,
 };
-pub use provider_setup::{ProviderAddOptions, ProviderSetupReport, configure_provider_profile, run_provider_add_command};
+pub use super::auth_test::{run_auth_test_command, run_auth_test_coverage_command};
+pub(crate) use provider_setup::{ProviderAddOptions, run_provider_add_command};
 pub use restart::{
     maybe_run_pending_restart_restore_on_startup, run_restart_clear_command,
     run_restart_restore_command, run_restart_save_command, run_restart_status_command,
@@ -1348,9 +1348,7 @@ fn filter_cli_model_routes_for_choice(
     }
 }
 
-async fn send_simple_request(
-    request: crate::protocol::Request,
-) -> Result<()> {
+async fn send_simple_request(request: crate::protocol::Request) -> Result<()> {
     let mut client = crate::server::Client::connect_debug().await?;
     let request_id = client.send_request(request).await?;
 

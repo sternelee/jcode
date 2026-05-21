@@ -5,6 +5,7 @@ pub(crate) mod color_support;
 mod core;
 mod generated_image;
 pub mod image;
+mod image_metadata;
 pub mod info_widget;
 mod info_widget_layout;
 mod info_widget_overview;
@@ -1058,6 +1059,22 @@ fn rate_limit_countdown_redraw_active(state: &dyn TuiState) -> bool {
         .unwrap_or(false)
 }
 
+fn full_frame_status_animation_active_with_policy(
+    state: &dyn TuiState,
+    policy: &crate::perf::TuiPerfPolicy,
+) -> bool {
+    if !policy.enable_decorative_animations {
+        return false;
+    }
+
+    // These animations are rendered as part of the full status line, not by the
+    // spinner-only cell renderer in app/run_shell.rs, so they need the normal
+    // redraw loop to run at animation cadence while visible.
+    matches!(state.status(), ProcessingStatus::RunningTool(_))
+        || rate_limit_countdown_redraw_active(state)
+        || crate::build::read_build_progress().is_some()
+}
+
 fn fps_to_duration(fps: u32) -> Duration {
     Duration::from_millis((1000 / fps.max(1)) as u64)
 }
@@ -1086,6 +1103,13 @@ pub(crate) fn redraw_interval_with_policy(
     if idle_donut_active_with_policy(state, policy) {
         return match policy.tier {
             crate::perf::PerformanceTier::Minimal => fast_interval,
+            _ => animation_interval,
+        };
+    }
+
+    if full_frame_status_animation_active_with_policy(state, policy) {
+        return match policy.tier {
+            crate::perf::PerformanceTier::Minimal => REDRAW_IDLE,
             _ => animation_interval,
         };
     }
@@ -1148,6 +1172,10 @@ pub(crate) fn periodic_redraw_required(state: &dyn TuiState) -> bool {
         return true;
     }
 
+    if full_frame_status_animation_active_with_policy(state, &policy) {
+        return true;
+    }
+
     if state.is_processing()
         || !state.streaming_text().is_empty()
         || state.status_notice().is_some()
@@ -1193,17 +1221,9 @@ pub use ui::{
 };
 
 pub fn display_messages_from_session(session: &crate::session::Session) -> Vec<DisplayMessage> {
-    let mut messages: Vec<DisplayMessage> = crate::session::render_messages(session)
-        .into_iter()
-        .map(|item| DisplayMessage {
-            role: item.role,
-            content: item.content,
-            tool_calls: item.tool_calls,
-            duration_secs: None,
-            title: None,
-            tool_data: item.tool_data,
-        })
-        .collect();
+    let mut messages = jcode_tui_messages::display_messages_from_rendered_messages(
+        crate::session::render_messages(session),
+    );
     app::compact_display_messages_for_storage(&mut messages);
     messages
 }
