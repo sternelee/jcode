@@ -45,6 +45,7 @@ const DESKTOP_SLASH_COMMANDS: &[(&str, &str)] = &[
     ("/new", "reset to a fresh desktop session"),
     ("/resume", "open the recent session switcher"),
     ("/sessions", "open the recent session switcher"),
+    ("/session", "alias for /sessions"),
     ("/model [name]", "open model picker or switch to a model"),
     ("/models", "alias for /model"),
     ("/refresh-model-list", "refresh provider model catalogs"),
@@ -66,8 +67,10 @@ const DESKTOP_SLASH_COMMANDS: &[(&str, &str)] = &[
     ),
     ("/commit", "make logical commits from current changes"),
     ("/stop", "interrupt the running generation"),
+    ("/cancel", "alias for /stop"),
     ("/status", "show current desktop session status"),
     ("/quit", "exit the desktop app"),
+    ("/exit", "alias for /quit"),
 ];
 pub(crate) const DESKTOP_SLASH_SUGGESTION_ROW_LIMIT: usize = 7;
 
@@ -660,16 +663,29 @@ impl ModelPickerState {
 
     fn filtered_indices(&self) -> Vec<usize> {
         let query = self.filter.trim().to_lowercase();
-        self.choices
-            .iter()
-            .enumerate()
-            .filter_map(|(index, choice)| {
-                if query.is_empty() || model_choice_search_text(choice).contains(&query) {
-                    Some(index)
-                } else {
-                    None
-                }
-            })
+        if query.is_empty() {
+            return (0..self.choices.len()).collect();
+        }
+
+        let mut substring_matches = Vec::new();
+        let mut fuzzy_matches = Vec::new();
+        for (index, choice) in self.choices.iter().enumerate() {
+            let search_text = model_choice_search_text(choice);
+            if search_text.contains(&query) {
+                substring_matches.push(index);
+            } else if let Some(score) = model_picker_fuzzy_score(&query, &search_text) {
+                fuzzy_matches.push((score, search_text.len(), index));
+            }
+        }
+        fuzzy_matches.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| a.1.cmp(&b.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+
+        substring_matches
+            .into_iter()
+            .chain(fuzzy_matches.into_iter().map(|(_, _, index)| index))
             .collect()
     }
 
@@ -761,8 +777,18 @@ enum SessionSwitcherPane {
 
 impl SessionSwitcherState {
     fn open_loading(&mut self, current_session_id: Option<&str>) {
+        self.open_loading_with_filter(current_session_id, String::new());
+    }
+
+    fn refresh_loading(&mut self, current_session_id: Option<&str>) {
+        let filter = self.filter.clone();
+        self.open_loading_with_filter(current_session_id, filter);
+    }
+
+    fn open_loading_with_filter(&mut self, current_session_id: Option<&str>, filter: String) {
         self.open = true;
         self.loading = true;
+        self.filter = filter;
         self.focus = SessionSwitcherPane::Sessions;
         self.preview_scroll = 0;
         self.selected = self
@@ -836,16 +862,29 @@ impl SessionSwitcherState {
 
     fn filtered_indices(&self) -> Vec<usize> {
         let query = self.filter.trim().to_lowercase();
-        self.sessions
-            .iter()
-            .enumerate()
-            .filter_map(|(index, session)| {
-                if query.is_empty() || session_card_search_text(session).contains(&query) {
-                    Some(index)
-                } else {
-                    None
-                }
-            })
+        if query.is_empty() {
+            return (0..self.sessions.len()).collect();
+        }
+
+        let mut substring_matches = Vec::new();
+        let mut fuzzy_matches = Vec::new();
+        for (index, session) in self.sessions.iter().enumerate() {
+            let search_text = session_card_search_text(session);
+            if search_text.contains(&query) {
+                substring_matches.push(index);
+            } else if let Some(score) = session_switcher_fuzzy_score(&query, &search_text) {
+                fuzzy_matches.push((score, search_text.len(), index));
+            }
+        }
+        fuzzy_matches.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| a.1.cmp(&b.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+
+        substring_matches
+            .into_iter()
+            .chain(fuzzy_matches.into_iter().map(|(_, _, index)| index))
             .collect()
     }
 
@@ -1955,7 +1994,7 @@ impl SingleSessionApp {
             KeyInput::RefreshSessions => {
                 let current_session_id = self.current_session_id().map(str::to_string);
                 self.session_switcher
-                    .open_loading(current_session_id.as_deref());
+                    .refresh_loading(current_session_id.as_deref());
                 self.set_status(SingleSessionStatus::LoadingRecentSessions);
                 self.mark_inline_widget_opened();
                 KeyOutcome::LoadSessionSwitcher
@@ -2220,16 +2259,32 @@ impl SingleSessionApp {
             self.slash_suggestions.query.as_str()
         };
         let prefix = prefix.to_ascii_lowercase();
-        DESKTOP_SLASH_COMMANDS
-            .iter()
-            .copied()
-            .filter(|(usage, _)| {
-                usage
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or(usage)
-                    .starts_with(&prefix)
-            })
+
+        let mut prefix_matches = Vec::new();
+        let mut fuzzy_matches: Vec<(usize, usize, &'static str, &'static str)> = Vec::new();
+        for (usage, description) in DESKTOP_SLASH_COMMANDS.iter().copied() {
+            let command = usage.split_whitespace().next().unwrap_or(usage);
+            let command_lower = command.to_ascii_lowercase();
+            if command_lower.starts_with(&prefix) {
+                prefix_matches.push((usage, description));
+            } else if let Some(score) = desktop_slash_fuzzy_score(&prefix, &command_lower) {
+                fuzzy_matches.push((score, command.len(), usage, description));
+            }
+        }
+
+        fuzzy_matches.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| a.1.cmp(&b.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+
+        prefix_matches
+            .into_iter()
+            .chain(
+                fuzzy_matches
+                    .into_iter()
+                    .map(|(_, _, usage, description)| (usage, description)),
+            )
             .take(DESKTOP_SLASH_SUGGESTION_ROW_LIMIT)
             .collect()
     }
@@ -3890,20 +3945,12 @@ impl SingleSessionApp {
     }
 
     fn autocomplete_draft(&mut self) -> KeyOutcome {
-        const DESKTOP_SLASH_COMPLETIONS: &[&str] = &[
-            "/help",
-            "/clear",
-            "/new",
-            "/sessions",
-            "/model",
-            "/copy",
-            "/search",
-            "/stop",
-            "/status",
-            "/quit",
-        ];
+        let completions = DESKTOP_SLASH_COMMANDS
+            .iter()
+            .map(|(usage, _)| usage.split_whitespace().next().unwrap_or(*usage))
+            .collect::<Vec<_>>();
         let Some((draft, cursor)) =
-            complete_slash_command(&self.draft, self.draft_cursor, DESKTOP_SLASH_COMPLETIONS)
+            complete_slash_command(&self.draft, self.draft_cursor, &completions)
         else {
             return KeyOutcome::None;
         };
@@ -4141,6 +4188,12 @@ fn session_switcher_styled_lines(
     switcher: &SessionSwitcherState,
     current_session_id: Option<&str>,
 ) -> Vec<SingleSessionStyledLine> {
+    let visible = switcher.filtered_indices();
+    let session_count = if switcher.filter.trim().is_empty() {
+        switcher.sessions.len().to_string()
+    } else {
+        format!("{}/{}", visible.len(), switcher.sessions.len())
+    };
     let mut lines = vec![
         styled_line(
             "desktop session switcher",
@@ -4159,7 +4212,7 @@ fn session_switcher_styled_lines(
                     switcher.filter.as_str()
                 },
                 session_switcher_focus_label(switcher.focus),
-                switcher.sessions.len()
+                session_count
             ),
             SingleSessionLineStyle::Meta,
         ),
@@ -4172,8 +4225,6 @@ fn session_switcher_styled_lines(
             SingleSessionLineStyle::Status,
         ));
     }
-
-    let visible = switcher.filtered_indices();
     if visible.is_empty() && !switcher.loading {
         let message = if switcher.sessions.is_empty() {
             "no recent sessions found"
@@ -4394,6 +4445,34 @@ fn session_card_search_text(session: &workspace::SessionCard) -> String {
         text.push_str(line);
     }
     text.to_lowercase()
+}
+
+fn session_switcher_fuzzy_score(needle: &str, haystack: &str) -> Option<usize> {
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return Some(0);
+    }
+
+    haystack
+        .split_whitespace()
+        .filter_map(|token| session_switcher_token_fuzzy_score(needle, token))
+        .min()
+}
+
+fn session_switcher_token_fuzzy_score(needle: &str, haystack: &str) -> Option<usize> {
+    let mut score = 0usize;
+    let mut position = 0usize;
+    for ch in needle.chars() {
+        let offset = haystack[position..].find(ch)?;
+        score += offset;
+        position += offset + ch.len_utf8();
+    }
+
+    if needle.len() > 1 && score > needle.len() * 6 {
+        return None;
+    }
+
+    Some(score)
 }
 
 fn session_info_inline_styled_lines(app: &SingleSessionApp) -> Vec<SingleSessionStyledLine> {
@@ -4739,6 +4818,66 @@ fn model_choice_search_text(choice: &DesktopModelChoice) -> String {
         choice.detail.as_deref().unwrap_or_default()
     )
     .to_lowercase()
+}
+
+fn model_picker_fuzzy_score(needle: &str, haystack: &str) -> Option<usize> {
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return Some(0);
+    }
+
+    haystack
+        .split_whitespace()
+        .filter_map(|token| model_picker_token_fuzzy_score(needle, token))
+        .min()
+}
+
+fn model_picker_token_fuzzy_score(needle: &str, haystack: &str) -> Option<usize> {
+    let mut score = 0usize;
+    let mut position = 0usize;
+    for ch in needle.chars() {
+        let offset = haystack[position..].find(ch)?;
+        score += offset;
+        position += offset + ch.len_utf8();
+    }
+
+    if needle.len() > 1 && score > needle.len() * 6 {
+        return None;
+    }
+
+    Some(score)
+}
+
+fn desktop_slash_fuzzy_score(needle: &str, haystack: &str) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+
+    let needle = needle.strip_prefix('/').unwrap_or(needle);
+    let haystack = haystack.strip_prefix('/').unwrap_or(haystack);
+    if needle.is_empty() {
+        return Some(0);
+    }
+
+    if let Some(first_char) = needle.chars().next()
+        && !haystack.starts_with(&needle[..first_char.len_utf8()])
+    {
+        return None;
+    }
+
+    let mut score = 0usize;
+    let mut position = 0usize;
+    for ch in needle.chars() {
+        let offset = haystack[position..].find(ch)?;
+        score += offset;
+        position += offset + ch.len_utf8();
+    }
+
+    if needle.len() > 1 && score > needle.len() * 3 {
+        return None;
+    }
+
+    Some(score)
 }
 
 fn dedupe_model_choices(choices: Vec<DesktopModelChoice>) -> Vec<DesktopModelChoice> {
@@ -6488,13 +6627,14 @@ fn complete_slash_command(
         return None;
     }
     let suffix = &input[cursor..];
+    let prefix_key = prefix.to_ascii_lowercase();
     let matches = completions
         .iter()
         .copied()
-        .filter(|command| command.starts_with(prefix))
+        .filter(|command| command.starts_with(&prefix_key))
         .collect::<Vec<_>>();
     let completion = match matches.as_slice() {
-        [] => return None,
+        [] => fuzzy_slash_completion(&prefix_key, completions)?,
         [only] => *only,
         _ => longest_common_prefix(&matches)?,
     };
@@ -6504,6 +6644,22 @@ fn complete_slash_command(
     let mut completed = completion.to_string();
     completed.push_str(suffix);
     Some((completed, completion.len()))
+}
+
+fn fuzzy_slash_completion(needle: &str, completions: &[&'static str]) -> Option<&'static str> {
+    let mut matches = completions
+        .iter()
+        .copied()
+        .filter_map(|command| {
+            desktop_slash_fuzzy_score(needle, command).map(|score| (score, command.len(), command))
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by(|a, b| {
+        a.0.cmp(&b.0)
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2))
+    });
+    matches.first().map(|(_, _, command)| *command)
 }
 
 fn longest_common_prefix<'a>(values: &'a [&'a str]) -> Option<&'a str> {

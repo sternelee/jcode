@@ -18,6 +18,8 @@ pub(crate) const MARKDOWN_LIST_MARKER_COLOR: [f32; 4] = [0.060, 0.110, 0.240, 0.
 pub(crate) const MARKDOWN_TASK_DONE_COLOR: [f32; 4] = [0.025, 0.350, 0.190, 1.000];
 pub(crate) const MARKDOWN_TASK_OPEN_COLOR: [f32; 4] = [0.420, 0.320, 0.075, 0.980];
 pub(crate) const MARKDOWN_STRIKE_TEXT_COLOR: [f32; 4] = [0.310, 0.330, 0.380, 0.880];
+pub(crate) const COMPOSER_INPUT_BACKGROUND_COLOR: [f32; 4] = [0.985, 0.992, 1.000, 0.46];
+pub(crate) const COMPOSER_INPUT_BORDER_COLOR: [f32; 4] = [0.055, 0.125, 0.270, 0.18];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SingleSessionTextKey {
@@ -170,6 +172,7 @@ pub(crate) fn build_single_session_vertices_with_scroll_and_reveal(
     if app.has_activity_indicator() {
         push_streaming_activity_cue(&mut vertices, app, size, spinner_tick, None);
     }
+    push_single_session_composer_input_box(&mut vertices, app, size);
     push_single_session_selection(&mut vertices, app, size);
     push_single_session_scrollbar(&mut vertices, app, size, spinner_tick, smooth_scroll_lines);
 
@@ -279,6 +282,7 @@ pub(crate) fn build_single_session_vertices_with_cached_body(
     if app.has_activity_indicator() {
         push_streaming_activity_cue(&mut vertices, app, size, spinner_tick, Some(&viewport));
     }
+    push_single_session_composer_input_box(&mut vertices, app, size);
     push_single_session_selection(&mut vertices, app, size);
     push_single_session_scrollbar_for_total_lines(
         &mut vertices,
@@ -289,6 +293,44 @@ pub(crate) fn build_single_session_vertices_with_cached_body(
     );
 
     vertices
+}
+
+fn push_single_session_composer_input_box(
+    vertices: &mut Vec<Vertex>,
+    app: &SingleSessionApp,
+    size: PhysicalSize<u32>,
+) {
+    if app.stdin_response.is_some() {
+        return;
+    }
+
+    let typography = single_session_typography_for_scale(app.text_scale());
+    let line_height = typography.code_size * typography.code_line_height;
+    let draft_top = single_session_draft_top_for_app(app, size);
+    let max_bottom = (size.height as f32 - PANEL_TITLE_TOP_PADDING).max(draft_top);
+    let padding_x = 13.0 * app.text_scale().clamp(0.65, 1.35);
+    let padding_y = 7.0 * app.text_scale().clamp(0.65, 1.35);
+    let left = PANEL_TITLE_LEFT_PADDING - padding_x;
+    let right = size.width as f32 - PANEL_TITLE_LEFT_PADDING + padding_x;
+    let rect = Rect {
+        x: left.max(6.0),
+        y: (draft_top - padding_y).max(4.0),
+        width: (right - left).max(1.0),
+        height: (line_height + padding_y * 2.0).min(max_bottom - draft_top + padding_y),
+    };
+    if rect.width <= 1.0 || rect.height <= 1.0 {
+        return;
+    }
+
+    let radius = (rect.height * 0.42).clamp(8.0, 18.0);
+    push_rounded_rect(vertices, rect, radius, COMPOSER_INPUT_BORDER_COLOR, size);
+    push_rounded_rect(
+        vertices,
+        inset_rect(rect, 1.2),
+        (radius - 1.2).max(1.0),
+        COMPOSER_INPUT_BACKGROUND_COLOR,
+        size,
+    );
 }
 
 #[cfg(test)]
@@ -766,8 +808,26 @@ fn push_single_session_inline_widget_card(
     };
 
     if app.active_inline_widget_uses_card_chrome() {
-        const INLINE_CARD_BACKGROUND_COLOR: [f32; 4] = [0.972, 0.982, 1.000, 0.54];
-        const INLINE_CARD_BORDER_COLOR: [f32; 4] = [0.180, 0.255, 0.430, 0.18];
+        const INLINE_CARD_SHADOW_COLOR: [f32; 4] = [0.020, 0.035, 0.070, 0.080];
+        const INLINE_CARD_BACKGROUND_COLOR: [f32; 4] = [0.992, 0.996, 1.000, 0.72];
+        const INLINE_CARD_BORDER_COLOR: [f32; 4] = [0.105, 0.185, 0.360, 0.20];
+        const INLINE_CARD_HIGHLIGHT_COLOR: [f32; 4] = [1.000, 1.000, 1.000, 0.52];
+        const INLINE_CARD_ACCENT_COLOR: [f32; 4] = [0.125, 0.420, 0.920, 0.34];
+        push_rounded_rect(
+            vertices,
+            Rect {
+                x: layout.card.x + 0.0,
+                y: layout.card.y + 5.0,
+                width: layout.card.width,
+                height: layout.card.height,
+            },
+            INLINE_WIDGET_CARD_RADIUS + 2.0,
+            with_alpha(
+                INLINE_CARD_SHADOW_COLOR,
+                INLINE_CARD_SHADOW_COLOR[3] * progress,
+            ),
+            size,
+        );
         push_rounded_rect(
             vertices,
             layout.card,
@@ -785,6 +845,36 @@ fn push_single_session_inline_widget_card(
             with_alpha(
                 INLINE_CARD_BACKGROUND_COLOR,
                 INLINE_CARD_BACKGROUND_COLOR[3] * progress,
+            ),
+            size,
+        );
+        push_rounded_rect(
+            vertices,
+            Rect {
+                x: layout.card.x + 1.5,
+                y: layout.card.y + 1.5,
+                width: 3.0,
+                height: (layout.card.height - 3.0).max(0.0),
+            },
+            2.0,
+            with_alpha(
+                INLINE_CARD_ACCENT_COLOR,
+                INLINE_CARD_ACCENT_COLOR[3] * progress,
+            ),
+            size,
+        );
+        push_rounded_rect(
+            vertices,
+            Rect {
+                x: layout.card.x + 8.0,
+                y: layout.card.y + 1.5,
+                width: (layout.card.width - 16.0).max(0.0),
+                height: 1.0,
+            },
+            0.5,
+            with_alpha(
+                INLINE_CARD_HIGHLIGHT_COLOR,
+                INLINE_CARD_HIGHLIGHT_COLOR[3] * progress,
             ),
             size,
         );
