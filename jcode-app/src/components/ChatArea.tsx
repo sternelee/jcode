@@ -19,6 +19,11 @@ interface ChatAreaProps {
 	onCancel: () => void;
 	/** Display name for the current channel */
 	channelName?: string;
+	/** Callback to rename the current session (normal) or role (swarm) */
+	onRenameSession?: (sessionId: string, newName: string) => void;
+	/** Current session id for rename */
+	currentSessionId?: string | null;
+
 	/** Online agents in this workspace */
 	channelMembers?: string[];
 	/** Roles currently generating a response */
@@ -35,10 +40,13 @@ interface ChatAreaProps {
 	isLoading?: boolean;
 	// Agent settings props
 	currentModel?: string | null;
+	currentProfileId?: string | null;
+
 	reasoningEffort?: string | null;
 	memoryEnabled?: boolean;
 	availableModels?: string[];
-	onSetModel?: (model: string) => void;
+	onSetModel?: (model: string, profileId?: string) => void;
+
 	onSetEffort?: (effort: string) => void;
 	onToggleMemory?: () => void;
 	onCompact?: () => void;
@@ -73,6 +81,9 @@ export function ChatArea({
 	onSend,
 	onCancel,
 	channelName = "Everyone",
+	onRenameSession,
+	currentSessionId,
+
 	channelMembers: _channelMembers,
 	respondingRoles = [],
 	workspaceSessions = [],
@@ -81,6 +92,8 @@ export function ChatArea({
 	lastReadTimestamp,
 	isLoading = false,
 	currentModel = null,
+	currentProfileId = null,
+
 	reasoningEffort = null,
 	memoryEnabled = true,
 	availableModels = [],
@@ -362,6 +375,7 @@ export function ChatArea({
 						<h2 className="text-[17px] font-bold text-foreground leading-tight">
 							{channelName}
 						</h2>
+
 						{channelMembers.length > 0 && (
 							<p className="text-[12px] text-muted-foreground mt-0.5 truncate">
 								{channelMembers.join(", ")} + you
@@ -439,6 +453,10 @@ export function ChatArea({
 							onToggleMemory={() => onToggleMemory?.()}
 							onCompact={() => onCompact?.()}
 							onClearChat={() => onClearChat?.()}
+							onRenameSession={onRenameSession}
+							currentSessionId={currentSessionId}
+							sessionTitle={channelName}
+							isSwarmRole={workspaceSessions.some((s) => s.sessionId === currentSessionId && s.roleName)}
 						/>
 					</div>
 
@@ -900,8 +918,9 @@ export function ChatArea({
 			onClose={() => setModelPickerOpen(false)}
 			availableModels={availableModels}
 			currentModel={currentModel}
-			onSelectModel={(m) => {
-				onSetModel?.(m);
+			currentProfileId={currentProfileId}
+			onSelectModel={(m, pid) => {
+				onSetModel?.(m, pid);
 			}}
 		/>
 		</>

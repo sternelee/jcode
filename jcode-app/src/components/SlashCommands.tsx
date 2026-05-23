@@ -1,7 +1,18 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
-import type { SessionInfo, ModelRoute } from "@/types";
+import type { ModelRoute, ProviderCatalogEntry } from "@/types";
+import type { ProviderAuthPrompt, ProviderConfigOption } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+	KeyRound,
+	Link2,
+	ExternalLink,
+	Loader2,
+	ChevronDown,
+	ChevronRight,
+} from "lucide-react";
 
 // ── Slash command catalogue ──────────────────────────────────────────────
 export interface SlashCommand {
@@ -135,13 +146,104 @@ export function SlashCommandPalette({
 	);
 }
 
+// ── Provider-profile helpers (mirror backend grouping logic) ─────────────
+
+/** Map a provider display name to its auth/profile ID. Mirrors backend direct_config_provider_id. */
+function profileIdFromDisplayName(displayName: string): string | null {
+	const normalized = displayName.trim().toLowerCase();
+	switch (normalized) {
+		case "anthropic":
+			return "claude";
+		case "openai":
+			return "openai";
+		case "cursor":
+			return "cursor";
+		case "copilot":
+		case "github copilot":
+			return "copilot";
+		case "gemini":
+		case "google gemini":
+			return "gemini";
+		case "antigravity":
+			return "antigravity";
+		case "aws bedrock":
+		case "bedrock":
+			return "bedrock";
+		case "jcode":
+		case "jcode subscription":
+			return "jcode";
+		default:
+			return null;
+	}
+}
+
+/** Extract the profile ID from a ModelRoute. Must align with backend auth_provider_id. */
+function profileIdFromRoute(route: ModelRoute): string {
+	if (route.api_method?.startsWith("openai-compatible:")) {
+		const suffix = route.api_method.slice("openai-compatible:".length).trim();
+		if (suffix) return suffix;
+	}
+	if (route.api_method === "openrouter") {
+		return "openrouter";
+	}
+	if (route.api_method === "openai-compatible") {
+		const fromDisplay = profileIdFromDisplayName(route.provider);
+		if (fromDisplay) return fromDisplay;
+	}
+	return route.provider.toLowerCase();
+}
+
+/** Extract profile ID from a ProviderCatalogEntry. */
+function profileIdFromProvider(provider: ProviderCatalogEntry): string {
+	return provider.auth_provider_id || provider.provider_key;
+}
+
+function optionKey(profileId: string, option: ProviderConfigOption): string {
+	return `${profileId}:${option.provider_id}:${option.kind}`;
+}
+
+function statusBadgeVariant(
+	status: ProviderCatalogEntry["status"],
+): "secondary" | "outline" | "destructive" {
+	switch (status) {
+		case "available":
+			return "secondary";
+		case "expired":
+			return "destructive";
+		default:
+			return "outline";
+	}
+}
+
+function statusLabel(status: ProviderCatalogEntry["status"]): string {
+	switch (status) {
+		case "available":
+			return "configured";
+		case "expired":
+			return "expired";
+		case "not_configured":
+			return "未配置";
+		default:
+			return "status unknown";
+	}
+}
+
+interface ProviderDraftState {
+	apiKey?: string;
+	authInput?: string;
+	extras?: Record<string, string>;
+}
+
 // ── ModelPickerModal component ────────────────────────────────────────────
 interface ModelPickerModalProps {
 	open: boolean;
 	onClose: () => void;
 	availableModels: string[];
 	currentModel: string | null;
-	onSelectModel: (model: string) => void;
+	currentProfileId: string | null;
+
+	onSelectModel: (model: string, profileId?: string) => void;
+
 }
 
 export function ModelPickerModal({
@@ -149,18 +251,44 @@ export function ModelPickerModal({
 	onClose,
 	availableModels,
 	currentModel,
+	currentProfileId,
+
 	onSelectModel,
 }: ModelPickerModalProps) {
 	const [search, setSearch] = useState("");
 	const [routes, setRoutes] = useState<ModelRoute[]>([]);
+	const [providers, setProviders] = useState<ProviderCatalogEntry[]>([]);
 	const [loading, setLoading] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
+	const [collapsedProfiles, setCollapsedProfiles] = useState<
+		Record<string, boolean>
+	>({});
+	const [providerDrafts, setProviderDrafts] = useState<
+		Record<string, ProviderDraftState>
+	>({});
+	const [selectedOptionByProvider, setSelectedOptionByProvider] = useState<
+		Record<string, string>
+	>({});
+	const [providerBusy, setProviderBusy] = useState<Record<string, boolean>>({});
+	const [providerMessages, setProviderMessages] = useState<
+		Record<string, string | null>
+	>({});
+	const [providerErrors, setProviderErrors] = useState<
+		Record<string, string | null>
+	>({});
+	const [authPrompts, setAuthPrompts] = useState<
+		Record<string, ProviderAuthPrompt | null>
+	>({});
 
 	const loadModels = useCallback(async () => {
 		setLoading(true);
 		try {
-			const data = await invoke<{ routes: ModelRoute[] }>("get_models");
+			const data = await invoke<{
+				routes: ModelRoute[];
+				providers: ProviderCatalogEntry[];
+			}>("get_models");
 			setRoutes(data.routes || []);
+			setProviders(data.providers || []);
 		} catch {
 			// fallback to prop if backend call fails
 		} finally {
@@ -184,38 +312,270 @@ export function ModelPickerModal({
 		return () => window.removeEventListener("keydown", onKey);
 	}, [open, onClose]);
 
-	// Build model list from routes (prefer backend data, fallback to prop)
-	const allModels = useMemo(() => {
-		if (routes.length > 0) {
-			return routes.map((r) => r.model);
+	// Group routes by provider profile, deduplicating models within each group.
+	const groupedProfiles = useMemo(() => {
+		const profileMap = new Map<string, ProviderCatalogEntry>();
+		for (const p of providers) {
+			profileMap.set(profileIdFromProvider(p), p);
 		}
-		return availableModels;
-	}, [routes, availableModels]);
 
-	const filtered = useMemo(
-		() => allModels.filter((m) => m.toLowerCase().includes(search.toLowerCase())),
-		[allModels, search],
+		const routeGroups = new Map<string, ModelRoute[]>();
+		for (const route of routes) {
+			const pid = profileIdFromRoute(route);
+			const bucket = routeGroups.get(pid) || [];
+			bucket.push(route);
+			routeGroups.set(pid, bucket);
+		}
+
+		// Collect all profile keys (from both providers and routes)
+		const profileKeys = new Set<string>();
+		profileMap.forEach((_, pid) => profileKeys.add(pid));
+		routeGroups.forEach((_, pid) => profileKeys.add(pid));
+
+		const groups = Array.from(profileKeys)
+			.map((pid) => {
+				const provider = profileMap.get(pid) || null;
+				const groupRoutes = routeGroups.get(pid) || [];
+				// Sort: current model first, then available, then by name
+				const sorted = [...groupRoutes].sort((a, b) => {
+					const aCurrent = a.model === currentModel ? 0 : 1;
+					const bCurrent = b.model === currentModel ? 0 : 1;
+					if (aCurrent !== bCurrent) return aCurrent - bCurrent;
+					const aAvail = a.available === false ? 1 : 0;
+					const bAvail = b.available === false ? 1 : 0;
+					if (aAvail !== bAvail) return aAvail - bAvail;
+					return a.model.localeCompare(b.model);
+				});
+				// Deduplicate by model name (keep first / best)
+				const seen = new Set<string>();
+				const deduped = sorted.filter((r) => {
+					if (seen.has(r.model)) return false;
+					seen.add(r.model);
+					return true;
+				});
+				return {
+					profileId: pid,
+					label: provider?.display_name || provider?.provider_key || pid,
+					provider,
+					models: deduped,
+					isCurrentProfile: pid === currentProfileId,
+					configured: provider?.configured ?? true,
+					hasConfigSurface: provider?.has_config_surface ?? false,
+				};
+
+			})
+			.filter((g) => g.models.length > 0)
+			.sort((a, b) => {
+				// Current provider first, then configured, then alphabetically
+				const aCurrent = a.provider?.is_current_provider ? 0 : 1;
+				const bCurrent = b.provider?.is_current_provider ? 0 : 1;
+				if (aCurrent !== bCurrent) return aCurrent - bCurrent;
+				const aConfigured = a.provider?.configured !== false ? 0 : 1;
+				const bConfigured = b.provider?.configured !== false ? 0 : 1;
+				if (aConfigured !== bConfigured) return aConfigured - bConfigured;
+				return a.label.localeCompare(b.label);
+			});
+
+		return groups;
+	}, [routes, providers, currentModel, currentProfileId]);
+
+	// Apply search filter to each group
+	const filteredGroups = useMemo(() => {
+		if (!search.trim()) return groupedProfiles;
+		const q = search.toLowerCase();
+		return groupedProfiles
+			.map((g) => ({
+				...g,
+				models: g.models.filter((r) => r.model.toLowerCase().includes(q)),
+			}))
+			.filter((g) => g.models.length > 0);
+	}, [groupedProfiles, search]);
+
+	// Fallback: prop-based model list when backend is unavailable
+	const fallbackFiltered = useMemo(() => {
+		if (routes.length > 0) return [];
+		const q = search.toLowerCase();
+		return availableModels.filter((m) => m.toLowerCase().includes(q));
+	}, [routes.length, availableModels, search]);
+
+	useEffect(() => {
+		setCollapsedProfiles((current) => {
+			let changed = false;
+			const next = { ...current };
+			for (const group of groupedProfiles) {
+				if (!(group.profileId in next)) {
+					next[group.profileId] = group.provider
+						? !group.provider.configured
+						: false;
+					changed = true;
+				}
+			}
+			return changed ? next : current;
+		});
+	}, [groupedProfiles]);
+
+	const setDraftValue = useCallback(
+		(profileId: string, field: keyof ProviderDraftState, value: string) => {
+			setProviderDrafts((current) => ({
+				...current,
+				[profileId]: {
+					...current[profileId],
+					[field]: value,
+				},
+			}));
+		},
+		[],
 	);
 
-	const grouped = useMemo(() => {
-		const groups: Record<string, string[]> = {};
-		for (const m of filtered) {
-			const prefix = m.includes("claude")
-				? "Claude (Anthropic)"
-				: m.includes("gpt") || m.includes("o1") || m.includes("o3") || m.includes("o4")
-				? "OpenAI"
-				: m.includes("gemini")
-				? "Google"
-				: m.includes("deepseek")
-				? "DeepSeek"
-				: m.includes("llama") || m.includes("meta")
-				? "Meta"
-				: "Other";
-			groups[prefix] ??= [];
-			groups[prefix].push(m);
-		}
-		return groups;
-	}, [filtered]);
+	const setDraftExtraValue = useCallback(
+		(profileId: string, extraKey: string, value: string) => {
+			setProviderDrafts((current) => ({
+				...current,
+				[profileId]: {
+					...current[profileId],
+					extras: {
+						...(current[profileId]?.extras || {}),
+						[extraKey]: value,
+					},
+				},
+			}));
+		},
+		[],
+	);
+
+	const selectProviderOption = useCallback(
+		(profileId: string, option: ProviderConfigOption) => {
+			const key = optionKey(profileId, option);
+			setSelectedOptionByProvider((current) => ({
+				...current,
+				[profileId]: key,
+			}));
+			setProviderErrors((current) => ({ ...current, [profileId]: null }));
+			setProviderMessages((current) => ({ ...current, [profileId]: null }));
+			setCollapsedProfiles((current) => ({ ...current, [profileId]: false }));
+			setProviderDrafts((current) => {
+				if (current[profileId]) return current;
+				const extras = Object.fromEntries(
+					(option.extra_fields || []).map((field) => [
+						field.key,
+						field.default_value || "",
+					]),
+				);
+				return {
+					...current,
+					[profileId]: { extras },
+				};
+			});
+		},
+		[],
+	);
+
+	const withProviderBusy = useCallback(
+		async (profileId: string, fn: () => Promise<void>) => {
+			setProviderBusy((current) => ({ ...current, [profileId]: true }));
+			setProviderErrors((current) => ({ ...current, [profileId]: null }));
+			try {
+				await fn();
+			} catch (err) {
+				setProviderErrors((current) => ({
+					...current,
+					[profileId]: String(err),
+				}));
+			} finally {
+				setProviderBusy((current) => ({ ...current, [profileId]: false }));
+			}
+		},
+		[],
+	);
+
+	const handleSaveApiKey = useCallback(
+		async (profileId: string, option: ProviderConfigOption) => {
+			const draft = providerDrafts[profileId];
+			const apiKey = draft?.apiKey?.trim() || "";
+			await withProviderBusy(profileId, async () => {
+				if (!apiKey) {
+					throw new Error("Please paste an API key first.");
+				}
+				await invoke("save_provider_api_key", {
+					providerId: option.provider_id,
+					apiKey,
+					region: draft?.extras?.region || null,
+					apiBase: draft?.extras?.api_base || null,
+				});
+				setProviderMessages((current) => ({
+					...current,
+					[profileId]: `${option.label} saved. Model catalog refreshed.`,
+				}));
+				setProviderDrafts((current) => ({
+					...current,
+					[profileId]: {
+						...current[profileId],
+						apiKey: "",
+					},
+				}));
+				await loadModels();
+			});
+		},
+		[loadModels, providerDrafts, withProviderBusy],
+	);
+
+	const handleStartAuth = useCallback(
+		async (profileId: string, option: ProviderConfigOption) => {
+			await withProviderBusy(profileId, async () => {
+				const prompt = await invoke<ProviderAuthPrompt>(
+					"start_provider_auth_flow",
+					{
+						providerId: option.provider_id,
+					},
+				);
+				setAuthPrompts((current) => ({ ...current, [profileId]: prompt }));
+				setProviderMessages((current) => ({
+					...current,
+					[profileId]:
+						"Sign-in flow started. Open the auth URL below, then complete the flow here.",
+				}));
+			});
+		},
+		[withProviderBusy],
+	);
+
+	const handleCompleteAuth = useCallback(
+		async (profileId: string) => {
+			const prompt = authPrompts[profileId];
+			const input = providerDrafts[profileId]?.authInput?.trim() || "";
+			await withProviderBusy(profileId, async () => {
+				if (!prompt) {
+					throw new Error("Start the auth flow first.");
+				}
+				const result = await invoke<{
+					email?: string | null;
+					account_label?: string | null;
+				}>("complete_provider_auth_flow", {
+					providerId: prompt.provider,
+					inputKind: prompt.input_kind,
+					input: prompt.input_kind === "complete" ? null : input,
+				});
+				const suffix =
+					result?.email || result?.account_label
+						? ` (${result.email || result.account_label})`
+						: "";
+				setProviderMessages((current) => ({
+					...current,
+					[profileId]: `Authentication completed${suffix}.`,
+				}));
+				setAuthPrompts((current) => ({ ...current, [profileId]: null }));
+				setProviderDrafts((current) => ({
+					...current,
+					[profileId]: {
+						...current[profileId],
+						authInput: "",
+					},
+				}));
+				await loadModels();
+			});
+		},
+		[authPrompts, loadModels, providerDrafts, withProviderBusy],
+	);
 
 	if (!open) return null;
 
@@ -259,19 +619,23 @@ export function ModelPickerModal({
 							Loading models…
 						</div>
 					)}
-					{Object.entries(grouped).map(([group, models]) => (
-						<div key={group} className="mb-2">
+
+					{/* Fallback: prop-based model list when backend unavailable */}
+					{fallbackFiltered.length > 0 && (
+						<div className="mb-2">
 							<div className="px-3 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-								{group}
+								Models
 							</div>
-							{models.map((m) => {
+							{fallbackFiltered.map((m) => {
 								const isCurrent = m === currentModel;
 								return (
 									<button
 										key={m}
 										type="button"
 										onClick={() => {
-											onSelectModel(m);
+													onSelectModel(m, undefined);
+
+
 											onClose();
 										}}
 										className={cn(
@@ -289,10 +653,391 @@ export function ModelPickerModal({
 										)}
 									</button>
 								);
-							})}
+								})}
 						</div>
-					))}
-					{!loading && filtered.length === 0 && (
+					)}
+
+					{/* Provider-profile grouped model list */}
+					{filteredGroups.map((group) => {
+						const collapsed = collapsedProfiles[group.profileId] ?? false;
+						const status = group.provider?.status || "unknown";
+						const statusText =
+							group.provider && group.hasConfigSurface
+								? statusLabel(status)
+								: null;
+						const selectedOptionKey = selectedOptionByProvider[group.profileId];
+						const selectedOption =
+							group.provider?.options.find(
+								(option) =>
+									optionKey(group.profileId, option) === selectedOptionKey,
+							) || group.provider?.options[0];
+						const draft = providerDrafts[group.profileId] || {};
+						const authPrompt = authPrompts[group.profileId];
+						const busy = providerBusy[group.profileId] || false;
+						const authNeedsInput =
+							authPrompt && authPrompt.input_kind !== "complete";
+
+						return (
+							<div key={group.profileId} className="mb-2">
+								<button
+									type="button"
+									className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-xl hover:bg-muted/50 transition-colors"
+									onClick={() =>
+										setCollapsedProfiles((current) => ({
+											...current,
+											[group.profileId]: !collapsed,
+										}))
+									}
+								>
+									{collapsed ? (
+										<ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+									) : (
+										<ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+									)}
+									<span className="text-[13px] font-medium">{group.label}</span>
+									<span className="text-[11px] text-muted-foreground/60">
+										({group.models.length})
+									</span>
+									{group.isCurrentProfile && (
+										<span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
+											current
+										</span>
+									)}
+									{statusText && (
+										<span
+											className={cn(
+												"text-[9px] px-1.5 py-0.5 rounded ml-auto",
+												statusBadgeVariant(status) === "secondary" &&
+													"bg-secondary text-secondary-foreground",
+												statusBadgeVariant(status) === "outline" &&
+													"border text-muted-foreground",
+												statusBadgeVariant(status) === "destructive" &&
+													"bg-destructive text-destructive-foreground",
+											)}
+										>
+											{statusText}
+										</span>
+									)}
+								</button>
+
+								{!collapsed && (
+									<>
+										{group.provider &&
+											group.hasConfigSurface &&
+											(!group.configured ||
+												(group.models.length > 0 &&
+													group.models.every(
+														(route) => route.available === false,
+													))) && (
+											<div className="px-3 py-3 border-b space-y-3 bg-muted/20 ml-3 border-l-2 border-muted pl-3">
+												<div className="flex items-start gap-2 text-xs text-muted-foreground">
+													<Link2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+													<div>
+														<div className="font-medium text-foreground">
+															{group.configured
+																? `${group.label} authentication expired`
+																: `${group.label} not configured`}
+														</div>
+														<div>{group.provider.method_detail}</div>
+														<div className="mt-1">
+															{group.configured
+																? "Credentials are no longer valid. Re-authenticate below."
+																: "Models stay hidden until credentials are available."}
+														</div>
+													</div>
+												</div>
+
+												{group.provider.options.length > 0 && (
+													<div className="flex gap-2 flex-wrap">
+														{group.provider.options.map((option) => {
+															const key = optionKey(
+																group.profileId,
+																option,
+															);
+															const active =
+																selectedOption &&
+																optionKey(
+																	group.profileId,
+																	selectedOption,
+																) === key;
+															return (
+																<Button
+																	key={key}
+																	type="button"
+																	size="sm"
+																	variant={active ? "secondary" : "outline"}
+																	className="h-7 text-[10px]"
+																	onClick={() =>
+																		selectProviderOption(
+																			group.profileId,
+																			option,
+																		)
+																	}
+																>
+																	{option.kind === "api_key" ? (
+																		<KeyRound className="w-3 h-3 mr-1" />
+																	) : (
+																		<Link2 className="w-3 h-3 mr-1" />
+																	)}
+																	{option.label}
+																</Button>
+															);
+														})}
+													</div>
+												)}
+
+												{selectedOption && (
+													<div className="space-y-2 rounded border bg-background px-3 py-3">
+														<div className="text-xs font-medium">
+															{selectedOption.label}
+														</div>
+														{selectedOption.detail && (
+															<div className="text-xs text-muted-foreground">
+																{selectedOption.detail}
+															</div>
+														)}
+
+														{selectedOption.kind === "api_key" ? (
+															<>
+																<Input
+																	type="password"
+																	placeholder={
+																		selectedOption.input_placeholder ||
+																		"Paste API key"
+																	}
+																	value={draft.apiKey || ""}
+																	onChange={(event) =>
+																		setDraftValue(
+																			group.profileId,
+																			"apiKey",
+																			event.target.value,
+																		)
+																	}
+																/>
+																{(selectedOption.extra_fields || []).map(
+																	(field) => (
+																		<Input
+																			key={`${group.profileId}-${field.key}`}
+																			placeholder={
+																				field.placeholder ||
+																				field.label
+																			}
+																			value={
+																				draft.extras?.[field.key] || ""
+																			}
+																			onChange={(event) =>
+																					setDraftExtraValue(
+																						group.profileId,
+																						field.key,
+																						event.target.value,
+																					)
+																			}
+																		/>
+																	),
+																)}
+																<div className="flex gap-2 flex-wrap">
+																	<Button
+																		size="sm"
+																		className="h-7 text-[10px]"
+																		disabled={busy}
+																		onClick={() =>
+																			void handleSaveApiKey(
+																				group.profileId,
+																				selectedOption,
+																			)
+																		}
+																	>
+																		{busy ? (
+																			<Loader2 className="w-3 h-3 mr-1 animate-spin" />
+																		) : null}
+																		Save credentials
+																	</Button>
+																	{selectedOption.setup_url && (
+																		<Button
+																			size="sm"
+																			variant="outline"
+																			className="h-7 text-[10px]"
+																			onClick={() =>
+																				window.open(
+																					selectedOption.setup_url,
+																					"_blank",
+																					"noopener,noreferrer",
+																				)
+																			}
+																		>
+																			<ExternalLink className="w-3 h-3 mr-1" />
+																			Open setup page
+																		</Button>
+																	)}
+																</div>
+															</>
+														) : (
+																<>
+																	{!authPrompt ? (
+																		<div className="flex gap-2 flex-wrap">
+																			<Button
+																				size="sm"
+																				className="h-7 text-[10px]"
+																				disabled={busy}
+																					onClick={() =>
+																						void handleStartAuth(
+																							group.profileId,
+																							selectedOption,
+																						)
+																					}
+																				>
+																					{busy ? (
+																						<Loader2 className="w-3 h-3 mr-1 animate-spin" />
+																					) : null}
+																					Start sign-in
+																				</Button>
+																		</div>
+																	) : (
+																		<div className="space-y-2 text-xs">
+																			<div className="rounded border bg-muted/30 px-2 py-2 space-y-1">
+																				<div className="font-medium">Auth URL</div>
+																				<div className="break-all text-muted-foreground">
+																					{authPrompt.auth_url}
+																				</div>
+																				{authPrompt.user_code && (
+																					<div>
+																						device code:{" "}
+																						<span className="font-medium text-foreground">
+																							{authPrompt.user_code}
+																						</span>
+																					</div>
+																				)}
+																			</div>
+																			<div className="flex gap-2 flex-wrap">
+																				<Button
+																					size="sm"
+																					variant="outline"
+																					className="h-7 text-[10px]"
+																						onClick={() =>
+																							window.open(
+																								authPrompt.auth_url,
+																							"_blank",
+																							"noopener,noreferrer",
+																						)
+																					}
+																					>
+																						<ExternalLink className="w-3 h-3 mr-1" />
+																						Open auth page
+																					</Button>
+																			</div>
+																			{authNeedsInput && (
+																				<Input
+																					placeholder={
+																						authPrompt.input_kind ===
+																							"auth_code"
+																							? "Paste auth code"
+																							: "Paste callback URL or query string"
+																					}
+																					value={draft.authInput || ""}
+																						onChange={(event) =>
+																							setDraftValue(
+																								group.profileId,
+																								"authInput",
+																								event.target.value,
+																							)
+																					}
+																				/>
+																			)}
+																			<div className="flex gap-2 flex-wrap">
+																				<Button
+																					size="sm"
+																					className="h-7 text-[10px]"
+																					disabled={busy}
+																						onClick={() =>
+																							void handleCompleteAuth(
+																								group.profileId,
+																							)
+																						}
+																					>
+																						{busy ? (
+																							<Loader2 className="w-3 h-3 mr-1 animate-spin" />
+																						) : null}
+																						{authPrompt.input_kind === "complete"
+																							? "I completed sign-in"
+																							: "Complete sign-in"}
+																					</Button>
+																			</div>
+																		</div>
+																	)}
+																</>
+															)}
+														</div>
+													)}
+
+												{providerErrors[group.profileId] && (
+													<div className="text-xs text-destructive">
+														{providerErrors[group.profileId]}
+													</div>
+												)}
+												{providerMessages[group.profileId] &&
+													!providerErrors[group.profileId] && (
+														<div className="text-xs text-muted-foreground">
+															{providerMessages[group.profileId]}
+														</div>
+													)}
+											</div>
+										)}
+
+										{!collapsed && group.models.length > 0 && (
+											<div className="ml-3 border-l-2 border-muted pl-3 space-y-0.5">
+												{group.models.map((route) => {
+													const isCurrent =
+														route.model === currentModel &&
+														group.profileId === currentProfileId;
+													return (
+														<button
+															key={`${group.profileId}:${route.model}`}
+															type="button"
+															onClick={() => {
+																onSelectModel(
+																	route.model,
+																	group.profileId,
+																);
+																onClose();
+															}}
+															disabled={route.available === false}
+															className={cn(
+																"w-full text-left px-3 py-2 rounded-xl text-[13px] flex items-center gap-3 transition-colors",
+																isCurrent
+																	? "bg-primary/10 text-primary"
+																	: route.available === false
+																		? "text-muted-foreground/50 cursor-not-allowed"
+																		: "text-foreground hover:bg-muted",
+															)}
+														>
+															<span className="font-mono flex-1 truncate">
+																{route.model}
+															</span>
+															{isCurrent && (
+																<svg
+																	viewBox="0 0 20 20"
+																	fill="currentColor"
+																	className="w-4 h-4 text-primary shrink-0"
+																>
+																	<path
+																		fillRule="evenodd"
+																		d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+																		clipRule="evenodd"
+																	/>
+																</svg>
+															)}
+														</button>
+													);
+												})}
+											</div>
+										)}
+									</>
+								)}
+							</div>
+						);
+					})}
+
+					{!loading && fallbackFiltered.length === 0 && filteredGroups.length === 0 && (
 						<div className="text-center py-8 text-[12px] text-muted-foreground">
 							No models match "{search}"
 						</div>
@@ -321,8 +1066,12 @@ interface AgentSettingsPopoverProps {
 	onToggleMemory: () => void;
 	onCompact: () => void;
 	onClearChat: () => void;
-	workspaceSessions?: SessionInfo[];
+	onRenameSession?: (sessionId: string, newName: string) => void;
+	currentSessionId?: string | null;
+	sessionTitle?: string | null;
+	isSwarmRole?: boolean;
 }
+
 
 const EFFORT_LEVELS = [
 	{ value: "low", label: "Low", icon: "⚡" },
@@ -342,8 +1091,17 @@ export function AgentSettingsPopover({
 	onToggleMemory,
 	onCompact,
 	onClearChat,
+	onRenameSession,
+	currentSessionId,
+	sessionTitle,
+	isSwarmRole,
 }: AgentSettingsPopoverProps) {
 	const ref = useRef<HTMLDivElement>(null);
+	const [renameDraft, setRenameDraft] = useState(sessionTitle || "");
+
+	useEffect(() => {
+		setRenameDraft(sessionTitle || "");
+	}, [sessionTitle, open]);
 
 	useEffect(() => {
 		if (!open) return;
@@ -361,6 +1119,36 @@ export function AgentSettingsPopover({
 			ref={ref}
 			className="absolute top-full right-0 mt-1 w-[300px] bg-white rounded-2xl shadow-xl border border-[#E5E7EB] overflow-hidden z-50"
 		>
+			{/* Rename session / role */}
+			{onRenameSession && currentSessionId && (
+				<div className="px-4 py-3 border-b border-[#F3F4F6]">
+					<div className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">
+						{isSwarmRole ? "Role Name" : "Session Title"}
+					</div>
+					<div className="flex gap-2">
+						<input
+							type="text"
+							value={renameDraft}
+							onChange={(e) => setRenameDraft(e.target.value)}
+							placeholder={isSwarmRole ? "Role name" : "Session title"}
+							className="flex-1 h-8 px-3 rounded-xl bg-[#F9FAFB] border border-[#E5E7EB] text-[12px] text-[#374151] placeholder-[#9CA3AF] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/20 transition-all"
+						/>
+						<button
+							type="button"
+							disabled={!renameDraft.trim() || renameDraft.trim() === (sessionTitle || "")}
+							onClick={() => {
+								const trimmed = renameDraft.trim();
+								if (trimmed && trimmed !== (sessionTitle || "")) {
+									onRenameSession(currentSessionId, trimmed);
+								}
+							}}
+							className="h-8 px-3 rounded-xl text-[12px] font-medium bg-[#3B82F6] text-white hover:bg-[#2563EB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+						>
+							Save
+						</button>
+					</div>
+				</div>
+			)}
 			{/* Model row */}
 			<div className="px-4 py-3 border-b border-[#F3F4F6]">
 				<div className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">

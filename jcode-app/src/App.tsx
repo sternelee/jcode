@@ -53,6 +53,8 @@ export default function App() {
 		rewindChat,
 		gitStatus,
 		toggleWorkspace,
+		renameSession,
+
 	} = useJcodeSession();
 
 	const [activeNavTab, setActiveNavTab] = useState("chat");
@@ -605,7 +607,9 @@ export default function App() {
 							onSend={handleSendMessage}
 							onCancel={() => cancel(resolveTargetSessionId() || undefined)}
 							channelName={channelName}
-							channelMembers={channelMembers}
+						channelMembers={channelMembers}
+						onRenameSession={renameSession}
+						currentSessionId={selectedConvId?.startsWith("workspace:") ? undefined : selectedConvId}
 							respondingRoles={respondingRoles}
 							workspaceSessions={workspaceSessions}
 							onAddAgent={handleAddAgentToWorkspace}
@@ -616,13 +620,14 @@ export default function App() {
 								void handleSendMessage("/convene");
 							}}
 							currentModel={state.providerModel}
+							currentProfileId={state.providerName}
 							reasoningEffort={state.reasoningEffort}
 							memoryEnabled={state.memoryEnabled}
 							availableModels={state.availableModels}
-							onSetModel={(m) =>
+							onSetModel={(m, pid) =>
 								void setModel(
 									m,
-									undefined,
+									pid,
 									resolveTargetSessionId() || undefined,
 								)
 							}
