@@ -333,16 +333,9 @@ export default function App() {
 		const slashCmd = parseSlashCommand(content);
 		if (slashCmd) {
 			const { cmd, args } = slashCmd;
-			if (cmd === "/model" || cmd === "/models") {
-				// Switch model directly if name given, otherwise let backend handle
+			if (cmd === "/model") {
 				if (args) {
 					await setModel(args, undefined, targetSessionId);
-				}
-				// If no args, still pass to backend so it shows the model list as a message
-				if (!args) {
-					if (targetSessionId)
-						await sendMessage(content, images, targetSessionId);
-					return;
 				}
 				return;
 			}

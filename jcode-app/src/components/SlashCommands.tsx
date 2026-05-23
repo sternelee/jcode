@@ -26,7 +26,7 @@ export interface SlashCommand {
 
 export const SLASH_COMMANDS: SlashCommand[] = [
 	// Model & settings — handled frontend
-	{ name: "/model", description: "List or switch the active AI model", frontend: true, args: "[name]" },
+
 	{ name: "/effort", description: "Set reasoning effort", frontend: true, args: "<low|medium|high|auto>" },
 	{ name: "/memory", description: "Toggle memory feature on/off", frontend: true },
 	// Conversation control — handled frontend
