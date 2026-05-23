@@ -372,6 +372,16 @@ export default function App() {
 				}
 				// /rewind undo — pass to backend
 			}
+			if (cmd === "/stop" || cmd === "/cancel") {
+				await cancel(targetSessionId);
+				return;
+			}
+			if (cmd === "/rename") {
+				if (args && targetSessionId) {
+					await renameSession(targetSessionId, args);
+				}
+				return;
+			}
 			if (cmd === "/git") {
 				await gitStatus(state.workingDir);
 				// Display git output as a system message by sending to backend

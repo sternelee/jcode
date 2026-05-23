@@ -27,15 +27,18 @@ export interface SlashCommand {
 export const SLASH_COMMANDS: SlashCommand[] = [
 	// Model & settings — handled frontend
 	{ name: "/model", description: "List or switch the active AI model", frontend: true, args: "[name]" },
-	{ name: "/models", description: "Alias for /model", frontend: true, args: "[name]" },
 	{ name: "/effort", description: "Set reasoning effort", frontend: true, args: "<low|medium|high|auto>" },
 	{ name: "/memory", description: "Toggle memory feature on/off", frontend: true },
 	// Conversation control — handled frontend
 	{ name: "/clear", description: "Clear conversation history", frontend: true },
 	{ name: "/compact", description: "Compact context (background summarisation)", frontend: true },
 	{ name: "/rewind", description: "Rewind to a previous message", frontend: true, args: "<N|undo>" },
+	{ name: "/rename", description: "Rename the current session", args: "<title>" },
+	{ name: "/stop", description: "Interrupt the running generation" },
+	{ name: "/cancel", description: "Alias for /stop" },
 	// Info — handled frontend
 	{ name: "/git", description: "Show git status for the working directory", frontend: true },
+	{ name: "/status", description: "Show session status and metadata" },
 	{ name: "/help", description: "Show help and available commands", frontend: true, args: "[command]" },
 	// Agent workflows — passed to backend
 	{ name: "/btw", description: "Ask a side question in the background", args: "<question>" },
@@ -46,12 +49,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 	{ name: "/refactor", description: "Run a safe refactor loop", args: "[focus]" },
 	{ name: "/improve", description: "Autonomously improve the repository" },
 	{ name: "/overnight", description: "Run a supervised overnight coordinator" },
-	{ name: "/convene", description: "Convene all agents in this workspace" },
 	{ name: "/context", description: "Show full session context snapshot" },
 	{ name: "/info", description: "Show session info and token usage" },
+	{ name: "/usage", description: "Show provider usage limits" },
 	{ name: "/version", description: "Show current version" },
+	{ name: "/dictate", description: "Run speech-to-text and inject transcript" },
 	{ name: "/subagent", description: "Launch a subagent manually", args: "<prompt>" },
-	{ name: "/agents", description: "Configure models for agent roles", args: "[role]" },
 	{ name: "/observe", description: "Show latest tool context in the side panel", args: "[on|off|status]" },
 ];
 
