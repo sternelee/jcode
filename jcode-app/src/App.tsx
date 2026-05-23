@@ -68,7 +68,7 @@ export default function App() {
 	const [selectedConvId, setSelectedConvId] = useState<string | undefined>();
 	const { effectiveTheme, setTheme } = useTheme();
 	const [pendingSwarmMembers, setPendingSwarmMembers] = useState<
-		Array<{ roleName: string; model: string }>
+		Array<{ roleName: string; model: string; profileId?: string }>
 	>([]);
 	// Read cursor: track when each conversation was last viewed
 	const [lastReadAt, setLastReadAt] = useState<Record<string, number>>({});
@@ -235,11 +235,12 @@ export default function App() {
 	const handleCreateNormal = async (
 		workingDir: string | null,
 		model: string,
+		profileId?: string,
 	) => {
 		const workspaceId = workspaceIdFromDir(workingDir);
 		setActiveWorkspace(workspaceId);
 		setWorkingDir(workingDir);
-		const sessionId = await connect(workingDir, model || undefined, true);
+		const sessionId = await connect(workingDir, model || undefined, true, undefined, profileId);
 		if (sessionId) {
 			switchSession(sessionId);
 			setSelectedConvId(sessionId);
@@ -250,6 +251,7 @@ export default function App() {
 	const handleCreateSwarm = async (
 		workingDir: string | null,
 		model: string,
+		profileId?: string,
 	) => {
 		const workspaceId = workspaceIdFromDir(workingDir);
 		setActiveWorkspace(workspaceId);
@@ -259,9 +261,17 @@ export default function App() {
 			workingDir,
 			model || undefined,
 			true,
+			undefined,
+			profileId,
 		);
 		for (const member of pendingSwarmMembers) {
-			await createRoleSession(workingDir, member.roleName, member.model, true);
+			await createRoleSession(
+				workingDir,
+				member.roleName,
+				member.model,
+				true,
+				member.profileId,
+			);
 		}
 		if (coordinatorSessionId) {
 			switchSession(coordinatorSessionId);
@@ -274,10 +284,10 @@ export default function App() {
 		setPendingSwarmMembers([]);
 	};
 
-	const handleAddSwarmMember = (roleName: string, model: string) => {
+	const handleAddSwarmMember = (roleName: string, model: string, profileId?: string) => {
 		setPendingSwarmMembers((prev) => {
 			if (prev.some((member) => member.roleName === roleName)) return prev;
-			return [...prev, { roleName, model }];
+			return [...prev, { roleName, model, profileId }];
 		});
 	};
 
