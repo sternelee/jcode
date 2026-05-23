@@ -415,6 +415,8 @@ export default function App() {
 						);
 					}
 					targetSessionId = agentSession.sessionId;
+					// Strip the @mention prefix so the agent only sees the actual message
+					content = content.replace(/^@\w+\s*/, "");
 				}
 			}
 		}
