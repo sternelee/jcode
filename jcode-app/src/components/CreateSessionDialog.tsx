@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+
+
 
 interface CreateSessionDialogProps {
 	open: boolean;
@@ -163,15 +166,27 @@ export function CreateSessionDialog({
 							Workspace
 						</label>
 						<div className="flex gap-2 flex-wrap">
-							{(workspaces.length === 0 || useCustomWorkspace) && (
-								<input
-									type="text"
-									value={selectedWorkspace}
-									onChange={(e) => setSelectedWorkspace(e.target.value)}
-									placeholder="/path/to/workspace"
-									className="flex-1 h-9 px-3 rounded-xl border border-[#E5E7EB] text-[13px] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/20"
-								/>
-							)}
+								{(workspaces.length === 0 || useCustomWorkspace) && (
+									<div className="flex-1 flex items-center gap-2 h-9 px-3 rounded-xl border border-[#E5E7EB] bg-white"
+										title={selectedWorkspace || "No directory selected"}
+									>
+										<span className="flex-1 text-[13px] text-[#374151] truncate">
+											{selectedWorkspace || "No directory selected"}
+										</span>
+										{selectedWorkspace && (
+											<button
+												type="button"
+												onClick={() => setSelectedWorkspace("")}
+												className="text-[#9CA3AF] hover:text-[#EF4444]"
+											>
+												<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+													<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+												</svg>
+											</button>
+										)}
+									</div>
+								)}
+
 							{workspaces.map((ws) => (
 								<button
 									key={ws}
@@ -194,11 +209,21 @@ export function CreateSessionDialog({
 							))}
 							<button
 								type="button"
-								onClick={() => {
-									setUseCustomWorkspace(true);
-									setSelectedWorkspace("");
+									onClick={async () => {
+										try {
+									const selected = await openDialog({
+												directory: true,
+												multiple: false,
+											});
+											if (selected && typeof selected === "string") {
+												setUseCustomWorkspace(true);
+												setSelectedWorkspace(selected);
+											}
+										} catch {
+											// user cancelled
+										}
 								}}
-								className={cn(
+												className={cn(
 									"px-3 py-1.5 rounded-xl text-[12px] font-medium border transition-all",
 									useCustomWorkspace
 										? "bg-[#EFF6FF] border-[#3B82F6] text-[#2563EB]"
