@@ -1267,10 +1267,15 @@ async fn load_session_runtime_silently(
     eprintln!("[load_silently] loading session={} from disk", session_id);
     let session = Session::load(session_id)
         .map_err(|e| format!("Session not found and cannot be auto-loaded: {session_id}: {e}"))?;
-    let provider = create_provider().await?;
-    if let Some(ref model) = session.model {
-        let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), model);
-    }
+	let provider = create_provider().await?;
+	if let Some(ref saved_model) = session.model {
+		let model_arg = if let Some(ref pk) = session.provider_key {
+			format!("{}:{}", pk, saved_model)
+		} else {
+			saved_model.clone()
+		};
+		let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg);
+	}
     let working_dir = session.working_dir.clone();
     let mut agent =
         create_agent_with_session(provider, session, working_dir.as_deref()).await?;
@@ -1546,10 +1551,15 @@ async fn resume_session(
 
     let session = Session::load(&session_id)
         .map_err(|e| format!("Failed to load session {}: {e}", &session_id))?;
-    let provider = create_provider().await?;
-    if let Some(ref saved_model) = session.model {
-        let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), saved_model);
-    }
+	let provider = create_provider().await?;
+	if let Some(ref saved_model) = session.model {
+		let model_arg = if let Some(ref pk) = session.provider_key {
+			format!("{}:{}", pk, saved_model)
+		} else {
+			saved_model.clone()
+		};
+		let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg);
+	}
 
     let agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
     register_runtime_and_emit(&app_handle, &state, agent).await.map(|_| ())

@@ -324,12 +324,17 @@ impl Agent {
                 crate::session::derive_session_provider_key(agent.provider.name());
         }
         if let Some(model) = agent.session.model.clone() {
+            let model_arg = if let Some(ref pk) = agent.session.provider_key {
+                format!("{}:{}", pk, model)
+            } else {
+                model
+            };
             if let Err(e) =
-                crate::provider::set_model_with_auth_refresh(agent.provider.as_ref(), &model)
+                crate::provider::set_model_with_auth_refresh(agent.provider.as_ref(), &model_arg)
             {
                 logging::error(&format!(
                     "Failed to restore session model '{}': {}",
-                    model, e
+                    model_arg, e
                 ));
             }
         } else {
