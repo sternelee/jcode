@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ModelPickerModal } from "@/components/SlashCommands";
+import { ROLE_PRESETS } from "@/rolePresets";
+
+const DEFAULT_MODEL = ROLE_PRESETS[0]?.model || "claude-sonnet-4-20250514";
 
 interface CreateSessionDialogProps {
 	open: boolean;
@@ -21,16 +24,6 @@ interface CreateSessionDialogProps {
 	/** Current swarm members (role names) */
 	swarmMembers?: string[];
 }
-
-const DEFAULT_MODEL = "claude-sonnet-4-20250514";
-
-const ROLE_PRESETS = [
-	{ name: "Researcher", model: "claude-sonnet-4-20250514", detail: "Deep research & analysis" },
-	{ name: "Engineer", model: "claude-sonnet-4-20250514", detail: "Code implementation & review" },
-	{ name: "Strategist", model: "gpt-4o", detail: "Planning & decision making" },
-	{ name: "Designer", model: "claude-sonnet-4-20250514", detail: "UI/UX & visual design" },
-	{ name: "Critic", model: "gpt-4o-mini", detail: "Quality assurance & feedback" },
-];
 
 export function CreateSessionDialog({
 	open,

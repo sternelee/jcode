@@ -15,6 +15,7 @@ use tokio::sync::Mutex;
 /// replacing the raw serde_json::Value HashMap.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SwarmMemberStatus {
+    pub session_id: String,
     pub status: String,
     pub detail: Option<String>,
     pub role: Option<String>,
@@ -61,6 +62,12 @@ pub struct SwarmState {
     pub proposals: HashMap<String, SwarmProposalSnapshot>,
 }
 
+
+impl Default for SwarmState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl SwarmState {
     pub fn new() -> Self {
         Self {
@@ -89,6 +96,17 @@ impl SwarmState {
         self.proposals.insert(session_id, proposal);
     }
 
+    /// Upsert member statuses from a SwarmStatus event.
+    pub fn apply_status(
+        &mut self,
+        members: Vec<SwarmMemberStatus>,
+    ) {
+        for member in members {
+            self.members
+                .insert(member.session_id.clone(), member);
+        }
+    }
+
     /// Remove all state for a session that is shutting down.
     pub fn remove_session(&mut self, session_id: &str) {
         self.members.remove(session_id);
@@ -96,7 +114,6 @@ impl SwarmState {
         self.proposals.remove(session_id);
     }
 }
-
 pub struct SessionRuntime {
     pub session_id: String,
     pub ordinal: u64,
@@ -135,7 +152,8 @@ pub struct AppState {
     pub swarm: Arc<Mutex<SwarmState>>,
     /// Cached MultiProvider to avoid re-creating on every begin_session.
     /// Initialized lazily on first use; shared via Arc so cloning is cheap.
-    pub provider: tokio::sync::OnceCell<Arc<MultiProvider>>,
+    /// Call `clear_provider()` after provider config changes to force refresh.
+    pub provider: tokio::sync::RwLock<Option<Arc<MultiProvider>>>,
 }
 
 impl Default for AppState {
@@ -151,18 +169,30 @@ impl AppState {
             active_session_id: Arc::new(Mutex::new(None)),
             pending_stdin: Arc::new(Mutex::new(std::collections::HashMap::new())),
             swarm: Arc::new(Mutex::new(SwarmState::new())),
-            provider: tokio::sync::OnceCell::new(),
+            provider: tokio::sync::RwLock::new(None),
         }
     }
 
     pub async fn get_provider(&self) -> Result<Arc<MultiProvider>, String> {
-        self.provider
-            .get_or_try_init(|| async {
-                let provider = MultiProvider::new();
-                Ok::<_, String>(Arc::new(provider))
-            })
-            .await
-            .map(Clone::clone)
+        {
+            let guard = self.provider.read().await;
+            if let Some(ref p) = *guard {
+                return Ok(p.clone());
+            }
+        }
+        let mut guard = self.provider.write().await;
+        if let Some(ref p) = *guard {
+            return Ok(p.clone());
+        }
+        let provider = MultiProvider::new();
+        let arc = Arc::new(provider);
+        *guard = Some(arc.clone());
+        Ok(arc)
+    }
+
+    pub async fn clear_provider(&self) {
+        let mut guard = self.provider.write().await;
+        *guard = None;
     }
 }
 

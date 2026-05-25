@@ -785,6 +785,14 @@ export interface ProviderSetupReport {
 	default_set: boolean;
 }
 
+export interface RolePreset {
+	name: string;
+	model: string;
+	detail: string;
+	tag?: string;
+	tagColor?: string;
+}
+
 export type TranscriptMode = "send" | "insert" | "append" | "replace";
 
 export interface BrowserStatus {

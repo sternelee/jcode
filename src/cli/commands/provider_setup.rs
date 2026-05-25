@@ -89,9 +89,7 @@ pub fn run_provider_add_command(options: ProviderAddOptions) -> Result<()> {
     Ok(())
 }
 
-pub fn configure_provider_profile(
-    options: ProviderAddOptions,
-) -> Result<ProviderSetupReport> {
+pub fn configure_provider_profile(options: ProviderAddOptions) -> Result<ProviderSetupReport> {
     let name = validate_profile_name(&options.name)?;
     ensure_profile_name_not_reserved(&name)?;
 

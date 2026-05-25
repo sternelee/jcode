@@ -179,7 +179,9 @@ impl Config {
     ) -> anyhow::Result<()> {
         let mut cfg = Self::load();
         if let Some(dir) = working_dir.map(str::trim).filter(|dir| !dir.is_empty()) {
-            cfg.workspace_memory.workspaces.insert(dir.to_string(), enabled);
+            cfg.workspace_memory
+                .workspaces
+                .insert(dir.to_string(), enabled);
             crate::logging::info(&format!(
                 "Saved workspace memory preference: {} => {}",
                 dir, enabled

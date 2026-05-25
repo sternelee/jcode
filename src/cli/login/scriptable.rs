@@ -253,16 +253,28 @@ pub async fn complete_scriptable_login_data(
 
     match provider.target {
         LoginProviderTarget::Claude => {
-            complete_scriptable_claude_login_data(provider.id, options, require_scriptable_input(input)?)
-                .await
+            complete_scriptable_claude_login_data(
+                provider.id,
+                options,
+                require_scriptable_input(input)?,
+            )
+            .await
         }
         LoginProviderTarget::OpenAi => {
-            complete_scriptable_openai_login_data(provider.id, options, require_scriptable_input(input)?)
-                .await
+            complete_scriptable_openai_login_data(
+                provider.id,
+                options,
+                require_scriptable_input(input)?,
+            )
+            .await
         }
         LoginProviderTarget::Gemini => {
-            complete_scriptable_gemini_login_data(provider.id, options, require_scriptable_input(input)?)
-                .await
+            complete_scriptable_gemini_login_data(
+                provider.id,
+                options,
+                require_scriptable_input(input)?,
+            )
+            .await
         }
         LoginProviderTarget::Antigravity => {
             complete_scriptable_antigravity_login_data(
@@ -273,8 +285,12 @@ pub async fn complete_scriptable_login_data(
             .await
         }
         LoginProviderTarget::Google => {
-            complete_scriptable_google_login_data(provider.id, options, require_scriptable_input(input)?)
-                .await
+            complete_scriptable_google_login_data(
+                provider.id,
+                options,
+                require_scriptable_input(input)?,
+            )
+            .await
         }
         LoginProviderTarget::Copilot => {
             if input.is_some() {
@@ -391,7 +407,8 @@ pub(super) async fn complete_scriptable_claude_login(
     options: &LoginOptions,
     input: ProvidedAuthInput,
 ) -> Result<LoginFlowOutcome> {
-    let (success, outcome) = complete_scriptable_claude_login_data(provider_id, options, input).await?;
+    let (success, outcome) =
+        complete_scriptable_claude_login_data(provider_id, options, input).await?;
     emit_scriptable_auth_success(options.json, success.clone())?;
     if !options.json {
         eprintln!("Successfully logged in to Claude!");
@@ -457,7 +474,8 @@ pub(super) async fn complete_scriptable_openai_login(
     options: &LoginOptions,
     input: ProvidedAuthInput,
 ) -> Result<LoginFlowOutcome> {
-    let (success, outcome) = complete_scriptable_openai_login_data(provider_id, options, input).await?;
+    let (success, outcome) =
+        complete_scriptable_openai_login_data(provider_id, options, input).await?;
     let credentials_path = crate::storage::jcode_dir()?.join("openai-auth.json");
     emit_scriptable_auth_success(options.json, success.clone())?;
     if !options.json {
@@ -508,7 +526,8 @@ pub(super) async fn complete_scriptable_gemini_login(
     options: &LoginOptions,
     input: ProvidedAuthInput,
 ) -> Result<LoginFlowOutcome> {
-    let (success, outcome) = complete_scriptable_gemini_login_data(provider_id, options, input).await?;
+    let (success, outcome) =
+        complete_scriptable_gemini_login_data(provider_id, options, input).await?;
     emit_scriptable_auth_success(options.json, success.clone())?;
     if !options.json {
         eprintln!("Successfully logged in to Gemini!");
@@ -565,7 +584,8 @@ pub(super) async fn complete_scriptable_antigravity_login(
     options: &LoginOptions,
     input: ProvidedAuthInput,
 ) -> Result<LoginFlowOutcome> {
-    let (success, outcome) = complete_scriptable_antigravity_login_data(provider_id, options, input).await?;
+    let (success, outcome) =
+        complete_scriptable_antigravity_login_data(provider_id, options, input).await?;
     emit_scriptable_auth_success(options.json, success.clone())?;
     if !options.json {
         eprintln!("Successfully logged in to Antigravity!");
@@ -631,7 +651,8 @@ pub(super) async fn complete_scriptable_google_login(
     options: &LoginOptions,
     input: ProvidedAuthInput,
 ) -> Result<LoginFlowOutcome> {
-    let (success, outcome) = complete_scriptable_google_login_data(provider_id, options, input).await?;
+    let (success, outcome) =
+        complete_scriptable_google_login_data(provider_id, options, input).await?;
     emit_scriptable_auth_success(options.json, success.clone())?;
     if !options.json {
         eprintln!("Successfully logged in to Google/Gmail!");
@@ -682,7 +703,10 @@ pub(super) async fn complete_scriptable_copilot_login(
     let (success, outcome) = complete_scriptable_copilot_login_data(provider_id, options).await?;
     emit_scriptable_auth_success(options.json, success.clone())?;
     if !options.json {
-        eprintln!("✓ Authenticated as {} via GitHub Copilot", success.account_label.unwrap_or_default());
+        eprintln!(
+            "✓ Authenticated as {} via GitHub Copilot",
+            success.account_label.unwrap_or_default()
+        );
         eprintln!("Saved at {}", auth::copilot::saved_hosts_path().display());
     }
     Ok(outcome)
@@ -698,9 +722,7 @@ pub(super) fn pending_login_dir() -> Result<PathBuf> {
     Ok(crate::storage::jcode_dir()?.join("pending-login"))
 }
 
-pub fn require_scriptable_input(
-    input: Option<ProvidedAuthInput>,
-) -> Result<ProvidedAuthInput> {
+pub fn require_scriptable_input(input: Option<ProvidedAuthInput>) -> Result<ProvidedAuthInput> {
     input.ok_or_else(|| anyhow::anyhow!("No scriptable auth input was provided."))
 }
 
@@ -824,7 +846,14 @@ pub(super) fn emit_scriptable_auth_prompt(
     expires_at_ms: i64,
     json: bool,
 ) -> Result<()> {
-    let prompt = build_scriptable_auth_prompt(provider, auth_url, input_kind, pending_path, user_code, expires_at_ms);
+    let prompt = build_scriptable_auth_prompt(
+        provider,
+        auth_url,
+        input_kind,
+        pending_path,
+        user_code,
+        expires_at_ms,
+    );
     if json {
         println!("{}", serde_json::to_string(&prompt)?);
     } else {
@@ -833,7 +862,10 @@ pub(super) fn emit_scriptable_auth_prompt(
             eprintln!("User code: {}", user_code);
         }
         eprintln!("Auth URL printed to stdout.");
-        eprintln!("Complete this login later with `{}`.", prompt.resume_command);
+        eprintln!(
+            "Complete this login later with `{}`.",
+            prompt.resume_command
+        );
         eprintln!(
             "This pending login expires at {} ms since epoch.",
             expires_at_ms

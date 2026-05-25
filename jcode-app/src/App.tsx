@@ -5,11 +5,13 @@ import { ChatArea } from "@/components/ChatArea";
 import { CreateSessionDialog } from "@/components/CreateSessionDialog";
 import { StdinInputModal } from "@/components/StdinInputModal";
 import { SessionSwitcherDialog } from "@/components/SessionSwitcherDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SettingsPage } from "@/components/SettingsPage";
 import { ProviderConfigPage } from "@/components/ProviderConfigPage";
 import { parseSlashCommand } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
 import type { SessionInfo } from "@/types";
+import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect, useRef, useMemo } from "react";
 
 const DEFAULT_WORKSPACE_ID = "default";
@@ -27,11 +29,13 @@ function workspaceLabel(workspaceId: string): string {
 	return workspaceId.split("/").pop() || workspaceId;
 }
 
+
+
+
 export default function App() {
 	const {
 		state,
 		connect,
-		createRoleSession,
 		resumeSession,
 		switchSession,
 		sendMessage,
@@ -59,6 +63,7 @@ export default function App() {
 
 	const [activeNavTab, setActiveNavTab] = useState("chat");
 	const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
+	const [confirmRemove, setConfirmRemove] = useState<{ sessionId: string; name: string } | null>(null);
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
 	// Pre-seed createDialog in swarm mode when adding an agent to existing workspace
 	const [createDialogInitMode, setCreateDialogInitMode] = useState<
@@ -80,12 +85,18 @@ export default function App() {
 			(session) => workspaceIdFromDir(session.workingDir) === workspaceId,
 		);
 
-	const findWorkspaceTargetSession = (workspaceId: string) => {
+	const findWorkspaceTargetSession = (
+		workspaceId: string,
+		requireCoordinator = false,
+	) => {
 		const sessions = getWorkspaceSessions(workspaceId);
+		const coordinator = sessions.find(
+			(session) => session.swarmRole === "coordinator",
+		);
+		if (coordinator) return coordinator;
+		if (requireCoordinator) return undefined;
 		return (
-			sessions.find((session) => session.swarmRole === "coordinator") ||
-			sessions.find((session) => !session.roleName) ||
-			sessions[0]
+			sessions.find((session) => !session.roleName) || sessions[0]
 		);
 	};
 
@@ -257,62 +268,25 @@ export default function App() {
 		setActiveWorkspace(workspaceId);
 		setWorkingDir(workingDir);
 
-		const createdSessionIds: string[] = [];
+		let createdSessionIds: string[] = [];
 		try {
-			const coordinatorSessionId = await connect(
+			createdSessionIds = (await invoke<string[]>("begin_swarm", {
 				workingDir,
-				model || undefined,
-				true,
-				undefined,
-				profileId,
-			);
-			if (coordinatorSessionId) createdSessionIds.push(coordinatorSessionId);
-
-			// Create member sessions in parallel for speed,
-			// but collect failures so we can roll back.
-			const memberResults = await Promise.allSettled(
-				pendingSwarmMembers.map((member) =>
-					createRoleSession(
-						workingDir,
-						member.roleName,
-						member.model,
-						true,
-						member.profileId,
-					),
-				),
-			);
-
-			const failures: string[] = [];
-			for (let i = 0; i < memberResults.length; i++) {
-				const result = memberResults[i];
-				if (result.status === "fulfilled" && result.value) {
-					createdSessionIds.push(result.value);
-				} else {
-					failures.push(pendingSwarmMembers[i]?.roleName ?? `member-${i}`);
-				}
-			}
-
-			if (failures.length > 0) {
-				console.error(
-					`Swarm creation: ${failures.length} member(s) failed (${failures.join(", ")}). Rolling back ${createdSessionIds.length} session(s).`,
-				);
-				for (const sid of createdSessionIds) {
-					await deleteSession(sid).catch(() => {});
-				}
-				alert(
-					`Failed to create ${failures.length} team member(s): ${failures.join(", ")}. All sessions rolled back.`,
-				);
-				return;
-			}
+				coordinatorModel: model || null,
+				coordinatorProfileId: profileId || null,
+				memoryEnabled: true,
+				members: pendingSwarmMembers.map((m) => ({
+					roleName: m.roleName,
+					model: m.model || null,
+					profileId: m.profileId || null,
+				})),
+			})) ?? [];
 
 			if (createdSessionIds.length > 0) {
 				switchSession(createdSessionIds[0]);
 			}
 		} catch (e) {
 			console.error("Swarm creation failed:", e);
-			for (const sid of createdSessionIds) {
-				await deleteSession(sid).catch(() => {});
-			}
 			alert(`Failed to create agent team: ${String(e)}`);
 			return;
 		}
@@ -344,16 +318,19 @@ export default function App() {
 	};
 
 	/** Remove an individual agent session from the workspace after confirmation. */
-	const handleRemoveAgentSession = async (sessionId: string) => {
+	const handleRemoveAgentSession = (sessionId: string) => {
 		const session = state.sessions.find((s) => s.sessionId === sessionId);
 		const name = session?.roleName || session?.title || sessionId.slice(0, 8);
-		const confirmed = window.confirm(
-			`Remove agent "${name}" from this workspace?`,
-		);
-		if (!confirmed) return;
+		setConfirmRemove({ sessionId, name });
+	};
+
+	const handleConfirmRemove = async () => {
+		if (!confirmRemove) return;
+		const { sessionId } = confirmRemove;
+		setConfirmRemove(null);
 		await deleteSession(sessionId);
-		// If we were viewing that DM, switch back to workspace thread
 		if (selectedConvId === sessionId) {
+			const session = state.sessions.find((s) => s.sessionId === sessionId);
 			const wsid = workspaceIdFromDir(session?.workingDir);
 			void openWorkspaceConversation(wsid);
 		}
@@ -363,12 +340,27 @@ export default function App() {
 	const resolveTargetSessionId = () => {
 		if (selectedConvId?.startsWith("workspace:")) {
 			const workspaceId = selectedConvId.slice("workspace:".length);
-			return findWorkspaceTargetSession(workspaceId)?.sessionId;
+			return findWorkspaceTargetSession(
+				workspaceId,
+				state.workspaceModes[workspaceId] === "swarm",
+			)?.sessionId;
 		}
-		if (selectedConvId) return selectedConvId;
+		if (selectedConvId) {
+			const session = state.sessions.find(
+				(s) => s.sessionId === selectedConvId,
+			);
+			const wsId = workspaceIdFromDir(session?.workingDir);
+			if (state.workspaceModes[wsId] === "swarm") {
+				return findWorkspaceTargetSession(wsId, true)?.sessionId;
+			}
+			return selectedConvId;
+		}
 		return (
 			state.sessionId ||
-			findWorkspaceTargetSession(currentWorkspaceId)?.sessionId
+			findWorkspaceTargetSession(
+				currentWorkspaceId,
+				state.workspaceModes[currentWorkspaceId] === "swarm",
+			)?.sessionId
 		);
 	};
 
@@ -447,16 +439,23 @@ export default function App() {
 		}
 		// ── End slash command interceptor ─────────────────────────────────────
 
-		// @AgentName routing: in workspace thread, @mention is preserved and sent
-		// through the coordinator so it stays aware of all delegations. The
-		// coordinator decides whether to use swarm tools (assign_task / dm) to
-		// forward the request. Direct DM bypass was removed to keep coordinator
-		// as the single source of truth for swarm state.
-		if (targetSessionId && selectedConvId?.startsWith("workspace:")) {
-			const mentionMatch = content.match(/^@(\w+)(?:\s|$)/);
+		// @AgentName routing: in swarm-mode workspace, @mention is preserved
+		// and sent through the coordinator so it stays aware of all delegations.
+		// The coordinator decides whether to use swarm tools (assign_task / dm)
+		// to forward the request. Direct DM bypass is blocked.
+		const currentWsId = currentWorkspaceId;
+		if (
+			targetSessionId &&
+			state.workspaceModes[currentWsId] === "swarm"
+		) {
+			// Allow hyphens, underscores and alphanumerics in role names
+			const mentionMatch = content.match(
+				/^@([a-zA-Z0-9_-]+)(?:\s|$)/,
+			);
 			if (mentionMatch) {
 				const mentionedName = mentionMatch[1].toLowerCase();
-				const agentSession = workspaceSessions.find(
+				const wsSessions = getWorkspaceSessions(currentWsId);
+				const agentSession = wsSessions.find(
 					(s) => s.roleName?.toLowerCase() === mentionedName,
 				);
 				if (agentSession) {
@@ -464,8 +463,8 @@ export default function App() {
 					// delegate to it, but do NOT switch targetSessionId — the
 					// message still goes to coordinator.
 					if (
-						state.sessionData[agentSession.sessionId]?.connectionPhase !==
-						"connected"
+						state.sessionData[agentSession.sessionId]
+							?.connectionPhase !== "connected"
 					) {
 						await resumeSession(
 							agentSession.sessionId,
@@ -769,6 +768,15 @@ export default function App() {
 				activeSessionId={state.sessionId}
 				onOpenChange={setSessionSwitcherOpen}
 				onSelectSession={handleResume}
+			/>
+			<ConfirmDialog
+				open={confirmRemove !== null}
+				title="Remove Agent"
+				message={`Remove agent "${confirmRemove?.name}" from this workspace?`}
+				confirmLabel="Remove"
+				variant="destructive"
+				onConfirm={handleConfirmRemove}
+				onCancel={() => setConfirmRemove(null)}
 			/>
 		</div>
 	);
