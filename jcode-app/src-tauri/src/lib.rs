@@ -744,10 +744,10 @@ fn plan_status_rank(status: &str, blocked: bool) -> u8 {
 }
 
 fn summarize_swarm_plan_items(
-    swarm_id: &str,
-    version: u64,
-    participants: Vec<String>,
-    reason: Option<String>,
+    _swarm_id: &str,
+    _version: u64,
+    _participants: Vec<String>,
+    _reason: Option<String>,
     items: Vec<serde_json::Value>,
     summary_override: Option<&jcode::protocol::PlanGraphStatus>,
 ) -> (usize, usize, usize, usize, Vec<String>, Vec<serde_json::Value>) {
@@ -867,43 +867,6 @@ fn summarize_swarm_plan_items(
         .unwrap_or_else(|| next_ready_ids.into_iter().take(4).collect::<Vec<_>>());
 
     (ready, active, blocked, completed, next, items_preview)
-}
-
-fn summarize_swarm_proposal(
-    swarm_id: &str,
-    proposer_session: &str,
-    proposer_name: Option<String>,
-    summary: String,
-    proposal_key: String,
-    items: Vec<serde_json::Value>,
-) -> serde_json::Value {
-    let item_count = items.len();
-    let items_preview = items
-        .into_iter()
-        .map(|item| {
-            serde_json::json!({
-                "id": item.get("id").and_then(Value::as_str).unwrap_or("task"),
-                "content": truncate_chars(item.get("content").and_then(Value::as_str).unwrap_or("untitled task"), 96),
-                "status": item.get("status").and_then(Value::as_str).unwrap_or("queued"),
-                "priority": item.get("priority").and_then(Value::as_str).unwrap_or("medium"),
-                "assigned_to": item.get("assigned_to").and_then(Value::as_str),
-                "subsystem": item.get("subsystem").and_then(Value::as_str),
-                "blocked_by": item.get("blocked_by").and_then(Value::as_array).cloned().unwrap_or_default(),
-                "file_scope": item.get("file_scope").and_then(Value::as_array).cloned().unwrap_or_default(),
-            })
-        })
-        .take(8)
-        .collect::<Vec<_>>();
-
-    serde_json::json!({
-        "swarm_id": swarm_id,
-        "proposer_session": proposer_session,
-        "proposer_name": proposer_name,
-        "summary": summary,
-        "proposal_key": proposal_key,
-        "item_count": item_count,
-        "items_preview": items_preview,
-    })
 }
 
 fn latest_swarm_plan_summary(value: &Value) -> Option<serde_json::Value> {
