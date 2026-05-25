@@ -1382,6 +1382,7 @@ pub async fn run_set_reasoning_effort_command(effort: &str) -> Result<()> {
     send_simple_request(crate::protocol::Request::SetReasoningEffort {
         id: 0,
         effort: effort.to_string(),
+        target_session_id: None,
     })
     .await
 }
