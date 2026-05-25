@@ -539,6 +539,8 @@ export interface PerSessionData {
 	memoryEnabled: boolean;
 	statusDetail: string | null;
 	queuedDrafts: QueuedDraft[];
+	/** Index of the currently streaming assistant message per roleSessionId. */
+	streamingIndexByRole: Record<string, number>;
 }
 
 export interface SessionState {

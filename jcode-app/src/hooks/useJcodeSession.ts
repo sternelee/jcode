@@ -351,6 +351,7 @@ function getOrCreateSessionData(
 		memoryEnabled: true,
 		statusDetail: null,
 		queuedDrafts: [],
+		streamingIndexByRole: {},
 	};
 }
 
@@ -391,6 +392,35 @@ function updateSessionData(
 				}
 			: {}),
 	};
+}
+
+function findStreamingMessageIndex(
+	data: import("@/types").PerSessionData,
+	roleSessionId?: string,
+): number {
+	if (roleSessionId !== undefined && roleSessionId in data.streamingIndexByRole) {
+		const idx = data.streamingIndexByRole[roleSessionId];
+		if (idx >= 0 && idx < data.messages.length) {
+			const m = data.messages[idx];
+			if (
+				m?.role === "assistant" &&
+				m?.isStreaming &&
+				m?.roleSessionId === roleSessionId
+			) {
+				return idx;
+			}
+		}
+	}
+	// Fallback: scan only the last 5 messages (always fast)
+	for (let i = data.messages.length - 1; i >= Math.max(0, data.messages.length - 5); i--) {
+		const m = data.messages[i];
+		if (m?.role === "assistant" && m?.isStreaming) {
+			if (!roleSessionId || m.roleSessionId === roleSessionId) {
+				return i;
+			}
+		}
+	}
+	return -1;
 }
 
 function sessionReducer(state: SessionState, action: Action): SessionState {
@@ -555,29 +585,11 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 		case "APPEND_TEXT": {
 			return updateSessionData(state, action.sessionId, (data) => {
 				const ms = [...data.messages];
-				let targetIdx = ms.length - 1;
-				if (action.roleSessionId) {
-					for (let i = ms.length - 1; i >= 0; i--) {
-						if (
-							ms[i]?.role === "assistant" &&
-							ms[i]?.isStreaming &&
-							ms[i]?.roleSessionId === action.roleSessionId
-						) {
-							targetIdx = i;
-							break;
-						}
-					}
-				}
-				const l = ms[targetIdx];
-				if (
-					l &&
-					l.role === "assistant" &&
-					l.isStreaming &&
-					(!action.roleSessionId || l.roleSessionId === action.roleSessionId)
-				)
-					ms[targetIdx] = { ...l, content: l.content + action.text };
-				else
-					ms.push({
+				const targetIdx = findStreamingMessageIndex(data, action.roleSessionId);
+				if (targetIdx !== -1) {
+					ms[targetIdx] = { ...ms[targetIdx], content: ms[targetIdx].content + action.text };
+				} else {
+					const newMsg: ChatMessage = {
 						id: nextMsgId(),
 						role: "assistant",
 						content: action.text,
@@ -586,56 +598,29 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 						roleSessionId: action.roleSessionId,
 						roleName: action.roleName,
 						timestamp: Date.now(),
-					});
+					};
+					ms.push(newMsg);
+					data.streamingIndexByRole[action.roleSessionId ?? ""] = ms.length - 1;
+				}
 				return { ...data, messages: ms };
 			});
 		}
 		case "REPLACE_TEXT": {
 			return updateSessionData(state, action.sessionId, (data) => {
 				const ms = [...data.messages];
-				let targetIdx = ms.length - 1;
-				if (action.roleSessionId) {
-					for (let i = ms.length - 1; i >= 0; i--) {
-						if (
-							ms[i]?.role === "assistant" &&
-							ms[i]?.roleSessionId === action.roleSessionId
-						) {
-							targetIdx = i;
-							break;
-						}
-					}
+				const targetIdx = findStreamingMessageIndex(data, action.roleSessionId);
+				if (targetIdx !== -1) {
+					ms[targetIdx] = { ...ms[targetIdx], content: action.text };
 				}
-				const l = ms[targetIdx];
-				if (
-					l &&
-					l.role === "assistant" &&
-					(!action.roleSessionId || l.roleSessionId === action.roleSessionId)
-				)
-					ms[targetIdx] = { ...l, content: action.text };
 				return { ...data, messages: ms };
 			});
 		}
 		case "TOOL_START": {
 			return updateSessionData(state, action.sessionId, (data) => {
 				const ms = [...data.messages];
-				let targetIdx = ms.length - 1;
-				if (action.roleSessionId) {
-					for (let i = ms.length - 1; i >= 0; i--) {
-						if (
-							ms[i]?.role === "assistant" &&
-							ms[i]?.roleSessionId === action.roleSessionId
-						) {
-							targetIdx = i;
-							break;
-						}
-					}
-				}
-				const l = ms[targetIdx];
-				if (
-					l &&
-					l.role === "assistant" &&
-					(!action.roleSessionId || l.roleSessionId === action.roleSessionId)
-				) {
+				const targetIdx = findStreamingMessageIndex(data, action.roleSessionId);
+				if (targetIdx !== -1) {
+					const l = ms[targetIdx];
 					const t: ToolExecution = {
 						id: action.id,
 						name: action.name,
@@ -650,24 +635,9 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 		case "TOOL_INPUT": {
 			return updateSessionData(state, action.sessionId, (data) => {
 				const ms = [...data.messages];
-				let targetIdx = ms.length - 1;
-				if (action.roleSessionId) {
-					for (let i = ms.length - 1; i >= 0; i--) {
-						if (
-							ms[i]?.role === "assistant" &&
-							ms[i]?.roleSessionId === action.roleSessionId
-						) {
-							targetIdx = i;
-							break;
-						}
-					}
-				}
-				const l = ms[targetIdx];
-				if (
-					l &&
-					l.role === "assistant" &&
-					(!action.roleSessionId || l.roleSessionId === action.roleSessionId)
-				) {
+				const targetIdx = findStreamingMessageIndex(data, action.roleSessionId);
+				if (targetIdx !== -1) {
+					const l = ms[targetIdx];
 					const tls = [...l.toolExecutions];
 					const c = tls[tls.length - 1];
 					if (c && c.status !== "done" && c.status !== "error")
@@ -684,24 +654,9 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 		case "TOOL_EXEC": {
 			return updateSessionData(state, action.sessionId, (data) => {
 				const ms = [...data.messages];
-				let targetIdx = ms.length - 1;
-				if (action.roleSessionId) {
-					for (let i = ms.length - 1; i >= 0; i--) {
-						if (
-							ms[i]?.role === "assistant" &&
-							ms[i]?.roleSessionId === action.roleSessionId
-						) {
-							targetIdx = i;
-							break;
-						}
-					}
-				}
-				const l = ms[targetIdx];
-				if (
-					l &&
-					l.role === "assistant" &&
-					(!action.roleSessionId || l.roleSessionId === action.roleSessionId)
-				) {
+				const targetIdx = findStreamingMessageIndex(data, action.roleSessionId);
+				if (targetIdx !== -1) {
+					const l = ms[targetIdx];
 					const tls = [...l.toolExecutions];
 					const i = tls.findIndex((t) => t.id === action.id);
 					if (i !== -1)
@@ -714,24 +669,9 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 		case "TOOL_DONE": {
 			return updateSessionData(state, action.sessionId, (data) => {
 				const ms = [...data.messages];
-				let targetIdx = ms.length - 1;
-				if (action.roleSessionId) {
-					for (let i = ms.length - 1; i >= 0; i--) {
-						if (
-							ms[i]?.role === "assistant" &&
-							ms[i]?.roleSessionId === action.roleSessionId
-						) {
-							targetIdx = i;
-							break;
-						}
-					}
-				}
-				const l = ms[targetIdx];
-				if (
-					l &&
-					l.role === "assistant" &&
-					(!action.roleSessionId || l.roleSessionId === action.roleSessionId)
-				) {
+				const targetIdx = findStreamingMessageIndex(data, action.roleSessionId);
+				if (targetIdx !== -1) {
+					const l = ms[targetIdx];
 					const tls = [...l.toolExecutions];
 					const i = tls.findIndex((t) => t.id === action.id);
 					if (i !== -1)
@@ -749,26 +689,10 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 		case "SET_TOKEN_USAGE": {
 			return updateSessionData(state, action.sessionId, (data) => {
 				const ms = [...data.messages];
-				let targetIdx = ms.length - 1;
-				if (action.roleSessionId) {
-					for (let i = ms.length - 1; i >= 0; i--) {
-						if (
-							ms[i]?.role === "assistant" &&
-							ms[i]?.roleSessionId === action.roleSessionId
-						) {
-							targetIdx = i;
-							break;
-						}
-					}
-				}
-				const l = ms[targetIdx];
-				if (
-					l &&
-					l.role === "assistant" &&
-					(!action.roleSessionId || l.roleSessionId === action.roleSessionId)
-				)
+				const targetIdx = findStreamingMessageIndex(data, action.roleSessionId);
+				if (targetIdx !== -1) {
 					ms[targetIdx] = {
-						...l,
+						...ms[targetIdx],
 						tokenUsage: {
 							input: action.input,
 							output: action.output,
@@ -776,6 +700,7 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 							cacheCreationInput: action.cacheCreationInput,
 						},
 					};
+				}
 				return {
 					...data,
 					totalTokens: [action.input, action.output],
@@ -786,27 +711,10 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 		case "DONE": {
 			return updateSessionData(state, action.sessionId, (data) => {
 				const ms = [...data.messages];
-				let targetIdx = ms.length - 1;
-				if (action.roleSessionId) {
-					for (let i = ms.length - 1; i >= 0; i--) {
-						if (
-							ms[i]?.role === "assistant" &&
-							ms[i]?.isStreaming &&
-							ms[i]?.roleSessionId === action.roleSessionId
-						) {
-							targetIdx = i;
-							break;
-						}
-					}
+				const targetIdx = findStreamingMessageIndex(data, action.roleSessionId);
+				if (targetIdx !== -1) {
+					ms[targetIdx] = { ...ms[targetIdx], isStreaming: false };
 				}
-				const l = ms[targetIdx];
-				if (
-					l &&
-					l.role === "assistant" &&
-					(!action.roleSessionId || l.roleSessionId === action.roleSessionId)
-				)
-					ms[targetIdx] = { ...l, isStreaming: false };
-				// Only mark isProcessing=false if no other streaming messages exist
 				const stillStreaming = ms.some(
 					(m) => m.role === "assistant" && m.isStreaming,
 				);
@@ -816,27 +724,10 @@ function sessionReducer(state: SessionState, action: Action): SessionState {
 		case "INTERRUPTED": {
 			return updateSessionData(state, action.sessionId, (data) => {
 				const ms = [...data.messages];
-				let targetIdx = ms.length - 1;
-				if (action.roleSessionId) {
-					for (let i = ms.length - 1; i >= 0; i--) {
-						if (
-							ms[i]?.role === "assistant" &&
-							ms[i]?.isStreaming &&
-							ms[i]?.roleSessionId === action.roleSessionId
-						) {
-							targetIdx = i;
-							break;
-						}
-					}
+				const targetIdx = findStreamingMessageIndex(data, action.roleSessionId);
+				if (targetIdx !== -1) {
+					ms[targetIdx] = { ...ms[targetIdx], isStreaming: false };
 				}
-				const l = ms[targetIdx];
-				if (
-					l &&
-					l.role === "assistant" &&
-					l.isStreaming &&
-					(!action.roleSessionId || l.roleSessionId === action.roleSessionId)
-				)
-					ms[targetIdx] = { ...l, isStreaming: false };
 				const stillStreaming = ms.some(
 					(m) => m.role === "assistant" && m.isStreaming,
 				);
