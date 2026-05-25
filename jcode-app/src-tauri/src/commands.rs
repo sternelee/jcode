@@ -4,11 +4,98 @@ use jcode::provider::MultiProvider;
 use jcode::session::Session;
 use jcode::tool::Registry;
 use jcode::tool::StdinInputRequest;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
+
+/// Typed representation of a swarm member's live status,
+/// replacing the raw serde_json::Value HashMap.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwarmMemberStatus {
+    pub status: String,
+    pub detail: Option<String>,
+    pub role: Option<String>,
+    pub peer_count: usize,
+}
+
+/// Typed representation of a swarm plan snapshot,
+/// replacing the raw serde_json::Value HashMap.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwarmPlanSnapshot {
+    pub swarm_id: String,
+    pub version: u64,
+    pub items: Vec<serde_json::Value>,
+    pub participants: Vec<String>,
+    pub reason: Option<String>,
+    pub ready_count: usize,
+    pub active_count: usize,
+    pub blocked_count: usize,
+    pub completed_count: usize,
+    pub next_ready_ids: Vec<String>,
+    pub preview_items: Vec<serde_json::Value>,
+}
+
+/// Typed representation of a swarm plan proposal,
+/// replacing the raw serde_json::Value HashMap.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SwarmProposalSnapshot {
+    pub swarm_id: String,
+    pub proposer_session: String,
+    pub proposer_name: Option<String>,
+    pub summary: String,
+    pub proposal_key: String,
+    pub items: Vec<serde_json::Value>,
+}
+
+/// Swarm state container with typed data and consistency guarantees.
+/// Replaces three independent HashMap<String, serde_json::Value> fields.
+pub struct SwarmState {
+    /// session_id -> member status
+    pub members: HashMap<String, SwarmMemberStatus>,
+    /// session_id -> plan snapshot (written for all participants)
+    pub plans: HashMap<String, SwarmPlanSnapshot>,
+    /// session_id -> proposal snapshot
+    pub proposals: HashMap<String, SwarmProposalSnapshot>,
+}
+
+impl SwarmState {
+    pub fn new() -> Self {
+        Self {
+            members: HashMap::new(),
+            plans: HashMap::new(),
+            proposals: HashMap::new(),
+        }
+    }
+
+    /// Insert a plan for all participating sessions.
+    /// Also removes any stale proposals for those sessions.
+    pub fn apply_plan(&mut self, plan: SwarmPlanSnapshot) {
+        for participant_id in &plan.participants {
+            self.proposals.remove(participant_id);
+            self.plans
+                .insert(participant_id.clone(), plan.clone());
+        }
+    }
+
+    /// Insert a proposal (scoped to a single session).
+    pub fn apply_proposal(
+        &mut self,
+        session_id: String,
+        proposal: SwarmProposalSnapshot,
+    ) {
+        self.proposals.insert(session_id, proposal);
+    }
+
+    /// Remove all state for a session that is shutting down.
+    pub fn remove_session(&mut self, session_id: &str) {
+        self.members.remove(session_id);
+        self.plans.remove(session_id);
+        self.proposals.remove(session_id);
+    }
+}
 
 pub struct SessionRuntime {
     pub session_id: String,
@@ -45,9 +132,7 @@ pub struct AppState {
     pub active_session_id: Arc<Mutex<Option<String>>>,
     pub pending_stdin:
         Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
-    pub live_swarm_members: Arc<Mutex<HashMap<String, serde_json::Value>>>,
-    pub live_swarm_plans: Arc<Mutex<HashMap<String, serde_json::Value>>>,
-    pub live_swarm_proposals: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    pub swarm: Arc<Mutex<SwarmState>>,
     /// Cached MultiProvider to avoid re-creating on every begin_session.
     /// Initialized lazily on first use; shared via Arc so cloning is cheap.
     pub provider: tokio::sync::OnceCell<Arc<MultiProvider>>,
@@ -65,9 +150,7 @@ impl AppState {
             runtimes: Arc::new(Mutex::new(HashMap::new())),
             active_session_id: Arc::new(Mutex::new(None)),
             pending_stdin: Arc::new(Mutex::new(std::collections::HashMap::new())),
-            live_swarm_members: Arc::new(Mutex::new(HashMap::new())),
-            live_swarm_plans: Arc::new(Mutex::new(HashMap::new())),
-            live_swarm_proposals: Arc::new(Mutex::new(HashMap::new())),
+            swarm: Arc::new(Mutex::new(SwarmState::new())),
             provider: tokio::sync::OnceCell::new(),
         }
     }

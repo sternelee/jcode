@@ -750,7 +750,7 @@ fn summarize_swarm_plan_items(
     reason: Option<String>,
     items: Vec<serde_json::Value>,
     summary_override: Option<&jcode::protocol::PlanGraphStatus>,
-) -> serde_json::Value {
+) -> (usize, usize, usize, usize, Vec<String>, Vec<serde_json::Value>) {
     let completed_ids = items
         .iter()
         .filter_map(|item| {
@@ -858,22 +858,15 @@ fn summarize_swarm_plan_items(
         .map(|(_, _, item)| item)
         .collect::<Vec<_>>();
 
-    serde_json::json!({
-        "swarm_id": swarm_id,
-        "version": version,
-        "item_count": summary_override.map_or(items.len(), |summary| summary.item_count),
-        "participant_ids": participants,
-        "participant_count": participants.len(),
-        "reason": reason,
-        "ready_count": summary_override.map_or(ready_count, |summary| summary.ready_ids.len()),
-        "active_count": summary_override.map_or(active_count, |summary| summary.active_ids.len()),
-        "blocked_count": summary_override.map_or(blocked_count, |summary| summary.blocked_ids.len()),
-        "completed_count": summary_override.map_or(completed_count, |summary| summary.completed_ids.len()),
-        "next_ready_ids": summary_override
-            .map(|summary| summary.next_ready_ids.iter().take(4).cloned().collect::<Vec<_>>())
-            .unwrap_or_else(|| next_ready_ids.into_iter().take(4).collect::<Vec<_>>()),
-        "items_preview": items_preview,
-    })
+    let ready = summary_override.map_or(ready_count, |summary| summary.ready_ids.len());
+    let active = summary_override.map_or(active_count, |summary| summary.active_ids.len());
+    let blocked = summary_override.map_or(blocked_count, |summary| summary.blocked_ids.len());
+    let completed = summary_override.map_or(completed_count, |summary| summary.completed_ids.len());
+    let next = summary_override
+        .map(|summary| summary.next_ready_ids.iter().take(4).cloned().collect::<Vec<_>>())
+        .unwrap_or_else(|| next_ready_ids.into_iter().take(4).collect::<Vec<_>>());
+
+    (ready, active, blocked, completed, next, items_preview)
 }
 
 fn summarize_swarm_proposal(
@@ -950,14 +943,29 @@ fn latest_swarm_plan_summary(value: &Value) -> Option<serde_json::Value> {
             .cloned()
             .unwrap_or_default();
 
-        return Some(summarize_swarm_plan_items(
-            &swarm_id,
-            version,
-            participants,
-            reason,
-            items,
-            None,
-        ));
+        let (ready_count, active_count, blocked_count, completed_count, next_ready_ids, items_preview) =
+            summarize_swarm_plan_items(
+                &swarm_id,
+                version,
+                participants.clone(),
+                reason.clone(),
+                items.clone(),
+                None,
+            );
+        return Some(serde_json::json!({
+            "swarm_id": swarm_id,
+            "version": version,
+            "item_count": items.len(),
+            "participant_ids": participants,
+            "participant_count": participants.len(),
+            "reason": reason,
+            "ready_count": ready_count,
+            "active_count": active_count,
+            "blocked_count": blocked_count,
+            "completed_count": completed_count,
+            "next_ready_ids": next_ready_ids,
+            "items_preview": items_preview,
+        }));
     }
     None
 }
@@ -1599,18 +1607,14 @@ async fn send_message(
     }
 
     let handle = app_handle.clone();
-    let live_swarm_members = state.live_swarm_members.clone();
-    let live_swarm_plans = state.live_swarm_plans.clone();
-    let live_swarm_proposals = state.live_swarm_proposals.clone();
+    let swarm = state.swarm.clone();
     let session_id_for_spawn = session_id.clone();
     tokio::spawn(async move {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ServerEvent>();
         let runtime_for_reader = runtime.clone();
         let rh = handle.clone();
         let sid = session_id_for_spawn.clone();
-        let live_swarm_members_for_reader = live_swarm_members.clone();
-        let live_swarm_plans_for_reader = live_swarm_plans.clone();
-        let live_swarm_proposals_for_reader = live_swarm_proposals.clone();
+        let swarm_for_reader = swarm.clone();
         let reader = tokio::spawn(async move {
             while let Some(event) = rx.recv().await {
                 match &event {
@@ -1637,19 +1641,19 @@ async fn send_message(
                     }
                     ServerEvent::SwarmStatus { members } => {
                         let peer_count = members.len();
-                        let mut guard = live_swarm_members_for_reader.lock().await;
+                        let mut guard = swarm_for_reader.lock().await;
                         for member in members {
                             if member.session_id == runtime_for_reader.session_id {
                                 *runtime_for_reader.status_detail.lock().await = member.detail.clone();
                             }
-                            guard.insert(
+                            guard.members.insert(
                                 member.session_id.clone(),
-                                serde_json::json!({
-                                    "status": member.status,
-                                    "detail": member.detail,
-                                    "role": member.role,
-                                    "peer_count": peer_count,
-                                }),
+                                crate::commands::SwarmMemberStatus {
+                                    status: member.status.clone(),
+                                    detail: member.detail.clone(),
+                                    role: member.role.clone(),
+                                    peer_count,
+                                },
                             );
                         }
                     }
@@ -1676,27 +1680,44 @@ async fn send_message(
                                 })
                             })
                             .collect::<Vec<_>>();
-                        let plan_summary = summarize_swarm_plan_items(
-                            swarm_id,
-                            *version,
-                            participants.clone(),
-                            reason.clone(),
-                            item_values,
-                            summary.as_ref(),
-                        );
+                        let (ready_count, active_count, blocked_count, completed_count, next_ready_ids, preview_items) =
+                            summarize_swarm_plan_items(
+                                swarm_id,
+                                *version,
+                                participants.clone(),
+                                reason.clone(),
+                                item_values,
+                                summary.as_ref(),
+                            );
                         let participant_ids = if participants.is_empty() {
                             vec![runtime_for_reader.session_id.clone()]
                         } else {
                             participants.clone()
                         };
-                        let mut guard = live_swarm_plans_for_reader.lock().await;
-                        for participant_id in &participant_ids {
-                            guard.insert(participant_id.clone(), plan_summary.clone());
-                        }
-                        let mut proposal_guard = live_swarm_proposals_for_reader.lock().await;
-                        for participant_id in participant_ids {
-                            proposal_guard.remove(&participant_id);
-                        }
+                        swarm_for_reader.lock().await.apply_plan(
+                            crate::commands::SwarmPlanSnapshot {
+                                swarm_id: swarm_id.clone(),
+                                version: *version,
+                                items: items.iter().map(|item| serde_json::json!({
+                                    "id": item.id,
+                                    "content": item.content,
+                                    "status": item.status,
+                                    "priority": item.priority,
+                                    "subsystem": item.subsystem,
+                                    "file_scope": item.file_scope,
+                                    "blocked_by": item.blocked_by,
+                                    "assigned_to": item.assigned_to,
+                                })).collect(),
+                                participants: participant_ids.clone(),
+                                reason: reason.clone(),
+                                ready_count,
+                                active_count,
+                                blocked_count,
+                                completed_count,
+                                next_ready_ids,
+                                preview_items,
+                            },
+                        );
                     }
                     ServerEvent::SwarmPlanProposal {
                         swarm_id,
@@ -1706,32 +1727,26 @@ async fn send_message(
                         summary,
                         proposal_key,
                     } => {
-                        let proposal_summary = summarize_swarm_proposal(
-                            swarm_id,
-                            proposer_session,
-                            proposer_name.clone(),
-                            summary.clone(),
-                            proposal_key.clone(),
-                            items
-                                .iter()
-                                .map(|item| {
-                                    serde_json::json!({
-                                        "id": item.id,
-                                        "content": item.content,
-                                        "status": item.status,
-                                        "priority": item.priority,
-                                        "subsystem": item.subsystem,
-                                        "file_scope": item.file_scope,
-                                        "blocked_by": item.blocked_by,
-                                        "assigned_to": item.assigned_to,
-                                    })
-                                })
-                                .collect::<Vec<_>>(),
+                        swarm_for_reader.lock().await.apply_proposal(
+                            runtime_for_reader.session_id.clone(),
+                            crate::commands::SwarmProposalSnapshot {
+                                swarm_id: swarm_id.clone(),
+                                proposer_session: proposer_session.clone(),
+                                proposer_name: proposer_name.clone(),
+                                summary: summary.clone(),
+                                proposal_key: proposal_key.clone(),
+                                items: items.iter().map(|item| serde_json::json!({
+                                    "id": item.id,
+                                    "content": item.content,
+                                    "status": item.status,
+                                    "priority": item.priority,
+                                    "subsystem": item.subsystem,
+                                    "file_scope": item.file_scope,
+                                    "blocked_by": item.blocked_by,
+                                    "assigned_to": item.assigned_to,
+                                })).collect(),
+                            },
                         );
-                        live_swarm_proposals_for_reader
-                            .lock()
-                            .await
-                            .insert(runtime_for_reader.session_id.clone(), proposal_summary);
                     }
                     _ => {}
                 }
@@ -2491,14 +2506,7 @@ async fn delete_session(state: State<'_, AppState>, session_id: String) -> Resul
     }
 
     state.runtimes.lock().await.remove(&session_id);
-    state.live_swarm_members.lock().await.remove(&session_id);
-    state.live_swarm_plans.lock().await.remove(&session_id);
-    state.live_swarm_proposals.lock().await.retain(|_, proposal| {
-        proposal
-            .get("proposer_session")
-            .and_then(Value::as_str)
-            != Some(session_id.as_str())
-    });
+    state.swarm.lock().await.remove_session(&session_id);
 
     delete_session_artifacts(&session_id)
 }
@@ -2584,21 +2592,11 @@ async fn delete_workspace_sessions(
         }
     }
     {
-        let mut members = state.live_swarm_members.lock().await;
+        let mut swarm = state.swarm.lock().await;
         for session_id in &deleted_ids {
-            members.remove(session_id);
+            swarm.remove_session(session_id);
         }
     }
-    {
-        let mut plans = state.live_swarm_plans.lock().await;
-        for session_id in &deleted_ids {
-            plans.remove(session_id);
-        }
-    }
-    state.live_swarm_proposals.lock().await.retain(|_, proposal| {
-        let proposer = proposal.get("proposer_session").and_then(Value::as_str);
-        !deleted_ids.iter().any(|session_id| Some(session_id.as_str()) == proposer)
-    });
 
     Ok(serde_json::json!({
         "deleted_count": deleted_ids.len(),
@@ -2686,9 +2684,10 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
     candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.modified));
 
     let live_runtimes = state.runtimes.lock().await.clone();
-    let live_swarm_members = state.live_swarm_members.lock().await.clone();
-    let live_swarm_plans = state.live_swarm_plans.lock().await.clone();
-    let live_swarm_proposals = state.live_swarm_proposals.lock().await.clone();
+    let swarm_state = state.swarm.lock().await;
+    let live_swarm_members = &swarm_state.members;
+    let live_swarm_plans = &swarm_state.plans;
+    let live_swarm_proposals = &swarm_state.proposals;
     let mut live_workspace_counts: HashMap<String, usize> = HashMap::new();
     let mut workspace_coordinators: HashMap<String, String> = HashMap::new();
     let mut workspace_ordinals: HashMap<String, u64> = HashMap::new();
@@ -2723,52 +2722,65 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
                         .unwrap_or("default")
                         .to_string();
                     if let Some(member) = live_swarm_members.get(&session_id) {
-                        if let Some(status) = member.get("status").and_then(Value::as_str) {
-                            summary["status"] = serde_json::json!(status);
-                            if let Some(model) = summary.get("model").and_then(Value::as_str) {
-                                summary["subtitle"] = serde_json::json!(format!("{status} · {model}"));
+                        summary["status"] = serde_json::json!(member.status);
+                        if let Some(model) = summary.get("model").and_then(Value::as_str) {
+                            summary["subtitle"] = serde_json::json!(format!("{} · {}", member.status, model));
+                        }
+                        if let Some(ref detail) = member.detail {
+                            if !detail.is_empty() {
+                                let current_detail = summary
+                                    .get("detail")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default();
+                                summary["detail"] = serde_json::json!(if current_detail.contains(detail.as_str()) {
+                                    current_detail.to_string()
+                                } else if current_detail.is_empty() {
+                                    detail.clone()
+                                } else {
+                                    format!("{current_detail} · {detail}")
+                                });
                             }
                         }
-                        if let Some(detail) = member.get("detail").and_then(Value::as_str).filter(|value| !value.trim().is_empty()) {
-                            let current_detail = summary
-                                .get("detail")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default();
-                            summary["detail"] = serde_json::json!(if current_detail.contains(detail) {
-                                current_detail.to_string()
-                            } else if current_detail.is_empty() {
-                                detail.to_string()
-                            } else {
-                                format!("{current_detail} · {detail}")
-                            });
-                        }
-                        if let Some(role) = member.get("role").and_then(Value::as_str) {
+                        if let Some(ref role) = member.role {
                             summary["swarm_role"] = serde_json::json!(role);
                         }
-                        if let Some(peer_count) = member.get("peer_count").and_then(Value::as_u64) {
-                            if peer_count >= 2 {
-                                summary["swarm_enabled"] = serde_json::json!(true);
-                                summary["swarm_peer_count"] = serde_json::json!(peer_count);
-                            }
+                        if member.peer_count >= 2 {
+                            summary["swarm_enabled"] = serde_json::json!(true);
+                            summary["swarm_peer_count"] = serde_json::json!(member.peer_count);
                         }
                     }
                     if let Some(plan) = live_swarm_plans.get(&session_id) {
-                        if let Some(swarm_id) = plan.get("swarm_id").and_then(Value::as_str) {
-                            summary["swarm_id"] = serde_json::json!(swarm_id);
+                        summary["swarm_id"] = serde_json::json!(plan.swarm_id);
+                        if plan.participants.len() >= 2 {
+                            summary["swarm_enabled"] = serde_json::json!(true);
+                            summary["swarm_peer_count"] = serde_json::json!(plan.participants.len());
                         }
-                        if let Some(participant_count) = plan.get("participant_count").and_then(Value::as_u64) {
-                            if participant_count >= 2 {
-                                summary["swarm_enabled"] = serde_json::json!(true);
-                                summary["swarm_peer_count"] = serde_json::json!(participant_count);
-                            }
-                        }
-                        summary["swarm_plan"] = plan.clone();
+                        summary["swarm_plan"] = serde_json::json!({
+                            "swarm_id": plan.swarm_id,
+                            "version": plan.version,
+                            "item_count": plan.items.len(),
+                            "participant_ids": plan.participants,
+                            "participant_count": plan.participants.len(),
+                            "reason": plan.reason,
+                            "ready_count": plan.ready_count,
+                            "active_count": plan.active_count,
+                            "blocked_count": plan.blocked_count,
+                            "completed_count": plan.completed_count,
+                            "next_ready_ids": plan.next_ready_ids,
+                            "items_preview": plan.preview_items,
+                        });
                     }
                     if let Some(proposal) = live_swarm_proposals.get(&session_id) {
-                        if let Some(swarm_id) = proposal.get("swarm_id").and_then(Value::as_str) {
-                            summary["swarm_id"] = serde_json::json!(swarm_id);
-                        }
-                        summary["swarm_proposal"] = proposal.clone();
+                        summary["swarm_id"] = serde_json::json!(proposal.swarm_id);
+                        summary["swarm_proposal"] = serde_json::json!({
+                            "swarm_id": proposal.swarm_id,
+                            "proposer_session": proposal.proposer_session,
+                            "proposer_name": proposal.proposer_name,
+                            "summary": proposal.summary,
+                            "proposal_key": proposal.proposal_key,
+                            "item_count": proposal.items.len(),
+                            "items_preview": proposal.items,
+                        });
                     }
                     let swarm_peer_count = *live_workspace_counts.get(&working_dir_key).unwrap_or(&0);
                     if swarm_peer_count >= 2 {
