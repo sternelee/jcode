@@ -48,6 +48,9 @@ pub struct AppState {
     pub live_swarm_members: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     pub live_swarm_plans: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     pub live_swarm_proposals: Arc<Mutex<HashMap<String, serde_json::Value>>>,
+    /// Cached MultiProvider to avoid re-creating on every begin_session.
+    /// Initialized lazily on first use; shared via Arc so cloning is cheap.
+    pub provider: tokio::sync::OnceCell<Arc<MultiProvider>>,
 }
 
 impl Default for AppState {
@@ -65,7 +68,18 @@ impl AppState {
             live_swarm_members: Arc::new(Mutex::new(HashMap::new())),
             live_swarm_plans: Arc::new(Mutex::new(HashMap::new())),
             live_swarm_proposals: Arc::new(Mutex::new(HashMap::new())),
+            provider: tokio::sync::OnceCell::new(),
         }
+    }
+
+    pub async fn get_provider(&self) -> Result<Arc<MultiProvider>, String> {
+        self.provider
+            .get_or_try_init(|| async {
+                let provider = MultiProvider::new();
+                Ok::<_, String>(Arc::new(provider))
+            })
+            .await
+            .map(Clone::clone)
     }
 }
 

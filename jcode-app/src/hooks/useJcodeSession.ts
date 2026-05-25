@@ -1063,6 +1063,32 @@ export function useJcodeSession() {
 	const stateRef = useRef(state);
 	stateRef.current = state;
 
+	/**
+	 * When a session is part of a swarm workspace, mirror stream events
+	 * (and user messages) into the virtual workspace thread so the group
+	 * chat view stays consistent with individual agent DM sessions.
+	 *
+	 * This is the *single* source-of-truth for workspace mirroring.
+	 * performSend and queueMessage also route through this helper.
+	 */
+	const mirrorToWorkspaceIfSwarm = useCallback(
+		(
+			sessionId: string,
+			mirror: (virtualSessionId: string) => void,
+		) => {
+			const currentState = stateRef.current;
+			const session = currentState.sessions.find(
+				(s) => s.sessionId === sessionId,
+			);
+			const workspaceId = session?.workingDir || "default";
+			if (currentState.workspaceModes[workspaceId] === "swarm") {
+				const virtualSessionId = `workspace:${workspaceId}`;
+				mirror(virtualSessionId);
+			}
+		},
+		[],
+	);
+
 	useEffect(() => {
 		const unlisten = listen<Record<string, unknown>>(
 			"server-event",
@@ -1071,37 +1097,13 @@ export function useJcodeSession() {
 					session_id?: string;
 				};
 				const sessionId = payload.session_id;
-				// eslint-disable-next-line no-console
-				console.log(
-					"[server-event]",
-					payload.type,
-					"| session:",
-					sessionId ?? "(none)",
-				);
 				processEvent(payload, dispatch, sessionId);
 
-				// Swarm mode: also mirror message events into the workspace virtual session
+				// Mirror stream events into the workspace virtual thread
 				if (sessionId) {
-					const currentState = stateRef.current;
-					const session = currentState.sessions.find(
-						(s) => s.sessionId === sessionId,
-					);
-					const workspaceId = session?.workingDir || "default";
-					// eslint-disable-next-line no-console
-					console.log("[server-event] session lookup:", {
-						found: Boolean(session),
-						workspaceId,
-						swarmMode: currentState.workspaceModes[workspaceId],
-						roleName: session?.roleName,
-					});
-					if (currentState.workspaceModes[workspaceId] === "swarm") {
-						const virtualSessionId = `workspace:${workspaceId}`;
-						// eslint-disable-next-line no-console
-						console.log(
-							"[server-event] → mirroring to",
-							virtualSessionId,
-							"roleName:",
-							session?.roleName,
+					mirrorToWorkspaceIfSwarm(sessionId, (virtualSessionId) => {
+						const session = stateRef.current.sessions.find(
+							(s) => s.sessionId === sessionId,
 						);
 						processEvent(
 							payload,
@@ -1111,14 +1113,14 @@ export function useJcodeSession() {
 							sessionId,
 							session?.roleName,
 						);
-					}
+					});
 				}
 			},
 		);
 		return () => {
 			unlisten.then((fn) => fn());
 		};
-	}, []);
+	}, [mirrorToWorkspaceIfSwarm]);
 
 	const performSend = useCallback(
 		async (
@@ -1140,20 +1142,14 @@ export function useJcodeSession() {
 			});
 			// In swarm mode, also add the user message to the workspace thread
 			if (sessionId) {
-				const currentState = stateRef.current;
-				const session = currentState.sessions.find(
-					(s) => s.sessionId === sessionId,
-				);
-				const workspaceId = session?.workingDir || "default";
-				if (currentState.workspaceModes[workspaceId] === "swarm") {
-					const virtualSessionId = `workspace:${workspaceId}`;
+				mirrorToWorkspaceIfSwarm(sessionId, (virtualSessionId) => {
 					dispatch({
 						type: "ADD_USER_MESSAGE",
 						content: content.trim() || "(image)",
 						images: imageAttachments,
 						sessionId: virtualSessionId,
 					});
-				}
+				});
 			}
 			try {
 				// eslint-disable-next-line no-console
@@ -1265,20 +1261,14 @@ export function useJcodeSession() {
 			});
 			// In swarm mode, also mirror queued draft to workspace thread
 			if (sessionId) {
-				const currentState = stateRef.current;
-				const session = currentState.sessions.find(
-					(s) => s.sessionId === sessionId,
-				);
-				const workspaceId = session?.workingDir || "default";
-				if (currentState.workspaceModes[workspaceId] === "swarm") {
-					const virtualSessionId = `workspace:${workspaceId}`;
+				mirrorToWorkspaceIfSwarm(sessionId, (virtualSessionId) => {
 					dispatch({ type: "QUEUE_DRAFT", draft, sessionId: virtualSessionId });
 					dispatch({
 						type: "ADD_SYSTEM_MESSAGE",
 						content: `📝 Queued prompt (${state.queuedDrafts.length + 1} pending)`,
 						sessionId: virtualSessionId,
 					});
-				}
+				});
 			}
 		},
 		[state.queuedDrafts.length],

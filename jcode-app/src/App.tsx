@@ -257,29 +257,69 @@ export default function App() {
 		setActiveWorkspace(workspaceId);
 		setWorkingDir(workingDir);
 
-		const coordinatorSessionId = await connect(
-			workingDir,
-			model || undefined,
-			true,
-			undefined,
-			profileId,
-		);
-		for (const member of pendingSwarmMembers) {
-			await createRoleSession(
+		const createdSessionIds: string[] = [];
+		try {
+			const coordinatorSessionId = await connect(
 				workingDir,
-				member.roleName,
-				member.model,
+				model || undefined,
 				true,
-				member.profileId,
+				undefined,
+				profileId,
 			);
-		}
-		if (coordinatorSessionId) {
-			switchSession(coordinatorSessionId);
+			if (coordinatorSessionId) createdSessionIds.push(coordinatorSessionId);
+
+			// Create member sessions in parallel for speed,
+			// but collect failures so we can roll back.
+			const memberResults = await Promise.allSettled(
+				pendingSwarmMembers.map((member) =>
+					createRoleSession(
+						workingDir,
+						member.roleName,
+						member.model,
+						true,
+						member.profileId,
+					),
+				),
+			);
+
+			const failures: string[] = [];
+			for (let i = 0; i < memberResults.length; i++) {
+				const result = memberResults[i];
+				if (result.status === "fulfilled" && result.value) {
+					createdSessionIds.push(result.value);
+				} else {
+					failures.push(pendingSwarmMembers[i]?.roleName ?? `member-${i}`);
+				}
+			}
+
+			if (failures.length > 0) {
+				console.error(
+					`Swarm creation: ${failures.length} member(s) failed (${failures.join(", ")}). Rolling back ${createdSessionIds.length} session(s).`,
+				);
+				for (const sid of createdSessionIds) {
+					await deleteSession(sid).catch(() => {});
+				}
+				alert(
+					`Failed to create ${failures.length} team member(s): ${failures.join(", ")}. All sessions rolled back.`,
+				);
+				return;
+			}
+
+			if (createdSessionIds.length > 0) {
+				switchSession(createdSessionIds[0]);
+			}
+		} catch (e) {
+			console.error("Swarm creation failed:", e);
+			for (const sid of createdSessionIds) {
+				await deleteSession(sid).catch(() => {});
+			}
+			alert(`Failed to create agent team: ${String(e)}`);
+			return;
 		}
 		await listSessions();
 		await openWorkspaceConversation(
 			workspaceId,
-			coordinatorSessionId || undefined,
+			createdSessionIds[0] || undefined,
 		);
 		setPendingSwarmMembers([]);
 	};
@@ -407,8 +447,11 @@ export default function App() {
 		}
 		// ── End slash command interceptor ─────────────────────────────────────
 
-		// @AgentName routing: if in workspace thread and message starts with @Name,
-		// route directly to that agent's DM session
+		// @AgentName routing: in workspace thread, @mention is preserved and sent
+		// through the coordinator so it stays aware of all delegations. The
+		// coordinator decides whether to use swarm tools (assign_task / dm) to
+		// forward the request. Direct DM bypass was removed to keep coordinator
+		// as the single source of truth for swarm state.
 		if (targetSessionId && selectedConvId?.startsWith("workspace:")) {
 			const mentionMatch = content.match(/^@(\w+)(?:\s|$)/);
 			if (mentionMatch) {
@@ -417,7 +460,9 @@ export default function App() {
 					(s) => s.roleName?.toLowerCase() === mentionedName,
 				);
 				if (agentSession) {
-					// Ensure the agent session is connected before sending
+					// Ensure the agent session is connected so coordinator can
+					// delegate to it, but do NOT switch targetSessionId — the
+					// message still goes to coordinator.
 					if (
 						state.sessionData[agentSession.sessionId]?.connectionPhase !==
 						"connected"
@@ -427,9 +472,8 @@ export default function App() {
 							agentSession.workingDir || null,
 						);
 					}
-					targetSessionId = agentSession.sessionId;
-					// Strip the @mention prefix so the agent only sees the actual message
-					content = content.replace(/^@\w+\s*/, "");
+					// Keep @mention prefix so coordinator sees the delegation
+					// target and can use swarm dm / assign_task accordingly.
 				}
 			}
 		}

@@ -1,6 +1,6 @@
 pub mod commands;
 
-use commands::{create_agent_with_session, create_provider, setup_stdin_channel, AppState, SessionRuntime};
+use commands::{create_agent_with_session, setup_stdin_channel, AppState, SessionRuntime};
 use jcode::cli::login::scriptable::{complete_scriptable_login_data, start_scriptable_login_data};
 use jcode::cli::login::LoginOptions;
 use jcode::message::{ContentBlock, Role, ToolCall};
@@ -1267,7 +1267,7 @@ async fn load_session_runtime_silently(
     eprintln!("[load_silently] loading session={} from disk", session_id);
     let session = Session::load(session_id)
         .map_err(|e| format!("Session not found and cannot be auto-loaded: {session_id}: {e}"))?;
-	let provider = create_provider().await?;
+	let provider = state.get_provider().await?;
 	if let Some(ref saved_model) = session.model {
 		let model_arg = if let Some(ref pk) = session.provider_key {
 			format!("{}:{}", pk, saved_model)
@@ -1498,7 +1498,7 @@ async fn begin_session(
     role_name: Option<String>,
     profile_id: Option<String>,
 ) -> Result<String, String> {
-    let provider = create_provider().await?;
+    let provider = state.get_provider().await?;
     if let Some(ref model_name) = model {
         let model_arg = if let Some(pid) = profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
             format!("{}:{}", pid, model_name)
@@ -1551,7 +1551,7 @@ async fn resume_session(
 
     let session = Session::load(&session_id)
         .map_err(|e| format!("Failed to load session {}: {e}", &session_id))?;
-	let provider = create_provider().await?;
+	let provider = state.get_provider().await?;
 	if let Some(ref saved_model) = session.model {
 		let model_arg = if let Some(ref pk) = session.provider_key {
 			format!("{}:{}", pk, saved_model)
@@ -2174,8 +2174,8 @@ fn revoke_device(device_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn run_auth_test(provider_id: Option<String>) -> Result<serde_json::Value, String> {
-    let provider = create_provider().await?;
+async fn run_auth_test(state: State<'_, AppState>, provider_id: Option<String>) -> Result<serde_json::Value, String> {
+    let provider = state.get_provider().await?;
     
     // If a specific provider_id is given, try to set a model from that provider
     // to ensure we're testing the right provider.
