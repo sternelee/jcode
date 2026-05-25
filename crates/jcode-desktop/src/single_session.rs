@@ -147,11 +147,14 @@ const DESKTOP_SLASH_COMMANDS: &[(&str, &str)] = &[
     ("/model [name]", "open model picker or switch to a model"),
     ("/models", "alias for /model"),
     ("/refresh-model-list", "refresh provider model catalogs"),
+    ("/reload", "force reload the desktop window using handoff"),
+    ("/force-reload", "alias for /reload"),
     ("/effort [level]", "show or change reasoning effort"),
     (
         "/font [user|ai] [name]",
         "show or hot-swap desktop transcript fonts",
     ),
+    ("/fonts", "alias for /font"),
     ("/fast [on|off|status]", "show or toggle OpenAI fast mode"),
     ("/transport [mode]", "show or change OpenAI transport"),
     (
@@ -171,13 +174,19 @@ const DESKTOP_SLASH_COMMANDS: &[(&str, &str)] = &[
     ("/stop", "interrupt the running generation"),
     ("/cancel", "alias for /stop"),
     ("/status", "show current desktop session status"),
+    ("/info", "alias for /status"),
     ("/quit", "exit the desktop app"),
     ("/exit", "alias for /quit"),
 ];
 pub(crate) const DESKTOP_SLASH_SUGGESTION_ROW_LIMIT: usize = 7;
 
+const DESKTOP_REASONING_EFFORTS_OPENAI: &[&str] = &["none", "low", "medium", "high", "xhigh"];
+const DESKTOP_REASONING_EFFORTS_ANTHROPIC_STANDARD: &[&str] = &["none", "low", "medium", "high"];
+const DESKTOP_REASONING_EFFORTS_DEEPSEEK: &[&str] = &["none", "low", "medium", "high", "max"];
+
 #[cfg_attr(test, allow(dead_code))]
 const INLINE_WIDGET_REVEAL_DURATION: Duration = Duration::from_millis(180);
+const INLINE_WIDGET_EXIT_DURATION: Duration = Duration::from_millis(140);
 pub(crate) const MODEL_PICKER_INLINE_ROW_LIMIT: usize = 5;
 pub(crate) const INLINE_WIDGET_DEFAULT_VISIBLE_LINE_LIMIT: usize = 12;
 
@@ -331,6 +340,18 @@ struct SingleSessionRuntimeSettings {
     service_tier: Option<String>,
     transport: Option<String>,
     compaction_mode: Option<String>,
+    connection_type: Option<String>,
+    status_detail: Option<String>,
+    upstream_provider: Option<String>,
+    token_usage: Option<SingleSessionTokenUsage>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SingleSessionTokenUsage {
+    input: u64,
+    output: u64,
+    cache_read_input: Option<u64>,
+    cache_creation_input: Option<u64>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -397,13 +418,22 @@ impl SingleSessionToolVisualState {
 #[derive(Clone, Debug)]
 struct SingleSessionViewState {
     inline_widget_opened_at: Option<Instant>,
+    closing_inline_widget: Option<ClosingInlineWidgetState>,
     text_scale: f32,
+}
+
+#[derive(Clone, Debug)]
+struct ClosingInlineWidgetState {
+    kind: InlineWidgetKind,
+    lines: Vec<SingleSessionStyledLine>,
+    started_at: Instant,
 }
 
 impl Default for SingleSessionViewState {
     fn default() -> Self {
         Self {
             inline_widget_opened_at: None,
+            closing_inline_widget: None,
             text_scale: 1.0,
         }
     }
@@ -482,7 +512,7 @@ pub(crate) enum InlineWidgetMode {
     Interactive,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum InlineWidgetKind {
     HotkeyHelp,
     SessionInfo,
@@ -499,6 +529,13 @@ pub(crate) enum SingleSessionOverlay {
         kind: InlineWidgetKind,
         mode: InlineWidgetMode,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ReasoningEffortCycleOutcome {
+    Set(String),
+    AlreadyAtLimit { effort: String, limit: &'static str },
+    Unavailable,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -661,6 +698,7 @@ pub(crate) enum SingleSessionLineStyle {
     AssistantQuote,
     AssistantTable,
     AssistantLink,
+    AssistantMedia,
     CodeHeader,
     Code,
     User,
@@ -895,15 +933,6 @@ impl ModelPickerState {
         let start = selected.saturating_sub(limit / 2).min(max_start);
         let end = (start + limit).min(visible.len());
         (start, visible[start..end].to_vec())
-    }
-
-    pub(crate) fn selected_row_in_window(&self, limit: usize) -> Option<usize> {
-        let (start, visible) = self.visible_row_window(limit);
-        if visible.is_empty() {
-            None
-        } else {
-            Some(self.selected.saturating_sub(start).min(visible.len() - 1))
-        }
     }
 
     fn current_choice_index(&self) -> Option<usize> {
@@ -1388,6 +1417,83 @@ impl SingleSessionApp {
         self.detail_scroll = 0;
     }
 
+    #[cfg(test)]
+    pub(crate) fn reasoning_effort(&self) -> Option<&str> {
+        self.runtime_settings.reasoning_effort.as_deref()
+    }
+
+    pub(crate) fn preview_reasoning_effort_set(&mut self, effort: &str) -> Option<String> {
+        let normalized = self.normalize_reasoning_effort_for_current_context(effort)?;
+        self.runtime_settings.reasoning_effort = Some(normalized.clone());
+        self.set_status_label(format!("thinking level: {normalized}"));
+        Some(normalized)
+    }
+
+    pub(crate) fn preview_reasoning_effort_cycle(
+        &mut self,
+        direction: i8,
+    ) -> ReasoningEffortCycleOutcome {
+        let efforts = self.available_reasoning_efforts_for_current_context();
+        if efforts.is_empty() {
+            self.set_status_label("thinking level is not available for this model");
+            return ReasoningEffortCycleOutcome::Unavailable;
+        }
+
+        let current = self.runtime_settings.reasoning_effort.as_deref();
+        let current_index = current
+            .and_then(|effort| efforts.iter().position(|candidate| *candidate == effort))
+            .unwrap_or(efforts.len() - 1);
+        let next_index = if direction > 0 {
+            (current_index + 1).min(efforts.len() - 1)
+        } else {
+            current_index.saturating_sub(1)
+        };
+        let next_effort = efforts[next_index];
+        if next_index == current_index {
+            let limit = if direction > 0 { "max" } else { "min" };
+            self.set_status_label(format!(
+                "thinking level: {next_effort} (already at {limit})"
+            ));
+            return ReasoningEffortCycleOutcome::AlreadyAtLimit {
+                effort: next_effort.to_string(),
+                limit,
+            };
+        }
+
+        self.runtime_settings.reasoning_effort = Some(next_effort.to_string());
+        self.set_status_label(format!("thinking level: {next_effort}"));
+        ReasoningEffortCycleOutcome::Set(next_effort.to_string())
+    }
+
+    fn normalize_reasoning_effort_for_current_context(&self, raw: &str) -> Option<String> {
+        let requested = raw.trim().to_ascii_lowercase();
+        if requested.is_empty() {
+            return None;
+        }
+        let efforts = self.available_reasoning_efforts_for_current_context();
+        if efforts.is_empty() {
+            return None;
+        }
+        if efforts.contains(&requested.as_str()) {
+            return Some(requested);
+        }
+        if requested == "max" && efforts.contains(&"xhigh") {
+            return Some("xhigh".to_string());
+        }
+        if requested == "xhigh" && efforts.contains(&"max") {
+            return Some("max".to_string());
+        }
+        efforts.last().map(|effort| (*effort).to_string())
+    }
+
+    fn available_reasoning_efforts_for_current_context(&self) -> &'static [&'static str] {
+        inferred_desktop_reasoning_efforts(
+            self.model_picker.provider_name.as_deref(),
+            self.model_picker.current_model.as_deref(),
+            self.runtime_settings.reasoning_effort.as_deref(),
+        )
+    }
+
     pub(crate) fn initialize_resumed_session(&mut self, session_id: &str) {
         self.live_session_id = Some(session_id.to_string());
         self.detail_scroll = 0;
@@ -1405,6 +1511,7 @@ impl SingleSessionApp {
         self.tool.input_buffer.clear();
         self.runtime.reload_phase = ReloadPhase::Stable;
         self.view.inline_widget_opened_at = None;
+        self.view.closing_inline_widget = None;
         self.welcome.timeline = false;
     }
 
@@ -1467,6 +1574,7 @@ impl SingleSessionApp {
         self.runtime_settings = SingleSessionRuntimeSettings::default();
         self.tool = SingleSessionToolState::default();
         self.view.inline_widget_opened_at = None;
+        self.view.closing_inline_widget = None;
     }
 
     pub(crate) fn status_title(&self) -> String {
@@ -1507,18 +1615,55 @@ impl SingleSessionApp {
     }
 
     pub(crate) fn has_frame_animation(&self) -> bool {
-        self.has_activity_indicator() || self.inline_widget_reveal_in_progress()
+        self.has_activity_indicator()
+            || self.inline_widget_reveal_in_progress()
+            || self.inline_widget_exit_in_progress()
     }
 
     fn mark_inline_widget_opened(&mut self) {
         self.view.inline_widget_opened_at = Some(Instant::now());
+        self.view.closing_inline_widget = None;
+    }
+
+    fn capture_inline_widget_exit(&mut self) {
+        if crate::animation::desktop_reduced_motion_enabled() {
+            self.view.closing_inline_widget = None;
+            return;
+        }
+        let Some(kind) = self.active_inline_widget() else {
+            return;
+        };
+        let lines = self.inline_widget_styled_lines();
+        self.capture_inline_widget_exit_snapshot(kind, lines);
+    }
+
+    fn capture_inline_widget_exit_snapshot(
+        &mut self,
+        kind: InlineWidgetKind,
+        lines: Vec<SingleSessionStyledLine>,
+    ) {
+        if crate::animation::desktop_reduced_motion_enabled() {
+            self.view.closing_inline_widget = None;
+            return;
+        }
+        if lines.is_empty() {
+            self.view.closing_inline_widget = None;
+            return;
+        }
+        self.view.closing_inline_widget = Some(ClosingInlineWidgetState {
+            kind,
+            lines,
+            started_at: Instant::now(),
+        });
     }
 
     fn close_inline_widgets(&mut self) {
+        self.capture_inline_widget_exit();
         self.show_help = false;
         self.show_session_info = false;
         self.model_picker.close();
         self.session_switcher.close();
+        self.view.inline_widget_opened_at = None;
     }
 
     fn open_read_only_inline_widget(&mut self, kind: InlineWidgetKind) {
@@ -1547,9 +1692,16 @@ impl SingleSessionApp {
         self.active_inline_widget().is_some() && self.inline_widget_reveal_progress() < 1.0
     }
 
+    fn inline_widget_exit_in_progress(&self) -> bool {
+        self.active_inline_widget().is_none() && self.render_inline_widget_reveal_progress() > 0.001
+    }
+
     pub(crate) fn inline_widget_reveal_progress(&self) -> f32 {
         if self.active_inline_widget().is_none() {
             return 0.0;
+        }
+        if crate::animation::desktop_reduced_motion_enabled() {
+            return 1.0;
         }
 
         #[cfg(test)]
@@ -1567,6 +1719,62 @@ impl SingleSessionApp {
             .clamp(0.0, 1.0);
             1.0 - (1.0 - raw).powi(3)
         }
+    }
+
+    pub(crate) fn render_inline_widget_kind(&self) -> Option<InlineWidgetKind> {
+        self.active_inline_widget().or_else(|| {
+            (self.render_inline_widget_reveal_progress() > 0.001)
+                .then(|| {
+                    self.view
+                        .closing_inline_widget
+                        .as_ref()
+                        .map(|closing| closing.kind)
+                })
+                .flatten()
+        })
+    }
+
+    pub(crate) fn render_inline_widget_styled_lines(&self) -> Vec<SingleSessionStyledLine> {
+        if self.active_inline_widget().is_some() {
+            return self.inline_widget_styled_lines();
+        }
+        if self.render_inline_widget_reveal_progress() <= 0.001 {
+            return Vec::new();
+        }
+        self.view
+            .closing_inline_widget
+            .as_ref()
+            .map(|closing| closing.lines.clone())
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn render_inline_widget_line_count(&self) -> usize {
+        self.render_inline_widget_styled_lines().len()
+    }
+
+    pub(crate) fn render_inline_widget_visible_line_count(&self) -> usize {
+        let line_count = self.render_inline_widget_line_count();
+        let limit = self
+            .render_inline_widget_kind()
+            .map(InlineWidgetKind::visible_line_limit)
+            .unwrap_or(INLINE_WIDGET_DEFAULT_VISIBLE_LINE_LIMIT);
+        line_count.min(limit)
+    }
+
+    pub(crate) fn render_inline_widget_reveal_progress(&self) -> f32 {
+        if self.active_inline_widget().is_some() {
+            return self.inline_widget_reveal_progress();
+        }
+        if crate::animation::desktop_reduced_motion_enabled() {
+            return 0.0;
+        }
+        let Some(closing) = &self.view.closing_inline_widget else {
+            return 0.0;
+        };
+        let raw = (closing.started_at.elapsed().as_secs_f32()
+            / INLINE_WIDGET_EXIT_DURATION.as_secs_f32())
+        .clamp(0.0, 1.0);
+        1.0 - raw.powi(3)
     }
 
     fn current_session_id(&self) -> Option<&str> {
@@ -1611,6 +1819,13 @@ impl SingleSessionApp {
     }
 
     #[cfg(test)]
+    pub(crate) fn finish_inline_widget_exit_animation_for_test(&mut self) {
+        if let Some(closing) = &mut self.view.closing_inline_widget {
+            closing.started_at = Instant::now() - INLINE_WIDGET_EXIT_DURATION * 2;
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn activity_indicator_active(&self) -> bool {
         self.has_activity_indicator()
     }
@@ -1639,7 +1854,7 @@ impl SingleSessionApp {
             DesktopSessionStatus::ReasoningEffort(effort) => {
                 self.runtime_settings.reasoning_effort = Some(effort.clone());
                 self.messages.push(SingleSessionMessage::meta(format!(
-                    "reasoning effort set to {effort}"
+                    "thinking level set to {effort}"
                 )));
             }
             DesktopSessionStatus::ServiceTier(service_tier) => {
@@ -1774,6 +1989,9 @@ impl SingleSessionApp {
             KeyInput::CopyTranscript => self.copy_transcript(),
             KeyInput::ModelPickerMove(_) => KeyOutcome::None,
             KeyInput::CycleModel(direction) => KeyOutcome::CycleModel(direction),
+            KeyInput::CycleReasoningEffort(direction) => {
+                KeyOutcome::CycleReasoningEffort(direction)
+            }
             KeyInput::AttachClipboardImage => KeyOutcome::AttachClipboardImage,
             KeyInput::ClearAttachedImages => {
                 if self.clear_attached_images() {
@@ -1788,11 +2006,11 @@ impl SingleSessionApp {
             KeyInput::QueueDraft => self.submit_draft(),
             KeyInput::SubmitDraft => self.submit_draft(),
             KeyInput::Escape if self.show_help => {
-                self.show_help = false;
+                self.close_inline_widgets();
                 KeyOutcome::Redraw
             }
             KeyInput::Escape if self.show_session_info => {
-                self.show_session_info = false;
+                self.close_inline_widgets();
                 KeyOutcome::Redraw
             }
             KeyInput::Character(text)
@@ -1932,6 +2150,7 @@ impl SingleSessionApp {
     fn sync_model_picker_preview_from_draft(&mut self) -> Option<KeyOutcome> {
         let Some(filter) = model_picker_preview_filter(&self.draft) else {
             if self.model_picker.open && self.model_picker.preview {
+                self.capture_inline_widget_exit();
                 self.model_picker.close();
                 return Some(KeyOutcome::Redraw);
             }
@@ -1954,6 +2173,11 @@ impl SingleSessionApp {
     fn sync_slash_suggestions_from_draft(&mut self) {
         let was_visible = self.slash_suggestions_visible();
         let Some(query) = slash_suggestion_query(&self.draft, self.draft_cursor) else {
+            if was_visible
+                && self.active_inline_widget() == Some(InlineWidgetKind::SlashSuggestions)
+            {
+                self.capture_inline_widget_exit();
+            }
             self.slash_suggestions.query.clear();
             self.slash_suggestions.selected = 0;
             return;
@@ -1968,12 +2192,18 @@ impl SingleSessionApp {
             self.slash_suggestions.dismissed_for_draft = None;
         }
 
+        let previous_slash_lines = (was_visible
+            && self.active_inline_widget() == Some(InlineWidgetKind::SlashSuggestions))
+        .then(|| self.inline_widget_styled_lines());
         if self.slash_suggestions.query != query {
             self.slash_suggestions.query = query;
             self.slash_suggestions.selected = 0;
         }
         let candidate_count = self.slash_suggestion_candidates().len();
         if candidate_count == 0 {
+            if let Some(lines) = previous_slash_lines {
+                self.capture_inline_widget_exit_snapshot(InlineWidgetKind::SlashSuggestions, lines);
+            }
             self.slash_suggestions.selected = 0;
             return;
         }
@@ -1987,6 +2217,7 @@ impl SingleSessionApp {
     fn handle_slash_suggestion_key(&mut self, key: &KeyInput) -> Option<KeyOutcome> {
         match key {
             KeyInput::Escape => {
+                self.capture_inline_widget_exit();
                 self.slash_suggestions.dismissed_for_draft = Some(self.draft.clone());
                 Some(KeyOutcome::Redraw)
             }
@@ -2000,6 +2231,7 @@ impl SingleSessionApp {
             }
             KeyInput::Autocomplete => self.complete_selected_slash_suggestion(),
             KeyInput::SubmitDraft => {
+                self.capture_inline_widget_exit();
                 self.complete_selected_slash_suggestion();
                 Some(self.submit_draft())
             }
@@ -2043,6 +2275,7 @@ impl SingleSessionApp {
     fn handle_model_picker_preview_key(&mut self, key: &KeyInput) -> Option<KeyOutcome> {
         match key {
             KeyInput::Escape => {
+                self.capture_inline_widget_exit();
                 self.model_picker.close();
                 self.draft.clear();
                 self.draft_cursor = 0;
@@ -2068,12 +2301,14 @@ impl SingleSessionApp {
             }
             KeyInput::SubmitDraft => {
                 let Some(model) = self.model_picker.selected_model() else {
+                    self.capture_inline_widget_exit();
                     self.model_picker.close();
                     self.draft.clear();
                     self.draft_cursor = 0;
                     self.composer.input_undo_stack.clear();
                     return Some(KeyOutcome::Redraw);
                 };
+                self.capture_inline_widget_exit();
                 self.model_picker.close();
                 self.draft.clear();
                 self.draft_cursor = 0;
@@ -2108,13 +2343,11 @@ impl SingleSessionApp {
                 KeyOutcome::Redraw
             }
             KeyInput::Escape | KeyInput::OpenModelPicker => {
+                self.capture_inline_widget_exit();
                 self.model_picker.close();
                 KeyOutcome::Redraw
             }
-            KeyInput::OpenSessionSwitcher => {
-                self.model_picker.close();
-                self.open_session_switcher()
-            }
+            KeyInput::OpenSessionSwitcher => self.open_session_switcher(),
             KeyInput::RefreshSessions => {
                 self.model_picker.open_loading();
                 self.set_status(SingleSessionStatus::LoadingModels);
@@ -2150,6 +2383,7 @@ impl SingleSessionApp {
                 let Some(model) = self.model_picker.selected_model() else {
                     return KeyOutcome::None;
                 };
+                self.capture_inline_widget_exit();
                 self.model_picker.close();
                 KeyOutcome::SetModel(model)
             }
@@ -2172,6 +2406,7 @@ impl SingleSessionApp {
     fn handle_session_switcher_key(&mut self, key: KeyInput) -> KeyOutcome {
         match key {
             KeyInput::Escape | KeyInput::OpenSessionSwitcher => {
+                self.capture_inline_widget_exit();
                 self.session_switcher.close();
                 KeyOutcome::Redraw
             }
@@ -2234,6 +2469,7 @@ impl SingleSessionApp {
                 let Some(session) = self.session_switcher.selected_session() else {
                     return KeyOutcome::None;
                 };
+                self.capture_inline_widget_exit();
                 self.session_switcher.close();
                 KeyOutcome::OpenSession {
                     session_id: session.session_id,
@@ -2253,11 +2489,9 @@ impl SingleSessionApp {
                 self.open_read_only_inline_widget(InlineWidgetKind::HotkeyHelp);
                 KeyOutcome::Redraw
             }
-            KeyInput::OpenModelPicker => {
-                self.session_switcher.close();
-                self.open_model_picker()
-            }
+            KeyInput::OpenModelPicker => self.open_model_picker(),
             KeyInput::SpawnPanel => {
+                self.capture_inline_widget_exit();
                 self.session_switcher.close();
                 KeyOutcome::SpawnSession
             }
@@ -2385,10 +2619,12 @@ impl SingleSessionApp {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn inline_widget_line_count(&self) -> usize {
         self.inline_widget_styled_lines().len()
     }
 
+    #[cfg(test)]
     pub(crate) fn inline_widget_visible_line_count(&self) -> usize {
         let line_count = self.inline_widget_line_count();
         let limit = self
@@ -2416,6 +2652,12 @@ impl SingleSessionApp {
             .slash_suggestions
             .selected
             .min(candidates.len().saturating_sub(1));
+        let usage_width = candidates
+            .iter()
+            .map(|(usage, _)| usage.chars().count())
+            .max()
+            .unwrap_or(0)
+            .clamp(10, 20);
         lines.extend(
             candidates
                 .into_iter()
@@ -2426,7 +2668,10 @@ impl SingleSessionApp {
                     } else {
                         SingleSessionLineStyle::Overlay
                     };
-                    styled_line(format!("  {usage:<24} {description}"), style)
+                    styled_line(
+                        format!(" {:<width$}  {}", usage, description, width = usage_width),
+                        style,
+                    )
                 }),
         );
         lines
@@ -2471,7 +2716,7 @@ impl SingleSessionApp {
         fuzzy_matches.sort_by(|a, b| {
             a.0.cmp(&b.0)
                 .then_with(|| a.1.cmp(&b.1))
-                .then_with(|| a.2.cmp(&b.2))
+                .then_with(|| a.2.cmp(b.2))
         });
 
         prefix_matches
@@ -2536,6 +2781,7 @@ impl SingleSessionApp {
         SingleSessionOverlay::None
     }
 
+    #[cfg(test)]
     pub(crate) fn active_inline_widget_uses_card_chrome(&self) -> bool {
         self.active_inline_widget().is_some()
     }
@@ -2790,6 +3036,75 @@ impl SingleSessionApp {
                 self.set_status(SingleSessionStatus::ServerReloading);
                 self.is_processing = true;
                 self.runtime.reload_phase = ReloadPhase::AwaitingReconnect;
+            }
+            DesktopSessionEvent::ReloadProgress {
+                step,
+                message,
+                success,
+                output,
+            } => {
+                let marker = match success {
+                    Some(true) => "✓ ",
+                    Some(false) => "✗ ",
+                    None => "",
+                };
+                let mut line = format!("reload {step}: {marker}{message}");
+                if let Some(output) = output.as_deref().filter(|output| !output.trim().is_empty()) {
+                    line.push_str(" — ");
+                    line.push_str(output.trim());
+                }
+                self.messages.push(SingleSessionMessage::meta(line));
+                self.set_status(SingleSessionStatus::Info(format!("reload: {message}")));
+            }
+            DesktopSessionEvent::RuntimeMetadata {
+                connection_type,
+                status_detail,
+                upstream_provider,
+            } => {
+                if let Some(connection_type) = connection_type {
+                    self.runtime_settings.connection_type = Some(connection_type);
+                }
+                if let Some(upstream_provider) = upstream_provider {
+                    self.runtime_settings.upstream_provider = Some(upstream_provider);
+                }
+                if let Some(status_detail) = status_detail {
+                    self.runtime_settings.status_detail = Some(status_detail.clone());
+                    self.set_status(SingleSessionStatus::Info(status_detail));
+                }
+            }
+            DesktopSessionEvent::TokenUsage {
+                input,
+                output,
+                cache_read_input,
+                cache_creation_input,
+            } => {
+                self.runtime_settings.token_usage = Some(SingleSessionTokenUsage {
+                    input,
+                    output,
+                    cache_read_input,
+                    cache_creation_input,
+                });
+            }
+            DesktopSessionEvent::SystemNotice { title, message } => {
+                let line = message
+                    .as_deref()
+                    .filter(|message| !message.trim().is_empty())
+                    .map(|message| format!("{title}: {}", message.trim()))
+                    .unwrap_or(title.clone());
+                self.messages.push(SingleSessionMessage::meta(line));
+                self.set_status(SingleSessionStatus::Info(title));
+            }
+            DesktopSessionEvent::SessionCloseRequested { reason } => {
+                self.finish_streaming_response();
+                self.is_processing = false;
+                self.stdin_response = None;
+                self.runtime.session_handle = None;
+                self.set_status(SingleSessionStatus::Info(
+                    "session close requested".to_string(),
+                ));
+                self.messages.push(SingleSessionMessage::meta(format!(
+                    "session close requested by server: {reason}"
+                )));
             }
             DesktopSessionEvent::Reloaded { session_id } => {
                 self.live_session_id = Some(session_id);
@@ -3313,6 +3628,10 @@ impl SingleSessionApp {
         let command = parts.next().unwrap_or_default();
         let args = parts.next().unwrap_or_default().trim();
 
+        if self.active_inline_widget() == Some(InlineWidgetKind::SlashSuggestions) {
+            self.capture_inline_widget_exit();
+        }
+
         let outcome = match command {
             "/help" | "/?" | "/commands" => {
                 self.draft.clear();
@@ -3375,6 +3694,15 @@ impl SingleSessionApp {
                 ));
                 KeyOutcome::RefreshModelCatalog
             }
+            "/reload" | "/force-reload" => {
+                self.draft.clear();
+                self.draft_cursor = 0;
+                self.composer.input_undo_stack.clear();
+                self.set_status(SingleSessionStatus::Info(
+                    "force reloading desktop".to_string(),
+                ));
+                KeyOutcome::ForceReload
+            }
             "/effort" => {
                 self.draft.clear();
                 self.draft_cursor = 0;
@@ -3386,14 +3714,14 @@ impl SingleSessionApp {
                         .as_deref()
                         .unwrap_or("default");
                     self.set_status(SingleSessionStatus::Info(format!(
-                        "effort: {current} · use /effort <none|low|medium|high|xhigh>"
+                        "effort: {current} · use /effort <none|low|medium|high|xhigh|max>"
                     )));
                     KeyOutcome::Redraw
-                } else if matches!(args, "none" | "low" | "medium" | "high" | "xhigh") {
+                } else if matches!(args, "none" | "low" | "medium" | "high" | "xhigh" | "max") {
                     KeyOutcome::SetReasoningEffort(args.to_string())
                 } else {
                     self.set_status(SingleSessionStatus::Info(
-                        "usage: /effort <none|low|medium|high|xhigh>".to_string(),
+                        "usage: /effort <none|low|medium|high|xhigh|max>".to_string(),
                     ));
                     KeyOutcome::Redraw
                 }
@@ -3651,7 +3979,7 @@ impl SingleSessionApp {
                     KeyOutcome::Redraw
                 }
             }
-            "/status" => {
+            "/status" | "/info" => {
                 self.draft.clear();
                 self.draft_cursor = 0;
                 self.composer.input_undo_stack.clear();
@@ -3724,6 +4052,16 @@ impl SingleSessionApp {
             "interactive input sent".to_string(),
         ));
         Ok(())
+    }
+
+    pub(crate) fn set_reasoning_effort_via_active_session(
+        &mut self,
+        effort: String,
+    ) -> anyhow::Result<()> {
+        let Some(handle) = &self.runtime.session_handle else {
+            anyhow::bail!("no active desktop session to receive reasoning effort change");
+        };
+        handle.set_reasoning_effort(effort)
     }
 
     fn queue_draft(&mut self) -> KeyOutcome {
@@ -4378,6 +4716,7 @@ impl SingleSessionApp {
         self.draft_cursor = 0;
         self.clear_draft_selection();
         if self.model_picker.open && self.model_picker.preview {
+            self.capture_inline_widget_exit();
             self.model_picker.close();
         }
         self.set_status(SingleSessionStatus::Info(
@@ -4636,13 +4975,25 @@ fn session_switcher_styled_lines(
     } else {
         format!("{}/{}", visible.len(), switcher.sessions.len())
     };
+    let filter_label = if switcher.filter.trim().is_empty() {
+        "all".to_string()
+    } else {
+        format!("🔍 {}", switcher.filter.trim())
+    };
+    let selected_label = switcher
+        .selected_session()
+        .map(|session| compact_tool_text(&session.title, 44))
+        .unwrap_or_else(|| "no session selected".to_string());
     let mut lines = vec![
         styled_line(
-            "desktop session switcher",
+            format!(
+                "desktop session switcher · {} sessions · {} · {}",
+                session_count, filter_label, selected_label
+            ),
             SingleSessionLineStyle::OverlayTitle,
         ),
         styled_line(
-            "↑/↓ select · Tab/←/→ panes · PgUp/PgDn scroll · type filter · Enter resume here · Ctrl+Enter terminal · Ctrl+R reload · Ctrl+P/Esc close",
+            "↑/↓ select · type to filter · Tab/←/→ preview · PgUp/PgDn scroll · Enter resume here · Ctrl+Enter terminal · Ctrl+R reload · Esc close",
             SingleSessionLineStyle::Overlay,
         ),
         styled_line(
@@ -4682,9 +5033,10 @@ fn session_switcher_styled_lines(
         return lines;
     }
 
-    const ROW_LIMIT: usize = 16;
-    const LIST_COLUMNS: usize = 58;
-    const PREVIEW_COLUMNS: usize = 78;
+    const CARD_LIMIT: usize = 4;
+    const BODY_ROW_LIMIT: usize = 16;
+    const LIST_COLUMNS: usize = 62;
+    const PREVIEW_COLUMNS: usize = 88;
 
     let list_header = if switcher.focus == SessionSwitcherPane::Sessions {
         "sessions ›"
@@ -4698,75 +5050,110 @@ fn session_switcher_styled_lines(
     };
     lines.push(styled_line(
         format!(
-            "{} │ {}",
-            pad_columns(list_header, LIST_COLUMNS),
-            truncate_chars(preview_header, PREVIEW_COLUMNS)
+            "╭{}╮ ╭{}╮",
+            "─".repeat(LIST_COLUMNS + 2),
+            "─".repeat(PREVIEW_COLUMNS.min(86) + 2)
         ),
         SingleSessionLineStyle::OverlayTitle,
     ));
     lines.push(styled_line(
         format!(
-            "{}─┼─{}",
-            "─".repeat(LIST_COLUMNS),
-            "─".repeat(PREVIEW_COLUMNS.min(72))
+            "│ {} │ {} │",
+            pad_columns(
+                &format!("{list_header} · recent sessions, newest first"),
+                LIST_COLUMNS
+            ),
+            pad_columns(
+                &format!("{preview_header} · full selected-session preview"),
+                PREVIEW_COLUMNS.min(86)
+            )
         ),
-        SingleSessionLineStyle::Meta,
+        SingleSessionLineStyle::OverlayTitle,
     ));
 
-    let (window_start, row_indices) = switcher.visible_row_window(ROW_LIMIT);
+    let (window_start, row_indices) = switcher.visible_row_window(CARD_LIMIT);
+    let mut list_rows = Vec::new();
+    for (offset, index) in row_indices.iter().enumerate() {
+        if let Some(session) = switcher.sessions.get(*index) {
+            let position = window_start + offset;
+            list_rows.extend(session_switcher_list_card_lines(
+                switcher,
+                current_session_id,
+                position,
+                session,
+                LIST_COLUMNS,
+            ));
+        }
+    }
     let preview_lines = switcher
         .selected_session()
         .map(|session| session_switcher_preview_lines_for_session(&session))
-        .unwrap_or_else(|| vec!["No session selected".to_string()]);
+        .unwrap_or_else(|| {
+            vec![SessionSwitcherRenderedLine::new(
+                "No session selected".to_string(),
+                SingleSessionLineStyle::Meta,
+            )]
+        });
     let preview_scroll = switcher
         .preview_scroll
         .min(preview_lines.len().saturating_sub(1));
     let preview_visible = preview_lines
         .iter()
         .skip(preview_scroll)
-        .take(ROW_LIMIT)
+        .take(BODY_ROW_LIMIT)
         .cloned()
         .collect::<Vec<_>>();
-    let row_count = row_indices.len().max(preview_visible.len()).max(1);
+    let row_count = list_rows.len().max(preview_visible.len()).max(1);
 
     for row in 0..row_count {
-        let absolute_position = window_start + row;
-        let list_cell = row_indices
-            .get(row)
-            .and_then(|index| switcher.sessions.get(*index))
-            .map(|session| {
-                session_switcher_list_cell(
-                    switcher,
-                    current_session_id,
-                    absolute_position,
-                    session,
-                    LIST_COLUMNS,
-                )
-            })
-            .unwrap_or_else(|| " ".repeat(LIST_COLUMNS));
-        let preview_cell = preview_visible
-            .get(row)
-            .map(|line| truncate_chars(line, PREVIEW_COLUMNS))
-            .unwrap_or_default();
-        let selected_row = absolute_position == switcher.selected && row < row_indices.len();
+        let list_row = list_rows.get(row).cloned().unwrap_or_else(|| {
+            SessionSwitcherRenderedLine::new(
+                " ".repeat(LIST_COLUMNS),
+                SingleSessionLineStyle::Overlay,
+            )
+        });
+        let preview_cell = preview_visible.get(row).cloned().unwrap_or_else(|| {
+            SessionSwitcherRenderedLine::new(String::new(), SingleSessionLineStyle::Overlay)
+        });
+        let preview_has_semantic_style = matches!(
+            preview_cell.style,
+            SingleSessionLineStyle::User
+                | SingleSessionLineStyle::Assistant
+                | SingleSessionLineStyle::Tool
+                | SingleSessionLineStyle::Status
+                | SingleSessionLineStyle::OverlayTitle
+                | SingleSessionLineStyle::Error
+        );
+        let style = if list_row.style == SingleSessionLineStyle::OverlaySelection {
+            SingleSessionLineStyle::OverlaySelection
+        } else if preview_has_semantic_style || row >= list_rows.len() {
+            preview_cell.style
+        } else {
+            list_row.style
+        };
         lines.push(styled_line(
             format!(
-                "{} │ {}",
-                pad_columns(&list_cell, LIST_COLUMNS),
-                preview_cell
+                "│ {} │ {} │",
+                pad_columns(&list_row.text, LIST_COLUMNS),
+                pad_columns(&preview_cell.text, PREVIEW_COLUMNS.min(86))
             ),
-            if selected_row {
-                SingleSessionLineStyle::OverlaySelection
-            } else {
-                SingleSessionLineStyle::Overlay
-            },
+            style,
         ));
     }
+
+    lines.push(styled_line(
+        format!(
+            "╰{}╯ ╰{}╯",
+            "─".repeat(LIST_COLUMNS + 2),
+            "─".repeat(PREVIEW_COLUMNS.min(86) + 2)
+        ),
+        SingleSessionLineStyle::Meta,
+    ));
 
     if window_start + row_indices.len() < visible.len() {
         lines.push(styled_line(
             format!(
-                "… {} more sessions",
+                "… {} more sessions · keep pressing ↓ or type to filter",
                 visible.len() - window_start - row_indices.len()
             ),
             SingleSessionLineStyle::Overlay,
@@ -4787,6 +5174,21 @@ fn session_switcher_styled_lines(
     lines
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SessionSwitcherRenderedLine {
+    text: String,
+    style: SingleSessionLineStyle,
+}
+
+impl SessionSwitcherRenderedLine {
+    fn new(text: impl Into<String>, style: SingleSessionLineStyle) -> Self {
+        Self {
+            text: text.into(),
+            style,
+        }
+    }
+}
+
 fn session_switcher_focus_label(focus: SessionSwitcherPane) -> &'static str {
     match focus {
         SessionSwitcherPane::Sessions => "sessions",
@@ -4794,13 +5196,13 @@ fn session_switcher_focus_label(focus: SessionSwitcherPane) -> &'static str {
     }
 }
 
-fn session_switcher_list_cell(
+fn session_switcher_list_card_lines(
     switcher: &SessionSwitcherState,
     current_session_id: Option<&str>,
     position: usize,
     session: &workspace::SessionCard,
     width: usize,
-) -> String {
+) -> Vec<SessionSwitcherRenderedLine> {
     let selector = if position == switcher.selected {
         "›"
     } else {
@@ -4811,48 +5213,134 @@ fn session_switcher_list_cell(
     } else {
         " "
     };
+    let selected = position == switcher.selected;
+    let primary_style = if selected {
+        SingleSessionLineStyle::OverlaySelection
+    } else {
+        SingleSessionLineStyle::Overlay
+    };
+    let meta_style = if selected {
+        SingleSessionLineStyle::OverlaySelection
+    } else {
+        SingleSessionLineStyle::Meta
+    };
+    let preview_style = if selected {
+        SingleSessionLineStyle::OverlaySelection
+    } else {
+        SingleSessionLineStyle::Overlay
+    };
     let status = session_status_badge(session);
-    let line = format!(
-        "{selector} {current_marker} {} · {status} · {}",
-        session.title, session.detail
-    );
-    truncate_chars(&line, width)
+    let model = session_model_label(session).unwrap_or_else(|| "model unknown".to_string());
+    let preview = session
+        .preview_lines
+        .last()
+        .or_else(|| session.detail_lines.last())
+        .map(|line| session_switcher_compact_transcript_line(line, width.saturating_sub(8)))
+        .unwrap_or_else(|| "no transcript preview yet".to_string());
+    vec![
+        SessionSwitcherRenderedLine::new(
+            truncate_chars(
+                &format!(
+                    "{selector} {current_marker} {} {}",
+                    session_status_icon(session),
+                    session.title
+                ),
+                width,
+            ),
+            primary_style,
+        ),
+        SessionSwitcherRenderedLine::new(
+            truncate_chars(&format!("    {status} · {model}"), width),
+            meta_style,
+        ),
+        SessionSwitcherRenderedLine::new(
+            truncate_chars(&format!("    {}", session.detail), width),
+            meta_style,
+        ),
+        SessionSwitcherRenderedLine::new(
+            truncate_chars(&format!("    {preview}"), width),
+            preview_style,
+        ),
+    ]
 }
 
-fn session_switcher_preview_lines_for_session(session: &workspace::SessionCard) -> Vec<String> {
+fn session_switcher_preview_lines_for_session(
+    session: &workspace::SessionCard,
+) -> Vec<SessionSwitcherRenderedLine> {
     let mut lines = vec![
-        format!("{}", session.title),
-        format!("id: {}", session.session_id),
+        SessionSwitcherRenderedLine::new(
+            format!("{} {}", session_status_icon(session), session.title),
+            SingleSessionLineStyle::OverlayTitle,
+        ),
+        SessionSwitcherRenderedLine::new(
+            format!("id: {}", session.session_id),
+            SingleSessionLineStyle::Meta,
+        ),
     ];
     if !session.subtitle.is_empty() {
-        lines.push(session.subtitle.clone());
+        lines.push(SessionSwitcherRenderedLine::new(
+            session.subtitle.to_string(),
+            SingleSessionLineStyle::Status,
+        ));
     }
     if !session.detail.is_empty() {
-        lines.push(session.detail.clone());
+        lines.push(SessionSwitcherRenderedLine::new(
+            session.detail.clone(),
+            SingleSessionLineStyle::Meta,
+        ));
     }
+    lines.push(SessionSwitcherRenderedLine::new(
+        "─".repeat(48),
+        SingleSessionLineStyle::Meta,
+    ));
     let transcript = if session.detail_lines.is_empty() {
         &session.preview_lines
     } else {
         &session.detail_lines
     };
     if transcript.is_empty() {
-        lines.push("no transcript preview available".to_string());
+        lines.push(SessionSwitcherRenderedLine::new(
+            "no transcript preview available".to_string(),
+            SingleSessionLineStyle::Meta,
+        ));
     } else {
-        lines.push("recent transcript".to_string());
-        lines.extend(transcript.iter().cloned());
+        lines.push(SessionSwitcherRenderedLine::new(
+            "recent transcript".to_string(),
+            SingleSessionLineStyle::OverlayTitle,
+        ));
+        let mut user_turn = 1usize;
+        for line in transcript {
+            lines.push(session_switcher_transcript_preview_line(
+                line,
+                &mut user_turn,
+            ));
+        }
     }
     lines
 }
 
 fn session_status_badge(session: &workspace::SessionCard) -> String {
-    let status = session
+    let status = session_status_label(session);
+    let icon = session_status_icon_for_label(status);
+    format!("{icon} {status}")
+}
+
+fn session_status_label(session: &workspace::SessionCard) -> &str {
+    session
         .subtitle
         .split('·')
         .next()
         .map(str::trim)
         .filter(|status| !status.is_empty())
-        .unwrap_or("unknown");
-    let icon = match status {
+        .unwrap_or("unknown")
+}
+
+fn session_status_icon(session: &workspace::SessionCard) -> &'static str {
+    session_status_icon_for_label(session_status_label(session))
+}
+
+fn session_status_icon_for_label(status: &str) -> &'static str {
+    match status {
         "active" => "▶",
         "closed" => "✓",
         "crashed" => "💥",
@@ -4860,8 +5348,81 @@ fn session_status_badge(session: &workspace::SessionCard) -> String {
         "compacted" => "📦",
         status if status.contains("error") => "✕",
         _ => "•",
+    }
+}
+
+fn session_model_label(session: &workspace::SessionCard) -> Option<String> {
+    session
+        .subtitle
+        .split('·')
+        .nth(1)
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn session_switcher_compact_transcript_line(line: &str, width: usize) -> String {
+    let (role, content) = session_switcher_split_preview_role(line);
+    let compact = match role {
+        Some("user") => format!("latest prompt: {content}"),
+        Some("asst" | "assistant") => format!("latest answer: {content}"),
+        Some("tool") => format!("tool: {content}"),
+        Some("sys" | "system") => format!("system: {content}"),
+        Some("task" | "background_task") => format!("task: {content}"),
+        Some("meta") => format!("meta: {content}"),
+        _ => line.trim().to_string(),
     };
-    format!("{icon} {status}")
+    truncate_chars(&compact, width)
+}
+
+fn session_switcher_transcript_preview_line(
+    line: &str,
+    user_turn: &mut usize,
+) -> SessionSwitcherRenderedLine {
+    let (role, content) = session_switcher_split_preview_role(line);
+    match role {
+        Some("user") => {
+            let rendered = format!("{}› {}", *user_turn, content);
+            *user_turn = (*user_turn).saturating_add(1);
+            SessionSwitcherRenderedLine::new(rendered, SingleSessionLineStyle::User)
+        }
+        Some("asst" | "assistant") => SessionSwitcherRenderedLine::new(
+            format!("assistant {content}"),
+            SingleSessionLineStyle::Assistant,
+        ),
+        Some("tool") => SessionSwitcherRenderedLine::new(
+            format!("tool {content}"),
+            SingleSessionLineStyle::Tool,
+        ),
+        Some("sys" | "system") => SessionSwitcherRenderedLine::new(
+            format!("system {content}"),
+            SingleSessionLineStyle::Meta,
+        ),
+        Some("task" | "background_task") => SessionSwitcherRenderedLine::new(
+            format!("task {content}"),
+            SingleSessionLineStyle::Meta,
+        ),
+        Some("meta") => SessionSwitcherRenderedLine::new(
+            format!("meta {content}"),
+            SingleSessionLineStyle::Meta,
+        ),
+        _ => SessionSwitcherRenderedLine::new(
+            line.trim().to_string(),
+            SingleSessionLineStyle::Overlay,
+        ),
+    }
+}
+
+fn session_switcher_split_preview_role(line: &str) -> (Option<&str>, &str) {
+    let trimmed = line.trim();
+    let Some((role, content)) = trimmed.split_once(char::is_whitespace) else {
+        return (None, trimmed);
+    };
+    match role {
+        "user" | "asst" | "assistant" | "tool" | "sys" | "system" | "task" | "background_task"
+        | "meta" => (Some(role), content.trim()),
+        _ => (None, trimmed),
+    }
 }
 
 fn pad_columns(text: &str, width: usize) -> String {
@@ -5252,6 +5813,43 @@ fn model_picker_current_label(provider_name: Option<&str>, current_model: Option
     }
 }
 
+fn inferred_desktop_reasoning_efforts(
+    provider_name: Option<&str>,
+    model_name: Option<&str>,
+    current_effort: Option<&str>,
+) -> &'static [&'static str] {
+    let provider = provider_name.unwrap_or_default().to_ascii_lowercase();
+    let model = model_name.unwrap_or_default().to_ascii_lowercase();
+    let current = current_effort.unwrap_or_default().to_ascii_lowercase();
+
+    if provider.contains("openrouter") {
+        if model.contains("deepseek") || current == "max" {
+            return DESKTOP_REASONING_EFFORTS_DEEPSEEK;
+        }
+        return DESKTOP_REASONING_EFFORTS_OPENAI;
+    }
+
+    if provider.contains("deepseek") || model.contains("deepseek") || current == "max" {
+        return DESKTOP_REASONING_EFFORTS_DEEPSEEK;
+    }
+
+    let is_anthropic = provider.contains("anthropic")
+        || provider.contains("claude")
+        || model.starts_with("claude-")
+        || model.contains("/claude-");
+    if is_anthropic {
+        if model.contains("claude-opus-4-7") || current == "xhigh" {
+            return DESKTOP_REASONING_EFFORTS_OPENAI;
+        }
+        return DESKTOP_REASONING_EFFORTS_ANTHROPIC_STANDARD;
+    }
+
+    // Before the model catalog arrives, the desktop may only know the current
+    // runtime setting. Keep the shortcut responsive by falling back to the
+    // common OpenAI/Anthropic order instead of doing a blocking history lookup.
+    DESKTOP_REASONING_EFFORTS_OPENAI
+}
+
 fn model_choice_search_text(choice: &DesktopModelChoice) -> String {
     format!(
         "{} {} {} {}",
@@ -5365,6 +5963,7 @@ const SINGLE_SESSION_HELP_SECTIONS: &[HelpSection] = &[
             ("Ctrl+M/N", "switch to next/previous model"),
             ("Ctrl+Tab", "switch to next model"),
             ("Ctrl+Shift+Tab", "switch to previous model"),
+            ("Alt+←/→", "change thinking level"),
             ("Ctrl+P/O", "open recent session switcher"),
             ("Ctrl+Shift+S", "toggle inline session info/stats"),
         ],
@@ -5388,7 +5987,7 @@ const SINGLE_SESSION_HELP_SECTIONS: &[HelpSection] = &[
             ("Ctrl+U/K", "delete to line start/end"),
             ("Ctrl+W/Ctrl+Backspace", "delete previous word"),
             ("Alt+Backspace", "delete previous word, terminal-style"),
-            ("Ctrl/Alt+←/→, Ctrl+B/F", "move by word"),
+            ("Ctrl+←/→, Ctrl+B/F", "move by word"),
             ("Alt+B/F", "move by word, terminal-style"),
             ("Alt+D", "delete next word"),
             ("Tab", "complete slash command suggestion"),
@@ -5481,15 +6080,27 @@ fn append_user_lines(lines: &mut Vec<SingleSessionStyledLine>, turn: usize, cont
         return;
     };
     lines.push(styled_line(
-        format!("{turn}  {first}"),
+        format!("{turn}  {}", compact_single_session_visible_line(first)),
         SingleSessionLineStyle::User,
     ));
     for line in content_lines {
         lines.push(styled_line(
-            format!("   {line}"),
+            format!("   {}", compact_single_session_visible_line(line)),
             SingleSessionLineStyle::UserContinuation,
         ));
     }
+}
+
+fn compact_single_session_visible_line(line: &str) -> String {
+    const MAX_VISIBLE_BYTES: usize = 512;
+
+    if line.len() <= MAX_VISIBLE_BYTES {
+        return line.to_string();
+    }
+
+    let prefix_len = safe_utf8_prefix_len(line, MAX_VISIBLE_BYTES);
+    let omitted = line.len().saturating_sub(prefix_len);
+    format!("{}… <{} bytes omitted>", &line[..prefix_len], omitted)
 }
 
 fn is_user_prompt_line(line: &str) -> bool {
@@ -5988,7 +6599,7 @@ impl AssistantMarkdownRenderer {
             self.current.push_str(&image.dest_url);
         }
         if self.current_style == SingleSessionLineStyle::Assistant {
-            self.line_style_override = Some(SingleSessionLineStyle::AssistantLink);
+            self.line_style_override = Some(SingleSessionLineStyle::AssistantMedia);
         }
     }
 
@@ -6678,6 +7289,8 @@ fn append_tool_group_summary(
     lines: &mut Vec<SingleSessionStyledLine>,
     tool_messages: &[SingleSessionMessage],
 ) {
+    const TOOL_GROUP_SUMMARY_VISIBLE_FRAGMENT_LIMIT: usize = 6;
+
     if tool_messages.is_empty() {
         return;
     }
@@ -6687,7 +7300,12 @@ fn append_tool_group_summary(
     let mut approx_tokens = 0usize;
 
     for message in tool_messages {
-        approx_tokens += message.content().chars().count().div_ceil(4);
+        // This is only a collapsed-card estimate. Counting Unicode scalar
+        // values scans every byte of large tool outputs and made first content
+        // frames visibly stall for transcripts with huge tool groups. Use the
+        // byte length's O(1) metadata instead; it is a good enough token proxy
+        // for a summary that is intentionally approximate.
+        approx_tokens += message.content().len().div_ceil(4);
         let name = tool_summary_name(message.content());
         if let Some(index) = names.iter().position(|existing| existing == &name) {
             counts[index] += 1;
@@ -6697,18 +7315,32 @@ fn append_tool_group_summary(
         }
     }
 
-    let fragments = names
+    let total_distinct_tools = names.len();
+    let mut summary_hasher = DefaultHasher::new();
+    names.hash(&mut summary_hasher);
+    counts.hash(&mut summary_hasher);
+    approx_tokens.hash(&mut summary_hasher);
+    let summary_hash = summary_hasher.finish();
+
+    let mut fragments = names
         .into_iter()
         .zip(counts)
+        .take(TOOL_GROUP_SUMMARY_VISIBLE_FRAGMENT_LIMIT)
         .map(|(name, count)| format!("{count} {name}"))
-        .collect::<Vec<_>>()
-        .join(", ");
+        .collect::<Vec<_>>();
+    if total_distinct_tools > TOOL_GROUP_SUMMARY_VISIBLE_FRAGMENT_LIMIT {
+        fragments.push(format!(
+            "{} more kinds",
+            total_distinct_tools - TOOL_GROUP_SUMMARY_VISIBLE_FRAGMENT_LIMIT
+        ));
+    }
+    let fragments = fragments.join(", ");
     let token_fragment = format_approx_tokens(approx_tokens);
     let line = format!("  ▸ tools: {fragments} · ~{token_fragment} tokens");
     lines.push(
         styled_line(line.clone(), SingleSessionLineStyle::Tool).with_tool_metadata(
             SingleSessionToolLineMetadata {
-                call_id: format!("tool-group:{fragments}:{token_fragment}"),
+                call_id: format!("tool-group:{summary_hash:016x}"),
                 name: "tools".to_string(),
                 state: SingleSessionToolVisualState::Group,
                 kind: SingleSessionToolLineKind::GroupSummary,
@@ -7157,7 +7789,7 @@ fn fuzzy_slash_completion(needle: &str, completions: &[&'static str]) -> Option<
     matches.sort_by(|a, b| {
         a.0.cmp(&b.0)
             .then_with(|| a.1.cmp(&b.1))
-            .then_with(|| a.2.cmp(&b.2))
+            .then_with(|| a.2.cmp(b.2))
     });
     matches.first().map(|(_, _, command)| *command)
 }

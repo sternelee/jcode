@@ -232,31 +232,69 @@ fn active_batch_progress(app: &dyn TuiState) -> Option<crate::bus::BatchProgress
     }
 }
 
+fn active_tool_call(app: &dyn TuiState) -> Option<ToolCall> {
+    let ProcessingStatus::RunningTool(name) = app.status() else {
+        return None;
+    };
+
+    let calls = app.streaming_tool_calls();
+    calls
+        .iter()
+        .rev()
+        .find(|tc| tc.name == name)
+        .cloned()
+        .or_else(|| calls.last().cloned())
+        .or_else(|| {
+            Some(ToolCall {
+                id: String::new(),
+                name,
+                input: serde_json::Value::Null,
+                intent: None,
+            })
+        })
+}
+
 pub(super) fn active_batch_progress_hash(app: &dyn TuiState) -> u64 {
-    let Some(progress) = active_batch_progress(app) else {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+
+    if let Some(progress) = active_batch_progress(app) {
+        0u8.hash(&mut hasher);
+        if progress.completed < progress.total {
+            super::activity_indicator_frame_index(app.animation_elapsed(), 12.5).hash(&mut hasher);
+            super::animated_tool_halo_frame_index(app.animation_elapsed()).hash(&mut hasher);
+        }
+        progress.total.hash(&mut hasher);
+        progress.completed.hash(&mut hasher);
+        progress.last_completed.hash(&mut hasher);
+        for subcall in &progress.subcalls {
+            subcall.index.hash(&mut hasher);
+            subcall.tool_call.id.hash(&mut hasher);
+            subcall.tool_call.name.hash(&mut hasher);
+            match subcall.state {
+                crate::bus::BatchSubcallState::Running => 0u8,
+                crate::bus::BatchSubcallState::Succeeded => 1u8,
+                crate::bus::BatchSubcallState::Failed => 2u8,
+            }
+            .hash(&mut hasher);
+            if let Ok(input) = serde_json::to_string(&subcall.tool_call.input) {
+                input.hash(&mut hasher);
+            }
+        }
+        return hasher.finish();
+    }
+
+    let Some(tool_call) = active_tool_call(app) else {
         return 0;
     };
 
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    if progress.completed < progress.total {
-        super::activity_indicator_frame_index(app.animation_elapsed(), 12.5).hash(&mut hasher);
-    }
-    progress.total.hash(&mut hasher);
-    progress.completed.hash(&mut hasher);
-    progress.last_completed.hash(&mut hasher);
-    for subcall in &progress.subcalls {
-        subcall.index.hash(&mut hasher);
-        subcall.tool_call.id.hash(&mut hasher);
-        subcall.tool_call.name.hash(&mut hasher);
-        match subcall.state {
-            crate::bus::BatchSubcallState::Running => 0u8,
-            crate::bus::BatchSubcallState::Succeeded => 1u8,
-            crate::bus::BatchSubcallState::Failed => 2u8,
-        }
-        .hash(&mut hasher);
-        if let Ok(input) = serde_json::to_string(&subcall.tool_call.input) {
-            input.hash(&mut hasher);
-        }
+    1u8.hash(&mut hasher);
+    super::activity_indicator_frame_index(app.animation_elapsed(), 12.5).hash(&mut hasher);
+    super::animated_tool_halo_frame_index(app.animation_elapsed()).hash(&mut hasher);
+    tool_call.id.hash(&mut hasher);
+    tool_call.name.hash(&mut hasher);
+    tool_call.intent.hash(&mut hasher);
+    if let Ok(input) = serde_json::to_string(&tool_call.input) {
+        input.hash(&mut hasher);
     }
     hasher.finish()
 }
@@ -273,6 +311,8 @@ fn prepare_active_batch_progress(
     let centered = app.centered_mode();
     let accent = rgb(255, 193, 94);
     let spinner = super::activity_indicator(app.animation_elapsed(), 12.5);
+    let (left_halo, right_halo) = super::animated_tool_halo_segments(app.animation_elapsed());
+    let halo_style = Style::default().fg(super::animated_tool_color(app.animation_elapsed()));
     let block_width = if centered {
         super::centered_content_block_width(width, 96)
     } else {
@@ -286,7 +326,8 @@ fn prepare_active_batch_progress(
     }
 
     let mut header = vec![
-        Span::styled(format!("  {} ", spinner), Style::default().fg(accent)),
+        Span::styled(format!("  {} ", left_halo), halo_style),
+        Span::styled(format!("{} ", spinner), Style::default().fg(accent)),
         Span::styled("batch", Style::default().fg(tool_color())),
         Span::styled(
             format!(" · {}/{} done", progress.completed, progress.total),
@@ -303,9 +344,10 @@ fn prepare_active_batch_progress(
             Style::default().fg(dim_color()),
         ));
     }
+    header.push(Span::styled(format!(" {}", right_halo), halo_style));
     lines.push(super::truncate_line_with_ellipsis_to_width(
         &Line::from(header),
-        width.saturating_sub(1) as usize,
+        row_width,
     ));
 
     let mut hidden_completed = 0usize;
@@ -343,6 +385,93 @@ fn prepare_active_batch_progress(
     wrap_lines_with_map(lines, &[], &[], &[], &[], &[], width, &[], &[])
 }
 
+fn prepare_active_tool_progress(
+    app: &dyn TuiState,
+    width: u16,
+    prefix_blank: bool,
+) -> PreparedMessages {
+    if active_batch_progress(app).is_some() {
+        return prepare_active_batch_progress(app, width, prefix_blank);
+    }
+
+    let Some(tool_call) = active_tool_call(app) else {
+        return empty_prepared_messages();
+    };
+
+    let centered = app.centered_mode();
+    let elapsed = app.animation_elapsed();
+    let spinner = super::activity_indicator(elapsed, 12.5);
+    let (left_halo, right_halo) = super::animated_tool_halo_segments(elapsed);
+    let halo_color = super::animated_tool_color(elapsed);
+    let halo_style = Style::default().fg(halo_color);
+    let block_width = if centered {
+        super::centered_content_block_width(width, 96)
+    } else {
+        width as usize
+    };
+    let row_width = block_width.saturating_sub(1);
+    let display_name = tools_ui::resolve_display_tool_name(&tool_call.name).to_string();
+    let reserved_width = unicode_width::UnicodeWidthStr::width(
+        format!(
+            "  {} {} {} {}",
+            left_halo, spinner, display_name, right_halo
+        )
+        .as_str(),
+    )
+    .saturating_add(6);
+    let summary_budget = row_width.saturating_sub(reserved_width);
+    let mut summary = tools_ui::get_tool_summary_with_budget(&tool_call, 80, Some(summary_budget));
+    if summary.trim().is_empty() && tool_call.input.is_null() {
+        summary = "preparing input…".to_string();
+    }
+
+    let intent = tool_call
+        .intent
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if prefix_blank {
+        lines.push(Line::from(""));
+    }
+
+    let mut spans = vec![
+        Span::styled(format!("  {} ", left_halo), halo_style),
+        Span::styled(format!("{} ", spinner), halo_style),
+        Span::styled(display_name, Style::default().fg(halo_color).bold()),
+    ];
+
+    if let Some(intent) = intent {
+        spans.push(Span::styled(" · ", Style::default().fg(dim_color())));
+        spans.push(Span::styled(
+            intent.to_string(),
+            Style::default().fg(tool_color()),
+        ));
+        if !summary.is_empty() && summary != intent {
+            spans.push(Span::styled(" · ", Style::default().fg(dim_color())));
+            spans.push(Span::styled(summary, Style::default().fg(dim_color())));
+        }
+    } else if !summary.is_empty() {
+        spans.push(Span::styled(
+            format!(" {}", summary),
+            Style::default().fg(dim_color()),
+        ));
+    }
+    spans.push(Span::styled(format!(" {}", right_halo), halo_style));
+
+    lines.push(super::truncate_line_with_ellipsis_to_width(
+        &Line::from(spans),
+        row_width,
+    ));
+
+    if centered {
+        super::left_pad_lines_to_block_width(&mut lines, width, block_width);
+    }
+
+    wrap_lines_with_map(lines, &[], &[], &[], &[], &[], width, &[], &[])
+}
+
 pub(super) fn prepare_messages(
     app: &dyn TuiState,
     width: u16,
@@ -366,6 +495,7 @@ pub(super) fn prepare_messages(
     };
 
     super::note_full_prep_request();
+    let cache_lookup_start = Instant::now();
 
     {
         let cache = match full_prep_cache().lock() {
@@ -378,15 +508,18 @@ pub(super) fn prepare_messages(
         };
         let mut cache = cache;
         if let Some((prepared, kind)) = cache.get_exact_with_kind(&key) {
+            super::note_full_prep_cache_lookup(cache_lookup_start.elapsed());
             super::note_full_prep_cache_hit(kind, prepared.as_ref());
             return prepared;
         }
     }
 
+    super::note_full_prep_cache_lookup(cache_lookup_start.elapsed());
     super::note_full_prep_cache_miss();
 
+    let build_start = Instant::now();
     let prepared = Arc::new(prepare_messages_inner(app, width, height));
-    super::note_full_prep_built(prepared.as_ref());
+    super::note_full_prep_built(prepared.as_ref(), build_start.elapsed());
 
     {
         if let Ok(mut cache) = full_prep_cache().lock() {
@@ -398,22 +531,28 @@ pub(super) fn prepare_messages(
 }
 
 fn prepare_messages_inner(app: &dyn TuiState, width: u16, height: u16) -> PreparedChatFrame {
+    let header_start = Instant::now();
     let mut all_header_lines = header::build_persistent_header(app, width);
     all_header_lines.extend(header::build_header_lines(app, width));
     let header_prepared = Arc::new(wrap_lines(all_header_lines, &[], &[], &[], width));
+    let header_ms = header_start.elapsed().as_secs_f64() * 1000.0;
 
+    let body_start = Instant::now();
     let body_prepared = prepare_body_cached(app, width);
-    let has_batch_progress = active_batch_progress(app).is_some();
+    let body_ms = body_start.elapsed().as_secs_f64() * 1000.0;
+
+    let batch_start = Instant::now();
+    let has_batch_progress =
+        active_batch_progress(app).is_some() || active_tool_call(app).is_some();
     let batch_prefix_blank = has_batch_progress && !body_prepared.wrapped_lines.is_empty();
     let batch_progress_prepared = if has_batch_progress {
-        Arc::new(prepare_active_batch_progress(
-            app,
-            width,
-            batch_prefix_blank,
-        ))
+        Arc::new(prepare_active_tool_progress(app, width, batch_prefix_blank))
     } else {
         Arc::new(empty_prepared_messages())
     };
+    let batch_ms = batch_start.elapsed().as_secs_f64() * 1000.0;
+
+    let streaming_start = Instant::now();
     let has_streaming = app.is_processing() && !app.streaming_text().is_empty();
     let stream_prefix_blank = has_streaming
         && (!body_prepared.wrapped_lines.is_empty()
@@ -423,12 +562,14 @@ fn prepare_messages_inner(app: &dyn TuiState, width: u16, height: u16) -> Prepar
     } else {
         Arc::new(empty_prepared_messages())
     };
+    let streaming_ms = streaming_start.elapsed().as_secs_f64() * 1000.0;
 
     let is_initial_empty = app.display_messages().is_empty()
         && !app.is_processing()
         && app.streaming_text().is_empty();
 
     if is_initial_empty {
+        let compose_start = Instant::now();
         let suggestions = app.suggestion_prompts();
         let is_centered = app.centered_mode();
         let suggestion_align = if is_centered {
@@ -509,15 +650,32 @@ fn prepare_messages_inner(app: &dyn TuiState, width: u16, height: u16) -> Prepar
             edit_tool_ranges: Vec::new(),
             copy_targets: Vec::new(),
         });
-        return PreparedChatFrame::from_single(prepared);
+        let frame = PreparedChatFrame::from_single(prepared);
+        super::note_full_prep_phase_metrics(super::FullPrepPhaseMetrics {
+            header_ms,
+            body_ms,
+            batch_ms,
+            streaming_ms,
+            compose_ms: compose_start.elapsed().as_secs_f64() * 1000.0,
+        });
+        return frame;
     }
 
-    PreparedChatFrame::from_sections(vec![
+    let compose_start = Instant::now();
+    let frame = PreparedChatFrame::from_sections(vec![
         (PreparedSectionKind::Header, header_prepared),
         (PreparedSectionKind::Body, body_prepared),
         (PreparedSectionKind::BatchProgress, batch_progress_prepared),
         (PreparedSectionKind::Streaming, streaming_prepared),
-    ])
+    ]);
+    super::note_full_prep_phase_metrics(super::FullPrepPhaseMetrics {
+        header_ms,
+        body_ms,
+        batch_ms,
+        streaming_ms,
+        compose_ms: compose_start.elapsed().as_secs_f64() * 1000.0,
+    });
+    frame
 }
 
 fn prepare_body_cached(app: &dyn TuiState, width: u16) -> Arc<PreparedMessages> {
@@ -535,6 +693,7 @@ fn prepare_body_cached(app: &dyn TuiState, width: u16) -> Arc<PreparedMessages> 
         centered: app.centered_mode(),
     };
     let msg_count = app.display_messages().len();
+    let cache_lookup_start = Instant::now();
 
     let cache = match body_cache().lock() {
         Ok(c) => c,
@@ -547,24 +706,30 @@ fn prepare_body_cached(app: &dyn TuiState, width: u16) -> Arc<PreparedMessages> 
 
     let mut cache = cache;
     if let Some((prepared, kind)) = cache.get_exact_with_kind(&key) {
+        super::note_body_cache_lookup(cache_lookup_start.elapsed());
         super::note_body_cache_hit(kind, prepared.as_ref());
         return prepared;
     }
 
+    super::note_body_cache_lookup(cache_lookup_start.elapsed());
     super::note_body_cache_miss();
 
     let incremental_base = cache.take_best_incremental_base(&key, msg_count);
 
     drop(cache);
 
-    let prepared = if let Some((prev, prev_count)) = incremental_base {
+    let build_start = Instant::now();
+    let (prepared, build_path) = if let Some((prev, prev_count)) = incremental_base {
         super::note_body_incremental_reuse(prev_count);
-        prepare_body_incremental(app, width, prev, prev_count)
+        (
+            prepare_body_incremental(app, width, prev, prev_count),
+            "incremental",
+        )
     } else {
-        Arc::new(prepare_body(app, width, false))
+        (Arc::new(prepare_body(app, width, false)), "full")
     };
 
-    super::note_body_built(prepared.as_ref());
+    super::note_body_built(prepared.as_ref(), build_start.elapsed(), build_path);
 
     let mut cache = match body_cache().lock() {
         Ok(c) => c,
@@ -605,7 +770,7 @@ pub(super) fn prepare_body_incremental(
     let mut new_lines: Vec<Line> = Vec::new();
     let mut new_user_line_indices: Vec<usize> = Vec::new();
     let mut new_user_prompt_texts: Vec<String> = Vec::new();
-    let mut new_edit_tool_line_ranges: Vec<(usize, String, usize, usize)> = Vec::new();
+    let mut new_edit_tool_line_ranges: Vec<(usize, String, usize, usize, bool)> = Vec::new();
     let mut new_copy_targets: Vec<RawCopyTarget> = Vec::new();
     let mut new_raw_plain_lines: Vec<String> = Vec::new();
     let mut new_line_raw_overrides: Vec<Option<WrappedLineMap>> = Vec::new();
@@ -731,11 +896,14 @@ pub(super) fn prepare_body_incremental(
                                     })
                             })
                             .unwrap_or_else(|| "unknown".to_string());
+                        let expandable =
+                            messages::edit_tool_inline_diff_is_expandable(tc, &msg.content, width);
                         new_edit_tool_line_ranges.push((
                             prev_msg_count + new_msg_offset,
                             file_path,
                             tool_start_line,
                             new_lines.len(),
+                            expandable,
                         ));
                     }
                 }
@@ -966,6 +1134,7 @@ pub(super) fn prepare_body_incremental(
                     file_path: r.file_path,
                     start_line: r.start_line + prev_len,
                     end_line: r.end_line + prev_len,
+                    expandable: r.expandable,
                 }),
         );
     prepared.copy_targets.extend(
@@ -1047,7 +1216,7 @@ pub(super) fn prepare_body(
     let mut line_copy_offsets: Vec<usize> = Vec::new();
     let mut user_line_indices: Vec<usize> = Vec::new();
     let mut user_prompt_texts: Vec<String> = Vec::new();
-    let mut edit_tool_line_ranges: Vec<(usize, String, usize, usize)> = Vec::new();
+    let mut edit_tool_line_ranges: Vec<(usize, String, usize, usize, bool)> = Vec::new();
     let mut copy_targets: Vec<RawCopyTarget> = Vec::new();
     let centered = app.centered_mode();
     markdown::set_center_code_blocks(centered);
@@ -1203,11 +1372,14 @@ pub(super) fn prepare_body(
                                     })
                             })
                             .unwrap_or_else(|| "unknown".to_string());
+                        let expandable =
+                            messages::edit_tool_inline_diff_is_expandable(tc, &msg.content, width);
                         edit_tool_line_ranges.push((
                             msg_idx,
                             file_path,
                             tool_start_line,
                             lines.len(),
+                            expandable,
                         ));
                     }
                 }
@@ -1506,7 +1678,7 @@ fn wrap_lines_with_map(
     user_line_indices: &[usize],
     user_prompt_texts: &[String],
     width: u16,
-    edit_ranges: &[(usize, String, usize, usize)],
+    edit_ranges: &[(usize, String, usize, usize, bool)],
     copy_ranges: &[RawCopyTarget],
 ) -> PreparedMessages {
     let full_width = width.saturating_sub(1) as usize;
@@ -1596,7 +1768,7 @@ fn wrap_lines_with_map(
     }
 
     let mut edit_tool_ranges = Vec::new();
-    for (msg_idx, file_path, raw_start, raw_end) in edit_ranges {
+    for (msg_idx, file_path, raw_start, raw_end, expandable) in edit_ranges {
         let start_line = raw_to_wrapped.get(*raw_start).copied().unwrap_or(0);
         let end_line = raw_to_wrapped
             .get(*raw_end)
@@ -1608,6 +1780,7 @@ fn wrap_lines_with_map(
             file_path: file_path.clone(),
             start_line,
             end_line,
+            expandable: *expandable,
         });
     }
 

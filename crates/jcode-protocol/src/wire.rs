@@ -183,9 +183,14 @@ pub enum Request {
         session_id: Option<String>,
     },
 
-    /// Set reasoning effort for OpenAI models (none|low|medium|high|xhigh)
+    /// Set reasoning effort for providers that expose it (OpenAI/Anthropic: none|low|medium|high|xhigh; DeepSeek: none|low|medium|high|max)
     #[serde(rename = "set_reasoning_effort")]
-    SetReasoningEffort { id: u64, effort: String },
+    SetReasoningEffort {
+        id: u64,
+        effort: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_session_id: Option<String>,
+    },
 
     /// Set service tier for OpenAI models (priority|fast|flex|off)
     #[serde(rename = "set_service_tier")]
@@ -894,7 +899,7 @@ pub enum ServerEvent {
         /// Upstream provider (e.g., which provider OpenRouter routed to, or calculated preference)
         #[serde(skip_serializing_if = "Option::is_none")]
         upstream_provider: Option<String>,
-        /// Reasoning effort for OpenAI models
+        /// Reasoning effort for providers that expose it
         #[serde(skip_serializing_if = "Option::is_none")]
         reasoning_effort: Option<String>,
         /// Service tier override for OpenAI models

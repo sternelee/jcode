@@ -137,12 +137,9 @@ prompt_entry_animation = true
 # Runtime policy may cap this lower on slower environments such as WSL/Windows Terminal.
 # redraw_fps = 60
 
-[workspace_memory]
-# Optional default for sessions started without a workspace-specific override.
-# default_enabled = true
-# Per-workspace overrides live under [workspace_memory.workspaces]
-# [workspace_memory.workspaces]
-# "/Users/you/src/big-repo" = false
+# Label shown for the Alt/Option modifier in copy badges.
+# Empty = auto ("⌥" on macOS, "Alt" elsewhere). Examples: "Option", "Alt", "⌥".
+# copy_badge_alt_label = ""
 
 [features]
 # Memory: retrieval + extraction sidecar features
@@ -169,6 +166,31 @@ fallback_engines = ["bing"]
 # Bing market/region, for example "en-US" or "zh-CN".
 bing_market = "en-US"
 
+[tools]
+# Controls which built-in tools are sent to the model.
+# Profiles: "full" (default), "acp", "minimal"/"lite", or "none".
+# acp keeps core coding tools plus batch for generic ACP clients.
+# minimal keeps core coding tools only: bash, read, write, edit, multiedit,
+# apply_patch, patch, agentgrep, glob, grep, and ls.
+profile = "full"
+# Explicit allow-list. When non-empty, only these tools are exposed.
+# enabled = ["bash", "read", "write", "apply_patch", "agentgrep", "ls"]
+# Privacy-sensitive or stub tools such as gmail and lsp are disabled by default.
+# To expose every tool including default-disabled tools, use: enabled = ["*"]
+# Hide selected tools after applying the profile/allow-list.
+# disabled = ["browser", "gmail", "lsp", "swarm"]
+# Disable all built-in tools unless enabled is set.
+disable_base_tools = false
+
+[acp]
+# Agent Client Protocol adapter compatibility profile: standard, extended, or full.
+# standard emits only spec-compatible ACP messages.
+# extended/full additionally emit ignorable _jcode/* extension notifications.
+profile = "standard"
+# Tool profile requested when `jcode acp` starts the daemon itself.
+# Existing daemons keep their current server-wide tool config.
+tool_profile = "acp"
+
 [provider]
 # Default model (optional, uses provider default if not set)
 # Set via /model picker with Ctrl+D to save as default
@@ -178,6 +200,8 @@ bing_market = "en-US"
 # default_provider = "copilot"
 # OpenAI reasoning effort (none|low|medium|high|xhigh)
 openai_reasoning_effort = "low"
+# Anthropic reasoning effort for Claude reasoning models (none|low|medium|high; xhigh on Opus 4.7; max aliases to the strongest supported level)
+# anthropic_reasoning_effort = "medium"
 # OpenAI transport mode (auto|websocket|https)
 # openai_transport = "auto"
 # OpenAI service tier override (priority|flex)

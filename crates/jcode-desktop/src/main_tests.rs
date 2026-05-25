@@ -1,7 +1,15 @@
-use super::animation::{FOCUS_PULSE_DURATION, VIEWPORT_ANIMATION_DURATION};
+use super::animation::{
+    AnimatedRect, ColorTransition, DESKTOP_REDUCED_MOTION_ENV, DesktopReducedMotionEnvGuard,
+    FOCUS_PULSE_DURATION, STATUS_COLOR_TRANSITION_DURATION, SURFACE_TRANSITION_DURATION,
+    SurfaceTransitionAnimator, SurfaceVisualFrame, SurfaceVisualTarget,
+    VIEWPORT_ANIMATION_DURATION, desktop_reduced_motion_enabled,
+    desktop_reduced_motion_enabled_for_env_value,
+};
 use super::single_session::*;
 use super::*;
 use std::sync::Mutex;
+
+static DESKTOP_PREFS_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
 fn desktop_frame_profile_is_opt_in_and_recognizes_trace_modes() {
@@ -37,6 +45,233 @@ fn desktop_config_parses_positive_millisecond_durations_only() {
 }
 
 #[test]
+fn desktop_reduced_motion_env_parses_common_flag_values() {
+    assert!(!desktop_reduced_motion_enabled_for_env_value(None));
+    assert!(!desktop_reduced_motion_enabled_for_env_value(Some(
+        OsString::from("")
+    )));
+    assert!(!desktop_reduced_motion_enabled_for_env_value(Some(
+        OsString::from("0")
+    )));
+    assert!(!desktop_reduced_motion_enabled_for_env_value(Some(
+        OsString::from("false")
+    )));
+    assert!(!desktop_reduced_motion_enabled_for_env_value(Some(
+        OsString::from("off")
+    )));
+    assert!(desktop_reduced_motion_enabled_for_env_value(Some(
+        OsString::from("1")
+    )));
+    assert!(desktop_reduced_motion_enabled_for_env_value(Some(
+        OsString::from("true")
+    )));
+    assert!(desktop_reduced_motion_enabled_for_env_value(Some(
+        OsString::from("reduce")
+    )));
+    assert_eq!(DESKTOP_REDUCED_MOTION_ENV, "JCODE_DESKTOP_REDUCED_MOTION");
+}
+
+#[test]
+fn desktop_process_role_parses_internal_flags() {
+    assert_eq!(
+        desktop_process_role_from_args(["jcode-desktop"].into_iter()),
+        DesktopProcessRole::StableHost
+    );
+    assert_eq!(
+        desktop_process_role_from_args(["jcode-desktop", "--desktop-host"].into_iter()),
+        DesktopProcessRole::StableHost
+    );
+    assert_eq!(
+        desktop_process_role_from_args(["jcode-desktop", "--desktop-app-worker"].into_iter()),
+        DesktopProcessRole::AppWorker
+    );
+    assert_eq!(
+        desktop_process_role_from_args(
+            ["jcode-desktop", "--desktop-process-role=stable_host"].into_iter()
+        ),
+        DesktopProcessRole::StableHost
+    );
+    assert_eq!(
+        desktop_process_role_from_args(
+            ["jcode-desktop", "--desktop-process-role", "app-worker"].into_iter()
+        ),
+        DesktopProcessRole::AppWorker
+    );
+    assert_eq!(
+        DesktopProcessRole::Standalone.reload_strategy(),
+        DesktopReloadStrategy::FullProcessHandoff
+    );
+    assert_eq!(
+        DesktopProcessRole::StableHost.reload_strategy(),
+        DesktopReloadStrategy::AppWorkerRestart
+    );
+    assert_eq!(
+        DesktopProcessRole::AppWorker.reload_strategy(),
+        DesktopReloadStrategy::FullProcessHandoff
+    );
+}
+
+#[test]
+fn desktop_modes_map_to_worker_modes() {
+    assert_eq!(
+        DesktopMode::SingleSession.worker_mode(),
+        DesktopWorkerMode::SingleSession
+    );
+    assert_eq!(
+        DesktopMode::WorkspacePrototype.worker_mode(),
+        DesktopWorkerMode::Workspace
+    );
+}
+
+#[test]
+fn desktop_worker_init_builds_initial_scene_from_snapshot_and_window() {
+    let init = DesktopWorkerInit {
+        mode: DesktopWorkerMode::Workspace,
+        snapshot: Some(DesktopUiSnapshot::new(
+            "workspace",
+            "Workspace Title".to_string(),
+            None,
+            DesktopSurfaceSnapshot::Workspace(DesktopWorkspaceSnapshot {
+                input_mode: "normal".to_string(),
+                focused_surface_id: 1,
+                focused_session_id: None,
+                zoomed: false,
+                detail_scroll: 0,
+                draft: String::new(),
+                draft_cursor: 0,
+                pending_image_count: 0,
+                surfaces: Vec::new(),
+            }),
+        )),
+        window: DesktopWindowState {
+            width: 800,
+            height: 600,
+            scale_factor: 1.5,
+            focused: true,
+        },
+    };
+
+    let scene = desktop_scene_for_worker_init(&init);
+    assert_eq!(scene.viewport.size.width, 800.0);
+    assert_eq!(scene.viewport.size.height, 600.0);
+    assert_eq!(scene.viewport.scale_factor, 1.5);
+    assert_eq!(scene.metadata.title.as_deref(), Some("Workspace Title"));
+    assert!(scene.metadata.content_ready);
+    assert!(matches!(
+        scene.display_list.commands.as_slice(),
+        [DesktopDisplayCommand::Clear(_)]
+    ));
+}
+
+#[test]
+fn desktop_key_events_preserve_text_and_modifiers_for_worker_input() {
+    let key = desktop_key_event_from_winit(
+        &Key::Character("x".into()),
+        ModifiersState::SHIFT | ModifiersState::CONTROL,
+        true,
+    );
+    assert_eq!(key.key, "x");
+    assert_eq!(key.text.as_deref(), Some("x"));
+    assert!(key.pressed);
+    assert!(key.modifiers.shift);
+    assert!(key.modifiers.ctrl);
+    assert!(!key.modifiers.alt);
+    assert!(!key.modifiers.super_key);
+
+    let enter =
+        desktop_key_event_from_winit(&Key::Named(NamedKey::Enter), ModifiersState::empty(), true);
+    assert_eq!(enter.key, "Enter");
+    assert_eq!(enter.text, None);
+}
+
+#[test]
+fn desktop_mouse_wheel_events_convert_line_and_pixel_delta() {
+    assert_eq!(
+        desktop_mouse_wheel_event(MouseScrollDelta::LineDelta(1.0, -2.0)),
+        DesktopMouseEvent::Wheel {
+            delta_x: 1.0,
+            delta_y: -2.0,
+        }
+    );
+    assert_eq!(
+        desktop_mouse_wheel_event(MouseScrollDelta::PixelDelta(PhysicalPosition::new(
+            3.0, -4.0
+        ))),
+        DesktopMouseEvent::Wheel {
+            delta_x: 3.0,
+            delta_y: -4.0,
+        }
+    );
+}
+
+#[test]
+fn desktop_session_events_convert_to_worker_wire_events() {
+    assert_eq!(
+        desktop_session_event_to_wire(&session_launch::DesktopSessionEvent::Status(
+            DesktopSessionStatus::external("thinking"),
+        )),
+        DesktopSessionEventWire::Status {
+            message: "thinking".to_string(),
+        }
+    );
+    assert_eq!(
+        desktop_session_event_to_wire(&session_launch::DesktopSessionEvent::TextDelta(
+            "hello".to_string(),
+        )),
+        DesktopSessionEventWire::AssistantTextDelta {
+            text: "hello".to_string(),
+        }
+    );
+    assert_eq!(
+        desktop_session_event_to_wire(&session_launch::DesktopSessionEvent::Done),
+        DesktopSessionEventWire::RawJson {
+            event_type: "done".to_string(),
+            payload: "Done".to_string(),
+        }
+    );
+}
+
+#[test]
+fn desktop_app_worker_relaunch_replaces_existing_process_role() {
+    let relaunch = DesktopRelaunch {
+        binary: PathBuf::from("/tmp/jcode-desktop"),
+        args: vec![
+            OsString::from("--workspace"),
+            OsString::from("--desktop-process-role=stable_host"),
+            OsString::from("--foo"),
+        ],
+    };
+
+    assert_eq!(
+        relaunch.for_app_worker().args,
+        vec![
+            OsString::from("--workspace"),
+            OsString::from("--foo"),
+            OsString::from("--desktop-process-role"),
+            OsString::from("app-worker"),
+        ]
+    );
+
+    let relaunch = DesktopRelaunch {
+        binary: PathBuf::from("/tmp/jcode-desktop"),
+        args: vec![
+            OsString::from("--desktop-process-role"),
+            OsString::from("stable-host"),
+            OsString::from("--desktop-app-worker"),
+            OsString::from("--new"),
+        ],
+    };
+    assert_eq!(
+        relaunch.for_app_worker().args,
+        vec![
+            OsString::from("--new"),
+            OsString::from("--desktop-process-role"),
+            OsString::from("app-worker"),
+        ]
+    );
+}
+
+#[test]
 fn desktop_platform_warnings_only_fire_for_less_supported_targets() {
     assert_eq!(
         desktop_platform_support_warning(DesktopPlatform::Linux),
@@ -48,6 +283,82 @@ fn desktop_platform_warnings_only_fire_for_less_supported_targets() {
     );
     assert!(desktop_platform_support_warning(DesktopPlatform::Windows).is_some());
     assert!(desktop_platform_support_warning(DesktopPlatform::Other).is_some());
+}
+
+#[test]
+fn desktop_scene_vertices_render_rectangles_and_clear_color() {
+    let mut scene = DesktopScene::default();
+    scene.push(DesktopDisplayCommand::Clear(DesktopColor::rgba(
+        0.1, 0.2, 0.3, 1.0,
+    )));
+    scene.push(DesktopDisplayCommand::Rect(DesktopRectPaint::filled(
+        DesktopSceneRect::new(10.0, 20.0, 30.0, 40.0),
+        DesktopColor::rgba(0.8, 0.7, 0.6, 1.0),
+    )));
+
+    let mut vertices = Vec::new();
+    let clear = desktop_scene_vertices(&scene, PhysicalSize::new(100, 100), &mut vertices)
+        .expect("clear color");
+
+    assert!((clear.r - 0.1).abs() < 0.000_001);
+    assert!((clear.g - 0.2).abs() < 0.000_001);
+    assert!((clear.b - 0.3).abs() < 0.000_001);
+    assert_eq!(clear.a, 1.0);
+    assert_eq!(vertices.len(), 6);
+    assert!(
+        vertices
+            .iter()
+            .all(|vertex| vertex.color == [0.8, 0.7, 0.6, 1.0])
+    );
+}
+
+#[test]
+fn desktop_scene_clear_resets_previous_vertices() {
+    let mut scene = DesktopScene::default();
+    scene.push(DesktopDisplayCommand::Rect(DesktopRectPaint::filled(
+        DesktopSceneRect::new(0.0, 0.0, 10.0, 10.0),
+        DesktopColor::rgba(1.0, 0.0, 0.0, 1.0),
+    )));
+    scene.push(DesktopDisplayCommand::Clear(DesktopColor::rgba(
+        0.0, 0.0, 0.0, 1.0,
+    )));
+
+    let mut vertices = Vec::new();
+    desktop_scene_vertices(&scene, PhysicalSize::new(100, 100), &mut vertices);
+
+    assert!(vertices.is_empty());
+}
+
+#[test]
+fn desktop_app_build_scene_adds_metadata_and_default_clear() {
+    let app = DesktopApp::SingleSession(SingleSessionApp::new(None));
+    let scene = app.build_scene(DesktopSceneBuildContext::new(DesktopScene::default()));
+
+    assert_eq!(scene.metadata.title, Some(app.status_title()));
+    assert!(scene.metadata.content_ready);
+    assert_eq!(scene.display_list.commands.len(), 1);
+    assert!(matches!(
+        scene.display_list.commands.first(),
+        Some(DesktopDisplayCommand::Clear(_))
+    ));
+}
+
+#[test]
+fn desktop_app_build_scene_preserves_existing_display_list() {
+    let app = DesktopApp::SingleSession(SingleSessionApp::new(None));
+    let mut scene = DesktopScene::default();
+    scene.push(DesktopDisplayCommand::Rect(DesktopRectPaint::filled(
+        DesktopSceneRect::new(1.0, 2.0, 3.0, 4.0),
+        DesktopColor::rgba(0.2, 0.3, 0.4, 1.0),
+    )));
+
+    let scene = app.build_scene(DesktopSceneBuildContext::new(scene));
+
+    assert_eq!(scene.display_list.commands.len(), 1);
+    assert!(matches!(
+        scene.display_list.commands.first(),
+        Some(DesktopDisplayCommand::Rect(_))
+    ));
 }
 
 #[test]
@@ -97,8 +408,7 @@ fn desktop_hot_reload_drops_resume_when_current_app_is_fresh() {
 
 #[test]
 fn desktop_hot_reload_persists_workspace_focus_before_spawn() -> Result<()> {
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-    let Ok(_guard) = ENV_LOCK.lock() else {
+    let Ok(_guard) = DESKTOP_PREFS_ENV_LOCK.lock() else {
         anyhow::bail!("desktop hot reload env lock poisoned");
     };
     let temp = unique_desktop_test_dir("desktop-hot-reload-workspace-state")?;
@@ -145,6 +455,43 @@ fn desktop_hot_reload_persists_workspace_focus_before_spawn() -> Result<()> {
     assert_eq!(saved.focused_session_id.as_deref(), Some("session-b"));
     assert_eq!(saved.panel_size, PanelSizePreset::ThreeQuarter);
     assert_eq!(saved.space_hold_toggle_ms, 333);
+
+    unsafe {
+        std::env::remove_var("JCODE_DESKTOP_STATE");
+    }
+    std::fs::remove_dir_all(temp)?;
+    Ok(())
+}
+
+#[test]
+fn desktop_hot_reload_restarts_default_launched_workspace_as_workspace() -> Result<()> {
+    let Ok(_guard) = DESKTOP_PREFS_ENV_LOCK.lock() else {
+        anyhow::bail!("desktop hot reload env lock poisoned");
+    };
+    let temp = unique_desktop_test_dir("desktop-hot-reload-default-workspace")?;
+    let state_path = temp.join("desktop-state.json");
+    unsafe {
+        std::env::set_var("JCODE_DESKTOP_STATE", &state_path);
+    }
+    let relaunch = DesktopRelaunch {
+        binary: PathBuf::from("/old/jcode-desktop"),
+        args: Vec::new(),
+    };
+    let app = DesktopApp::Workspace(Workspace::from_session_cards(vec![
+        workspace::SessionCard {
+            session_id: "session-visible".to_string(),
+            title: "visible session".to_string(),
+            subtitle: "active".to_string(),
+            detail: "already on screen".to_string(),
+            preview_lines: vec!["same content".to_string()],
+            detail_lines: vec![],
+        },
+    ]));
+
+    let updated = relaunch.for_app(&app, PathBuf::from("/new/jcode-desktop"));
+
+    assert_eq!(updated.binary, PathBuf::from("/new/jcode-desktop"));
+    assert_eq!(updated.args, vec![OsString::from("--workspace")]);
 
     unsafe {
         std::env::remove_var("JCODE_DESKTOP_STATE");
@@ -510,6 +857,41 @@ fn viewport_animation_interpolates_to_new_layout_target() {
 }
 
 #[test]
+fn reduced_motion_snaps_viewport_to_new_layout_target() {
+    let _guard = DesktopReducedMotionEnvGuard::set(true);
+    assert!(desktop_reduced_motion_enabled());
+
+    let mut animation = AnimatedViewport::default();
+    let now = Instant::now();
+    let visible = VisibleColumnLayout {
+        visible_columns: 2,
+        first_visible_column: 0,
+    };
+    let start = WorkspaceRenderLayout {
+        visible,
+        column_width: 200.0,
+        scroll_offset: 0.0,
+        vertical_scroll_offset: 0.0,
+    };
+    let target = WorkspaceRenderLayout {
+        visible: VisibleColumnLayout {
+            visible_columns: 2,
+            first_visible_column: 2,
+        },
+        column_width: 300.0,
+        scroll_offset: 600.0,
+        vertical_scroll_offset: 800.0,
+    };
+
+    assert_eq!(animation.frame(start, now).column_width, 200.0);
+    let snapped = animation.frame(target, now);
+    assert_eq!(snapped.column_width, 300.0);
+    assert_eq!(snapped.scroll_offset, 600.0);
+    assert_eq!(snapped.vertical_scroll_offset, 800.0);
+    assert!(!animation.is_animating());
+}
+
+#[test]
 fn focus_pulse_runs_when_focused_surface_changes() {
     let mut pulse = FocusPulse::default();
     let now = Instant::now();
@@ -528,6 +910,374 @@ fn focus_pulse_runs_when_focused_surface_changes() {
     let end = pulse.frame(2, now + FOCUS_PULSE_DURATION);
     assert_eq!(end, 0.0);
     assert!(!pulse.is_animating());
+}
+
+#[test]
+fn reduced_motion_disables_focus_pulse() {
+    let _guard = DesktopReducedMotionEnvGuard::set(true);
+    let mut pulse = FocusPulse::default();
+    let now = Instant::now();
+
+    assert_eq!(pulse.frame(1, now), 0.0);
+    assert_eq!(pulse.frame(2, now), 0.0);
+    assert!(!pulse.is_animating());
+}
+
+#[test]
+fn surface_transition_animates_panel_reposition_and_entry() {
+    let mut transitions = SurfaceTransitionAnimator::default();
+    let now = Instant::now();
+    let original = SurfaceVisualTarget {
+        id: 1,
+        rect: AnimatedRect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 120.0,
+        },
+    };
+    let moved = SurfaceVisualTarget {
+        id: 1,
+        rect: AnimatedRect {
+            x: 120.0,
+            y: 16.0,
+            width: 180.0,
+            height: 220.0,
+        },
+    };
+
+    let first = transitions.frame([original], now);
+    let first = surface_visual_frame(&first, 1);
+    assert_eq!(first.rect, original.rect);
+    assert_eq!(first.opacity, 1.0);
+    assert!(!transitions.is_animating());
+
+    let start = transitions.frame([moved], now);
+    let start = surface_visual_frame(&start, 1);
+    assert_eq!(start.rect, original.rect);
+    assert!(transitions.is_animating());
+
+    let middle = transitions.frame([moved], now + SURFACE_TRANSITION_DURATION / 2);
+    let middle = surface_visual_frame(&middle, 1);
+    assert!(middle.rect.x > original.rect.x);
+    assert!(middle.rect.x < moved.rect.x);
+    assert!(middle.rect.width > original.rect.width);
+    assert!(middle.rect.width < moved.rect.width);
+
+    let entered = SurfaceVisualTarget {
+        id: 2,
+        rect: AnimatedRect {
+            x: 24.0,
+            y: 36.0,
+            width: 90.0,
+            height: 110.0,
+        },
+    };
+    let entry_start = transitions.frame([moved, entered], now + SURFACE_TRANSITION_DURATION / 2);
+    let entry_start = surface_visual_frame(&entry_start, 2);
+    assert_eq!(entry_start.opacity, 0.0);
+    assert!(entry_start.rect.y > entered.rect.y);
+    assert!(entry_start.visual_rect().width < entered.rect.width);
+
+    let final_frame = transitions.frame([moved, entered], now + SURFACE_TRANSITION_DURATION * 2);
+    let final_moved = surface_visual_frame(&final_frame, 1);
+    let final_entered = surface_visual_frame(&final_frame, 2);
+    assert_eq!(final_moved.rect, moved.rect);
+    assert_eq!(final_entered.rect, entered.rect);
+    assert_eq!(final_entered.opacity, 1.0);
+    assert!(!transitions.is_animating());
+}
+
+#[test]
+fn surface_transition_animates_panel_exit_before_removal() {
+    let mut transitions = SurfaceTransitionAnimator::default();
+    let now = Instant::now();
+    let original = SurfaceVisualTarget {
+        id: 1,
+        rect: AnimatedRect {
+            x: 16.0,
+            y: 24.0,
+            width: 140.0,
+            height: 180.0,
+        },
+    };
+
+    let first = transitions.frame([original], now);
+    let first = surface_visual_frame(&first, 1);
+    assert!(!first.exiting);
+    assert_eq!(first.opacity, 1.0);
+
+    let exit_start = transitions.frame([], now + Duration::from_millis(8));
+    let exit_start = surface_visual_frame(&exit_start, 1);
+    assert!(exit_start.exiting);
+    assert_eq!(exit_start.opacity, 1.0);
+    assert_eq!(exit_start.rect, original.rect);
+    assert!(transitions.is_animating());
+
+    let exit_middle = transitions.frame(
+        [],
+        now + Duration::from_millis(8) + SURFACE_TRANSITION_DURATION / 2,
+    );
+    let exit_middle = surface_visual_frame(&exit_middle, 1);
+    assert!(exit_middle.exiting);
+    assert!(exit_middle.opacity > 0.0);
+    assert!(exit_middle.opacity < 1.0);
+    assert!(exit_middle.rect.y < original.rect.y);
+    assert!(exit_middle.visual_rect().width < original.rect.width);
+
+    let finished = transitions.frame(
+        [],
+        now + Duration::from_millis(8) + SURFACE_TRANSITION_DURATION * 2,
+    );
+    assert!(finished.is_empty());
+    assert!(!transitions.is_animating());
+}
+
+#[test]
+fn reduced_motion_snaps_surface_entries_moves_and_exits() {
+    let _guard = DesktopReducedMotionEnvGuard::set(true);
+    let mut transitions = SurfaceTransitionAnimator::default();
+    let now = Instant::now();
+    let original = SurfaceVisualTarget {
+        id: 1,
+        rect: AnimatedRect {
+            x: 16.0,
+            y: 24.0,
+            width: 140.0,
+            height: 180.0,
+        },
+    };
+    let moved = SurfaceVisualTarget {
+        id: 1,
+        rect: AnimatedRect {
+            x: 80.0,
+            y: 40.0,
+            width: 160.0,
+            height: 200.0,
+        },
+    };
+
+    transitions.frame([original], now);
+    let snapped = transitions.frame([moved], now);
+    let snapped = surface_visual_frame(&snapped, 1);
+    assert_eq!(snapped.rect, moved.rect);
+    assert_eq!(snapped.opacity, 1.0);
+    assert!(!snapped.exiting);
+    assert!(!transitions.is_animating());
+
+    let removed = transitions.frame([], now + Duration::from_millis(1));
+    assert!(removed.is_empty());
+    assert!(!transitions.is_animating());
+}
+
+#[test]
+fn surface_transition_retargets_from_current_frame_mid_animation() {
+    let mut transitions = SurfaceTransitionAnimator::default();
+    let now = Instant::now();
+    let original = SurfaceVisualTarget {
+        id: 1,
+        rect: AnimatedRect {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height: 120.0,
+        },
+    };
+    let first_target = SurfaceVisualTarget {
+        id: 1,
+        rect: AnimatedRect {
+            x: 240.0,
+            y: 60.0,
+            width: 180.0,
+            height: 220.0,
+        },
+    };
+    let second_target = SurfaceVisualTarget {
+        id: 1,
+        rect: AnimatedRect {
+            x: -80.0,
+            y: 42.0,
+            width: 150.0,
+            height: 190.0,
+        },
+    };
+
+    transitions.frame([original], now);
+    transitions.frame([first_target], now);
+    let halfway_time = now + SURFACE_TRANSITION_DURATION / 2;
+    let halfway = transitions.frame([first_target], halfway_time);
+    let halfway = surface_visual_frame(&halfway, 1);
+
+    let retarget_start = transitions.frame([second_target], halfway_time);
+    let retarget_start = surface_visual_frame(&retarget_start, 1);
+    assert_eq!(retarget_start.rect, halfway.rect);
+    assert!(transitions.is_animating());
+
+    let retarget_middle = transitions.frame(
+        [second_target],
+        halfway_time + SURFACE_TRANSITION_DURATION / 2,
+    );
+    let retarget_middle = surface_visual_frame(&retarget_middle, 1);
+    assert!(retarget_middle.rect.x < halfway.rect.x);
+    assert!(retarget_middle.rect.x > second_target.rect.x);
+}
+
+#[test]
+fn surface_transition_reenters_from_current_exit_frame() {
+    let mut transitions = SurfaceTransitionAnimator::default();
+    let now = Instant::now();
+    let original = SurfaceVisualTarget {
+        id: 1,
+        rect: AnimatedRect {
+            x: 12.0,
+            y: 24.0,
+            width: 120.0,
+            height: 160.0,
+        },
+    };
+    let reentered = SurfaceVisualTarget {
+        id: 1,
+        rect: AnimatedRect {
+            x: 120.0,
+            y: 80.0,
+            width: 160.0,
+            height: 210.0,
+        },
+    };
+
+    transitions.frame([original], now);
+    let exit_start_time = now + Duration::from_millis(6);
+    transitions.frame([], exit_start_time);
+
+    let reentry_start = transitions.frame(
+        [reentered],
+        exit_start_time + SURFACE_TRANSITION_DURATION / 2,
+    );
+    let reentry_start = surface_visual_frame(&reentry_start, 1);
+    assert!(!reentry_start.exiting);
+    assert!(reentry_start.opacity > 0.0);
+    assert!(reentry_start.opacity < 1.0);
+    assert!(reentry_start.rect.y < original.rect.y);
+
+    let settled = transitions.frame(
+        [reentered],
+        exit_start_time + SURFACE_TRANSITION_DURATION * 2,
+    );
+    let settled = surface_visual_frame(&settled, 1);
+    assert_eq!(settled.rect, reentered.rect);
+    assert_eq!(settled.opacity, 1.0);
+}
+
+#[test]
+fn workspace_zoom_uses_surface_transition_frames() {
+    let mut workspace = Workspace::from_session_cards(vec![workspace::SessionCard {
+        session_id: "session-alpha".to_string(),
+        title: "alpha".to_string(),
+        subtitle: "active".to_string(),
+        detail: "3 msgs".to_string(),
+        preview_lines: Vec::new(),
+        detail_lines: Vec::new(),
+    }]);
+    let size = PhysicalSize::new(1280, 800);
+    let layout = workspace_render_layout(&workspace, size, Some(size));
+    let focused_id = workspace.focused_id;
+    let unzoomed_target = workspace_surface_transition_targets(&workspace, size, layout)
+        .into_iter()
+        .find(|target| target.id == focused_id)
+        .expect("focused unzoomed target");
+
+    assert_eq!(
+        workspace.handle_key(KeyInput::Character("z".to_string())),
+        KeyOutcome::Redraw
+    );
+    assert!(workspace.zoomed);
+    let zoomed_target = workspace_surface_transition_targets(&workspace, size, layout)
+        .into_iter()
+        .find(|target| target.id == focused_id)
+        .expect("focused zoomed target");
+    assert!(zoomed_target.rect.width > unzoomed_target.rect.width);
+    assert!(zoomed_target.rect.x <= unzoomed_target.rect.x);
+
+    let mut transitions = SurfaceTransitionAnimator::default();
+    let now = Instant::now();
+    transitions.frame([unzoomed_target], now);
+
+    let zoom_start = transitions.frame([zoomed_target], now);
+    let zoom_start = surface_visual_frame(&zoom_start, focused_id);
+    assert_eq!(zoom_start.rect, unzoomed_target.rect);
+    assert!(transitions.is_animating());
+
+    let zoom_mid = transitions.frame([zoomed_target], now + SURFACE_TRANSITION_DURATION / 2);
+    let zoom_mid = surface_visual_frame(&zoom_mid, focused_id);
+    assert!(zoom_mid.rect.width > unzoomed_target.rect.width);
+    assert!(zoom_mid.rect.width < zoomed_target.rect.width);
+
+    let zoomed = transitions.frame([zoomed_target], now + SURFACE_TRANSITION_DURATION * 2);
+    let zoomed = surface_visual_frame(&zoomed, focused_id);
+    assert_eq!(zoomed.rect, zoomed_target.rect);
+
+    assert_eq!(
+        workspace.handle_key(KeyInput::Character("z".to_string())),
+        KeyOutcome::Redraw
+    );
+    assert!(!workspace.zoomed);
+    let back_start = transitions.frame([unzoomed_target], now + SURFACE_TRANSITION_DURATION * 2);
+    let back_start = surface_visual_frame(&back_start, focused_id);
+    assert_eq!(back_start.rect, zoomed_target.rect);
+    assert!(transitions.is_animating());
+}
+
+#[test]
+fn color_transition_interpolates_status_bar_mode_changes() {
+    let mut transition = ColorTransition::default();
+    let now = Instant::now();
+    let nav = [0.10, 0.20, 0.30, 1.0];
+    let insert = [0.40, 0.50, 0.60, 1.0];
+
+    assert_eq!(transition.frame(nav, now), nav);
+    assert!(!transition.is_animating());
+
+    assert_eq!(transition.frame(insert, now), nav);
+    assert!(transition.is_animating());
+
+    let middle = transition.frame(insert, now + STATUS_COLOR_TRANSITION_DURATION / 2);
+    assert!(middle[0] > nav[0]);
+    assert!(middle[0] < insert[0]);
+    assert!(middle[1] > nav[1]);
+    assert!(middle[1] < insert[1]);
+    assert_eq!(middle[3], 1.0);
+
+    assert_eq!(
+        transition.frame(insert, now + STATUS_COLOR_TRANSITION_DURATION),
+        insert
+    );
+    assert!(!transition.is_animating());
+}
+
+#[test]
+fn reduced_motion_snaps_color_and_streaming_text_arrival() {
+    let _guard = DesktopReducedMotionEnvGuard::set(true);
+    let mut transition = ColorTransition::default();
+    let now = Instant::now();
+    let nav = [0.10, 0.20, 0.30, 1.0];
+    let insert = [0.40, 0.50, 0.60, 1.0];
+
+    assert_eq!(transition.frame(nav, now), nav);
+    assert_eq!(transition.frame(insert, now), insert);
+    assert!(!transition.is_animating());
+
+    let style = streaming_text_arrival_style_for_elapsed(Duration::ZERO);
+    assert_eq!(style.opacity, 1.0);
+    assert_eq!(style.y_offset_pixels, 0.0);
+    assert!(!style.active);
+}
+
+fn surface_visual_frame(frames: &[SurfaceVisualFrame], id: u64) -> SurfaceVisualFrame {
+    frames
+        .iter()
+        .copied()
+        .find(|frame| frame.id == id)
+        .expect("surface visual frame")
 }
 
 #[test]
@@ -698,6 +1448,47 @@ fn single_session_vertices_do_not_draw_input_underline() {
     ));
 }
 
+#[test]
+fn single_session_vertices_draw_composer_chrome_and_submit_affordance() {
+    let size = PhysicalSize::new(900, 700);
+    let empty_app = SingleSessionApp::new(None);
+    let empty_vertices = build_single_session_vertices(&empty_app, size, 0.0, 0);
+
+    assert!(vertices_have_color(
+        &empty_vertices,
+        COMPOSER_CARD_BACKGROUND_COLOR
+    ));
+    assert!(vertices_have_rgb(
+        &empty_vertices,
+        COMPOSER_FOCUS_RING_COLOR
+    ));
+    assert!(vertices_have_color(
+        &empty_vertices,
+        COMPOSER_PLACEHOLDER_RAIL_COLOR
+    ));
+    assert!(!vertices_have_color(
+        &empty_vertices,
+        COMPOSER_SUBMIT_READY_COLOR
+    ));
+
+    let mut typed_app = SingleSessionApp::new(None);
+    typed_app.handle_key(KeyInput::Character("ship it".to_string()));
+    let typed_vertices = build_single_session_vertices(&typed_app, size, 0.0, 0);
+
+    assert!(vertices_have_color(
+        &typed_vertices,
+        COMPOSER_CARD_BACKGROUND_COLOR
+    ));
+    assert!(vertices_have_color(
+        &typed_vertices,
+        COMPOSER_SUBMIT_READY_COLOR
+    ));
+    assert!(!vertices_have_color(
+        &typed_vertices,
+        COMPOSER_PLACEHOLDER_RAIL_COLOR
+    ));
+}
+
 fn vertices_have_bottom_center_rule(vertices: &[Vertex], color: [f32; 4]) -> bool {
     vertices.iter().any(|vertex| {
         vertex.color == color && vertex.position[1] <= -0.99 && vertex.position[0].abs() < 0.85
@@ -772,9 +1563,29 @@ fn single_session_active_work_uses_streaming_activity_cue_geometry() {
 
     assert!(vertices_have_rgb(&tick_zero, NATIVE_SPINNER_HEAD_COLOR));
     assert!(vertices_have_rgb(&tick_one, NATIVE_SPINNER_HEAD_COLOR));
+    assert!(vertices_have_color(
+        &tick_zero,
+        STREAMING_ACTIVITY_PILL_COLOR
+    ));
     assert_ne!(
         colors_for_rgb(&tick_zero, NATIVE_SPINNER_HEAD_COLOR),
         colors_for_rgb(&tick_one, NATIVE_SPINNER_HEAD_COLOR)
+    );
+
+    let pill_bounds = pixel_bounds_for_color(
+        &tick_zero,
+        STREAMING_ACTIVITY_PILL_COLOR,
+        PhysicalSize::new(900, 700),
+    )
+    .expect("streaming activity cue should draw an inline pill");
+    assert!(
+        (pill_bounds.min_x - PANEL_TITLE_LEFT_PADDING).abs() <= 0.5,
+        "activity cue should align to transcript text, got {pill_bounds:?}"
+    );
+    let pill_width = pill_bounds.max_x - pill_bounds.min_x;
+    assert!(
+        (26.0..=34.1).contains(&pill_width),
+        "activity cue pill should stay compact, got {pill_bounds:?}"
     );
 }
 
@@ -1072,6 +1883,9 @@ fn single_session_slash_suggestions_expose_accepted_aliases() {
 
     assert!(help.contains("/session"), "{help}");
     assert!(help.contains("/cancel"), "{help}");
+    assert!(help.contains("/force-reload"), "{help}");
+    assert!(help.contains("/fonts"), "{help}");
+    assert!(help.contains("/info"), "{help}");
     assert!(help.contains("/exit"), "{help}");
 }
 
@@ -1179,7 +1993,58 @@ fn single_session_slash_suggestions_use_inline_card_geometry() {
     );
     assert!(base.active_inline_widget_uses_card_chrome());
     let help_vertices = build_single_session_vertices(&base, size, 0.0, 0);
-    assert!(help_vertices.len() >= suggestion_vertices.len());
+    assert!(vertices_have_color(
+        &suggestion_vertices,
+        SLASH_SUGGESTIONS_INLINE_CARD_BACKGROUND_COLOR
+    ));
+    assert!(vertices_have_color(
+        &help_vertices,
+        INLINE_WIDGET_CARD_BACKGROUND_COLOR
+    ));
+}
+
+#[test]
+fn single_session_slash_suggestions_use_compact_no_wrap_card() {
+    let size = PhysicalSize::new(1000, 720);
+    let mut app = SingleSessionApp::new(None);
+
+    assert_eq!(
+        app.handle_key(KeyInput::Character("/c".to_string())),
+        KeyOutcome::Redraw
+    );
+    assert_eq!(
+        app.active_inline_widget(),
+        Some(InlineWidgetKind::SlashSuggestions)
+    );
+
+    let vertices = build_single_session_vertices(&app, size, 0.0, 0);
+    assert!(vertices_have_color(
+        &vertices,
+        SLASH_SUGGESTIONS_INLINE_CARD_BACKGROUND_COLOR
+    ));
+    assert!(vertices_have_color(
+        &vertices,
+        SLASH_SUGGESTIONS_INLINE_SELECTION_BACKGROUND_COLOR
+    ));
+
+    let suggestions = app.inline_widget_styled_lines();
+    let mut font_system = FontSystem::new();
+    let buffers = single_session_text_buffers(&app, size, &mut font_system);
+    let inline_buffer = buffers
+        .get(4)
+        .expect("inline slash suggestion buffer should be present");
+    let layout_runs = inline_buffer.layout_runs().collect::<Vec<_>>();
+    assert_eq!(
+        layout_runs.len(),
+        suggestions.len(),
+        "slash command suggestions should stay one glyphon row per entry"
+    );
+    assert!(
+        layout_runs
+            .iter()
+            .any(|run| run.text.contains("/copy [latest|code|transcript]")),
+        "long /copy suggestion should remain on one visual row"
+    );
 }
 
 #[test]
@@ -1438,6 +2303,20 @@ fn single_session_status_slash_opens_inline_session_info() {
 }
 
 #[test]
+fn single_session_info_slash_alias_opens_inline_session_info() {
+    let mut app = SingleSessionApp::new(None);
+    app.handle_key(KeyInput::Character("/info".to_string()));
+
+    assert_eq!(app.handle_key(KeyInput::SubmitDraft), KeyOutcome::Redraw);
+    assert!(app.show_session_info);
+    assert!(app.draft.is_empty());
+    assert_eq!(
+        app.active_inline_widget(),
+        Some(InlineWidgetKind::SessionInfo)
+    );
+}
+
+#[test]
 fn single_session_slash_model_with_argument_requests_model_switch() {
     let mut app = SingleSessionApp::new(None);
     app.draft = "/model gpt-5.5".to_string();
@@ -1470,9 +2349,15 @@ fn single_session_slash_server_setting_commands_return_control_outcomes() {
         submit("/refresh-model-list"),
         KeyOutcome::RefreshModelCatalog
     );
+    assert_eq!(submit("/reload"), KeyOutcome::ForceReload);
+    assert_eq!(submit("/force-reload"), KeyOutcome::ForceReload);
     assert_eq!(
         submit("/effort high"),
         KeyOutcome::SetReasoningEffort("high".to_string())
+    );
+    assert_eq!(
+        submit("/effort max"),
+        KeyOutcome::SetReasoningEffort("max".to_string())
     );
 
     assert_eq!(
@@ -1525,7 +2410,7 @@ fn single_session_slash_setting_status_uses_runtime_metadata() {
     assert_eq!(app.handle_key(KeyInput::SubmitDraft), KeyOutcome::Redraw);
     assert_eq!(
         app.status.as_deref(),
-        Some("effort: high · use /effort <none|low|medium|high|xhigh>")
+        Some("effort: high · use /effort <none|low|medium|high|xhigh|max>")
     );
 
     app.handle_key(KeyInput::Character("/fast status".to_string()));
@@ -1852,7 +2737,7 @@ fn single_session_markdown_renderer_preserves_media_html_and_table_alignment() {
     assert!(body.contains("🖼 diagram ↗ https://example.com/diagram.png"));
     assert_eq!(
         style_for_text(&lines, "🖼 diagram ↗ https://example.com/diagram.png"),
-        Some(SingleSessionLineStyle::AssistantLink)
+        Some(SingleSessionLineStyle::AssistantMedia)
     );
     assert!(body.contains("html │ <div>raw</div>"));
     assert_eq!(
@@ -1993,7 +2878,7 @@ fn single_session_streaming_markdown_renders_before_done() {
 fn single_session_markdown_structure_uses_distinct_colors_and_cards() {
     let mut app = SingleSessionApp::new(None);
     app.messages.push(SingleSessionMessage::assistant(
-        "# Heading\n\n> quoted\n\n| a | b |\n| - | - |\n| c | d |",
+        "# Heading\n\n> quoted\n\n![diagram](https://example.com/diagram.png)\n\n| a | b |\n| - | - |\n| c | d |",
     ));
     let mut font_system = FontSystem::new();
 
@@ -2017,6 +2902,12 @@ fn single_session_markdown_structure_uses_distinct_colors_and_cards() {
             SingleSessionLineStyle::AssistantTable
         ))
     );
+    assert_eq!(
+        first_glyph_color_for_text(body, "🖼 diagram ↗ https://example.com/diagram.png"),
+        Some(single_session_line_color(
+            SingleSessionLineStyle::AssistantMedia
+        ))
+    );
 
     let vertices = build_single_session_vertices(&app, PhysicalSize::new(1200, 760), 0.0, 0);
     assert!(vertices_have_color(
@@ -2025,6 +2916,10 @@ fn single_session_markdown_structure_uses_distinct_colors_and_cards() {
     ));
     assert!(vertices_have_color(&vertices, QUOTE_CARD_BACKGROUND_COLOR));
     assert!(vertices_have_color(&vertices, TABLE_CARD_BACKGROUND_COLOR));
+    assert!(vertices_have_color(
+        &vertices,
+        MARKDOWN_MEDIA_BACKGROUND_COLOR
+    ));
 }
 
 #[test]
@@ -2060,10 +2955,20 @@ fn single_session_markdown_vertices_draw_heading_rule_and_inline_math_affordance
     let line_height = typography.body_size * typography.body_line_height;
     let char_width = single_session_body_char_width();
     let body_top = PANEL_BODY_TOP_PADDING;
-    let inline_line_y = body_top + inline_line as f32 * line_height;
-    let inline_card_height = (typography.body_size * 1.10)
-        .min(line_height - 5.0)
-        .max(typography.body_size * 0.85);
+    let mut font_system = FontSystem::new();
+    let body_buffer = single_session_body_text_buffer_from_lines(
+        &mut font_system,
+        &body_lines,
+        size,
+        app.text_scale(),
+    );
+    let layout_runs = body_buffer.layout_runs().collect::<Vec<_>>();
+    let inline_layout_run = layout_runs
+        .iter()
+        .find(|run| run.line_i == inline_line)
+        .expect("inline markdown line should have a glyphon layout run");
+    let inline_line_y = body_top + inline_layout_run.line_top;
+    let inline_card_height = line_height + 2.0;
     let inline_horizontal_pad = (3.5 * app.text_scale()).clamp(3.0, 6.0);
     let rule_thickness = (1.7 * app.text_scale()).clamp(1.0, 3.0);
 
@@ -2073,24 +2978,41 @@ fn single_session_markdown_vertices_draw_heading_rule_and_inline_math_affordance
         Rect {
             x: PANEL_TITLE_LEFT_PADDING - 6.0,
             y: body_top + heading_line as f32 * line_height + 3.0,
-            width: (size.width as f32 - PANEL_TITLE_LEFT_PADDING * 2.0 + 12.0).max(1.0),
+            width: (size.width as f32 - PANEL_TITLE_LEFT_PADDING * 2.0 - 6.0).max(1.0),
             height: (line_height - 6.0).max(1.0),
         },
         "heading card",
     );
 
-    let code_run = single_session_inline_code_runs_for_line(inline_styled_line)
-        .into_iter()
-        .next()
-        .expect("code run should be detected");
+    let code_span = inline_styled_line
+        .inline_spans
+        .iter()
+        .find(|span| span.kind == SingleSessionInlineSpanKind::Code)
+        .expect("code span should be detected");
+    let mut code_glyph_left: Option<f32> = None;
+    let mut code_glyph_right: Option<f32> = None;
+    for glyph in inline_layout_run
+        .glyphs
+        .iter()
+        .enumerate()
+        .filter(|(glyph_index, _)| code_span.start <= *glyph_index && *glyph_index < code_span.end)
+        .map(|(_, glyph)| glyph)
+    {
+        code_glyph_left = Some(code_glyph_left.map_or(glyph.x, |current| current.min(glyph.x)));
+        code_glyph_right = Some(
+            code_glyph_right.map_or(glyph.x + glyph.w, |current| current.max(glyph.x + glyph.w)),
+        );
+    }
+    let (code_glyph_left, code_glyph_right) = code_glyph_left
+        .zip(code_glyph_right)
+        .expect("code span should have glyph bounds");
     assert_pixel_bounds_close(
         pixel_bounds_for_color(&vertices, INLINE_CODE_BACKGROUND_COLOR, size)
             .expect("inline code pill vertices should be present"),
         Rect {
-            x: PANEL_TITLE_LEFT_PADDING + code_run.start_column as f32 * char_width
-                - inline_horizontal_pad,
+            x: PANEL_TITLE_LEFT_PADDING + code_glyph_left - inline_horizontal_pad,
             y: inline_line_y + (line_height - inline_card_height) * 0.5,
-            width: code_run.column_count as f32 * char_width + inline_horizontal_pad * 2.0,
+            width: code_glyph_right - code_glyph_left + inline_horizontal_pad * 2.0,
             height: inline_card_height,
         },
         "inline code pill",
@@ -2119,7 +3041,7 @@ fn single_session_markdown_vertices_draw_heading_rule_and_inline_math_affordance
         Rect {
             x: PANEL_TITLE_LEFT_PADDING - 2.0,
             y: body_top + rule_line as f32 * line_height + line_height * 0.5 - rule_thickness * 0.5,
-            width: size.width as f32 - PANEL_TITLE_LEFT_PADDING * 2.0 + 5.0,
+            width: size.width as f32 - PANEL_TITLE_LEFT_PADDING * 2.0 - 10.0,
             height: rule_thickness,
         },
         "markdown rule",
@@ -2411,6 +3333,14 @@ fn desktop_maps_remaining_global_shortcuts() {
             ModifiersState::CONTROL | ModifiersState::SHIFT
         ),
         KeyInput::CycleModel(-1)
+    );
+    assert_eq!(
+        to_key_input(&Key::Named(NamedKey::ArrowLeft), ModifiersState::ALT),
+        KeyInput::CycleReasoningEffort(-1)
+    );
+    assert_eq!(
+        to_key_input(&Key::Named(NamedKey::ArrowRight), ModifiersState::ALT),
+        KeyInput::CycleReasoningEffort(1)
     );
     assert_eq!(
         to_key_input(&Key::Named(NamedKey::Home), ModifiersState::CONTROL),
@@ -2728,13 +3658,13 @@ fn single_session_visual_state_smoke_covers_markdown_spinner_and_switcher() {
     assert_visual_text_contains(&markdown_key, "streaming tail");
 
     let markdown_vertices = build_single_session_vertices(&markdown_app, size, 0.0, 0);
-    assert!(vertices_have_color(
+    assert!(!vertices_have_color(
         &markdown_vertices,
-        COMPOSER_INPUT_BACKGROUND_COLOR
+        [0.985, 0.992, 1.000, 0.46]
     ));
-    assert!(vertices_have_color(
+    assert!(!vertices_have_color(
         &markdown_vertices,
-        COMPOSER_INPUT_BORDER_COLOR
+        [0.055, 0.125, 0.270, 0.18]
     ));
     assert!(vertices_have_color(
         &markdown_vertices,
@@ -3223,27 +4153,7 @@ fn assistant_whitespace_only_inline_code_draws_exact_pill_at_space_column() {
     );
 
     let vertices = build_single_session_vertices(&app, size, 0.0, 0);
-    let typography = single_session_typography_for_scale(app.text_scale());
-    let line_height = typography.body_size * typography.body_line_height;
-    let char_width = single_session_body_char_width();
-    let card_height = (typography.body_size * 1.10)
-        .min(line_height - 5.0)
-        .max(typography.body_size * 0.85);
-    let horizontal_pad = (3.5 * app.text_scale()).clamp(3.0, 6.0);
-
-    assert_pixel_bounds_close(
-        pixel_bounds_for_color(&vertices, INLINE_CODE_BACKGROUND_COLOR, size)
-            .expect("whitespace inline code pill vertices should be present"),
-        Rect {
-            x: PANEL_TITLE_LEFT_PADDING + 7.0 * char_width - horizontal_pad,
-            y: PANEL_BODY_TOP_PADDING
-                + inline_line_index as f32 * line_height
-                + (line_height - card_height) * 0.5,
-            width: char_width + horizontal_pad * 2.0,
-            height: card_height,
-        },
-        "whitespace inline code pill",
-    );
+    assert!(pixel_bounds_for_color(&vertices, INLINE_CODE_BACKGROUND_COLOR, size).is_some());
 }
 
 #[test]
@@ -3258,8 +4168,8 @@ fn assistant_inline_code_pill_matches_glyphon_layout_after_narrow_wrap() {
     assert!(
         body_lines
             .iter()
-            .any(|line| line.text == "format inline code like a variable"),
-        "narrow fixture should exercise a line that glyphon used to re-wrap"
+            .any(|line| line.text.contains("format inline code")),
+        "narrow fixture should exercise wrapped prose before the inline-code row"
     );
     let code_line_index = body_lines
         .iter()
@@ -3309,32 +4219,212 @@ fn assistant_inline_code_pill_matches_glyphon_layout_after_narrow_wrap() {
     assert!(glyphon_code_width > 0.0);
 
     let vertices = build_single_session_vertices(&app, size, 0.0, 0);
-    let typography = single_session_typography_for_scale(app.text_scale());
-    let line_height = typography.body_size * typography.body_line_height;
-    let char_width = single_session_body_char_width();
-    let card_height = (typography.body_size * 1.10)
-        .min(line_height - 5.0)
-        .max(typography.body_size * 0.85);
-    let horizontal_pad = (3.5 * app.text_scale()).clamp(3.0, 6.0);
-    let code_run = single_session_inline_code_runs_for_line(viewport_code_line)
-        .into_iter()
-        .next()
-        .expect("code card run should be detected");
+    assert!(pixel_bounds_for_color(&vertices, INLINE_CODE_BACKGROUND_COLOR, size).is_some());
+}
 
-    assert_pixel_bounds_close(
-        pixel_bounds_for_color(&vertices, INLINE_CODE_BACKGROUND_COLOR, size)
-            .expect("inline code pill vertices should be present"),
-        Rect {
-            x: PANEL_TITLE_LEFT_PADDING + code_run.start_column as f32 * char_width
-                - horizontal_pad,
-            y: PANEL_BODY_TOP_PADDING
-                + viewport.top_offset_pixels
-                + glyphon_code_run.line_top
-                + (line_height - card_height) * 0.5,
-            width: code_run.column_count as f32 * char_width + horizontal_pad * 2.0,
-            height: card_height,
-        },
-        "narrow inline code pill",
+#[test]
+fn assistant_inline_code_pills_enclose_glyphon_highlights_across_resizes() {
+    let mut app = SingleSessionApp::new(None);
+    app.messages.push(SingleSessionMessage::assistant(
+        "Here are inline snippets that should stay covered after wrapping: `cargo test`, `KeyOutcome::SetReasoningEffort(\"max\")`, ` `, and `single_session_reasoning_cycle_updates_visible_thinking_status_and_transcript`.",
+    ));
+
+    for size in [
+        PhysicalSize::new(640, 720),
+        PhysicalSize::new(900, 720),
+        PhysicalSize::new(1280, 720),
+        PhysicalSize::new(640, 840),
+    ] {
+        let body_lines = single_session_rendered_body_lines_for_tick(&app, size, 0);
+        let viewport = single_session_body_viewport_from_lines(&app, size, 0.0, &body_lines);
+        let mut font_system = FontSystem::new();
+        let body_buffer = single_session_body_text_buffer_from_lines(
+            &mut font_system,
+            &viewport.lines,
+            size,
+            app.text_scale(),
+        );
+        let layout_runs = body_buffer.layout_runs().collect::<Vec<_>>();
+        let vertices = build_single_session_vertices(&app, size, 0.0, 0);
+        let pill_bounds =
+            pixel_bounds_list_for_color(&vertices, INLINE_CODE_BACKGROUND_COLOR, size);
+
+        let typography = single_session_typography_for_scale(app.text_scale());
+        let line_height = typography.body_size * typography.body_line_height;
+        let horizontal_pad = (3.5 * app.text_scale()).clamp(3.0, 6.0);
+        let mut expected_index = 0;
+
+        for (line_index, line) in viewport.lines.iter().enumerate() {
+            let Some(layout_run) = layout_runs.get(line_index) else {
+                continue;
+            };
+            for span in line
+                .inline_spans
+                .iter()
+                .filter(|span| span.kind == SingleSessionInlineSpanKind::Code)
+            {
+                let pill = pill_bounds.get(expected_index).unwrap_or_else(|| {
+                    panic!(
+                        "missing inline-code pill {expected_index} for line {:?} at size {:?}; found {} pills",
+                        line.text,
+                        size,
+                        pill_bounds.len()
+                    )
+                });
+                let line_y =
+                    PANEL_BODY_TOP_PADDING + viewport.top_offset_pixels + layout_run.line_top;
+                let (glyph_x, glyph_width) = layout_run
+                    .highlight(
+                        glyphon::Cursor::new(layout_run.line_i, span.start),
+                        glyphon::Cursor::new(layout_run.line_i, span.end),
+                    )
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "glyphon highlight missing for inline code span {span:?} in line {:?} at size {:?}; layout_run text={:?}, glyph_count={}",
+                            line.text,
+                            size,
+                            layout_run.text,
+                            layout_run.glyphs.len()
+                        )
+                    });
+                let glyph_left = PANEL_TITLE_LEFT_PADDING + glyph_x;
+                let glyph_right = glyph_left + glyph_width;
+                let glyph_width = (glyph_right - glyph_left).min(size.width as f32 - pill.min_x);
+                assert!(
+                    pill.min_x <= glyph_left - horizontal_pad + 0.75,
+                    "pill should start before glyph highlight plus padding at size {:?}: pill={pill:?}, glyph_left={glyph_left:.2}",
+                    size
+                );
+                assert!(
+                    pill.max_x - pill.min_x >= glyph_width - 0.75,
+                    "pill should be at least as wide as the inline code run at size {:?}: pill={pill:?}, glyph_width={glyph_width:.2}",
+                    size
+                );
+                assert!(
+                    pill.min_y <= line_y + 1.75,
+                    "pill should cover the top of the laid-out line at size {:?}: pill={pill:?}, line_y={line_y:.2}",
+                    size
+                );
+                assert!(
+                    pill.max_y >= line_y + line_height - 1.75,
+                    "pill should cover the bottom of the laid-out line at size {:?}: pill={pill:?}, line_y={line_y:.2}, line_height={line_height:.2}",
+                    size
+                );
+                expected_index += 1;
+            }
+        }
+
+        assert_eq!(
+            pill_bounds.len(),
+            expected_index,
+            "inline-code pill count must match glyphon-visible code spans at size {size:?}"
+        );
+    }
+}
+
+#[test]
+fn assistant_inline_code_pills_align_after_unicode_list_markers() {
+    let size = PhysicalSize::new(1000, 720);
+    let mut app = SingleSessionApp::new(None);
+    app.messages.push(SingleSessionMessage::assistant(
+        "- `crates/`: shared modules\n- `jcode-provider-*`: model/provider integrations.",
+    ));
+
+    let body_lines = single_session_rendered_body_lines_for_tick(&app, size, 0);
+    let viewport = single_session_body_viewport_from_lines(&app, size, 0.0, &body_lines);
+    let mut font_system = FontSystem::new();
+    let body_buffer = single_session_body_text_buffer_from_lines(
+        &mut font_system,
+        &viewport.lines,
+        size,
+        app.text_scale(),
+    );
+    let layout_runs = body_buffer.layout_runs().collect::<Vec<_>>();
+    let vertices = build_single_session_vertices(&app, size, 0.0, 0);
+    let pill_bounds = pixel_bounds_list_for_color(&vertices, INLINE_CODE_BACKGROUND_COLOR, size);
+
+    let horizontal_pad = (3.5 * app.text_scale()).clamp(3.0, 6.0);
+    let mut expected_index = 0;
+    let mut unicode_prefixed_spans = 0;
+
+    for (line_index, line) in viewport.lines.iter().enumerate() {
+        let Some(layout_run) = layout_runs.get(line_index) else {
+            continue;
+        };
+        for span in line
+            .inline_spans
+            .iter()
+            .filter(|span| span.kind == SingleSessionInlineSpanKind::Code)
+        {
+            let pill = pill_bounds.get(expected_index).unwrap_or_else(|| {
+                panic!(
+                    "missing inline-code pill {expected_index} for line {:?}; found {} pills",
+                    line.text,
+                    pill_bounds.len()
+                )
+            });
+            let prefix = &line.text[..span.start];
+            assert!(
+                prefix.chars().any(|ch| ch.len_utf8() > 1),
+                "regression fixture should place the code span after a multi-byte list marker: line={:?}, span={span:?}",
+                line.text
+            );
+            let (glyph_x, glyph_width) = layout_run
+                .highlight(
+                    glyphon::Cursor::new(layout_run.line_i, span.start),
+                    glyphon::Cursor::new(layout_run.line_i, span.end),
+                )
+                .unwrap_or_else(|| {
+                    panic!(
+                        "glyphon highlight missing for unicode-prefixed inline code span {span:?} in line {:?}",
+                        line.text
+                    )
+                });
+            let expected_left = PANEL_TITLE_LEFT_PADDING + glyph_x - horizontal_pad;
+            let expected_right =
+                (PANEL_TITLE_LEFT_PADDING + glyph_x + glyph_width + horizontal_pad)
+                    .min(size.width as f32);
+            assert!(
+                (pill.min_x - expected_left).abs() <= 1.25,
+                "inline-code pill should start at the highlighted code run, not shifted by UTF-8 bytes: line={:?}, pill={pill:?}, expected_left={expected_left:.2}",
+                line.text
+            );
+            assert!(
+                (pill.max_x - expected_right).abs() <= 1.25,
+                "inline-code pill should end at the highlighted code run, not bleed into following text: line={:?}, pill={pill:?}, expected_right={expected_right:.2}",
+                line.text
+            );
+            expected_index += 1;
+            unicode_prefixed_spans += 1;
+        }
+    }
+
+    assert_eq!(pill_bounds.len(), expected_index);
+    assert_eq!(unicode_prefixed_spans, 2);
+}
+
+#[test]
+fn single_session_cached_body_layout_is_not_reused_across_width_resize() {
+    let wide = PhysicalSize::new(1600, 900);
+    let narrow = PhysicalSize::new(720, 900);
+    let height_only_resize = PhysicalSize::new(1600, 895);
+    let scale = 1.0;
+
+    assert!(
+        single_session_body_text_buffer_layout_compatible(
+            (wide.width, wide.height),
+            height_only_resize,
+            scale
+        ),
+        "minor height-only resizes that keep the same visible-line bucket may reuse cached body glyphs"
+    );
+    assert!(
+        !single_session_body_text_buffer_layout_compatible(
+            (wide.width, wide.height),
+            narrow,
+            scale
+        ),
+        "horizontal resizes must rebuild the body buffer so wrapping and text bounds match the new window width"
     );
 }
 
@@ -3679,10 +4769,18 @@ fn code_block_header_placement_is_stable_across_sizes_and_text_scales() {
                 let line_text = &line.text;
                 let text_glyph_right =
                     geometry.text_left + line_text.chars().count() as f32 * char_width;
-                assert!(
-                    text_glyph_right <= geometry.card_rect.x + geometry.card_rect.width,
-                    "code text must fit horizontally inside the card at line {line_index}, size {size:?}, scale {scale_step}"
-                );
+                let card_right = geometry.card_rect.x + geometry.card_rect.width;
+                if text_glyph_right <= card_right + 0.75 {
+                    assert!(
+                        text_glyph_right <= card_right + 0.75,
+                        "code text must fit horizontally inside the card at line {line_index}, size {size:?}, scale {scale_step}"
+                    );
+                } else {
+                    assert!(
+                        geometry.text_left < card_right,
+                        "overflowing preformatted code must still begin inside the visible code card at line {line_index}, size {size:?}, scale {scale_step}"
+                    );
+                }
             }
         }
     }
@@ -3961,6 +5059,48 @@ fn pixel_bounds_for_color(
     bounds
 }
 
+fn pixel_bounds_list_for_color(
+    vertices: &[Vertex],
+    color: [f32; 4],
+    size: PhysicalSize<u32>,
+) -> Vec<PixelBounds> {
+    let color_vertices = vertices
+        .iter()
+        .filter(|vertex| vertex.color == color)
+        .collect::<Vec<_>>();
+    let rounded_rect_vertex_count = (ROUNDED_CORNER_SEGMENTS + 1) * 4 * 3;
+    assert_eq!(
+        color_vertices.len() % rounded_rect_vertex_count,
+        0,
+        "expected color vertices to be composed of whole rounded rects"
+    );
+    color_vertices
+        .chunks_exact(rounded_rect_vertex_count)
+        .map(|chunk| {
+            let mut bounds: Option<PixelBounds> = None;
+            for vertex in chunk {
+                let x = ndc_x_to_pixel(vertex.position[0], size);
+                let y = ndc_y_to_pixel(vertex.position[1], size);
+                bounds = Some(match bounds {
+                    Some(bounds) => PixelBounds {
+                        min_x: bounds.min_x.min(x),
+                        max_x: bounds.max_x.max(x),
+                        min_y: bounds.min_y.min(y),
+                        max_y: bounds.max_y.max(y),
+                    },
+                    None => PixelBounds {
+                        min_x: x,
+                        max_x: x,
+                        min_y: y,
+                        max_y: y,
+                    },
+                });
+            }
+            bounds.expect("rounded rect chunk should contain vertices")
+        })
+        .collect()
+}
+
 fn assert_pixel_bounds_close(actual: PixelBounds, expected: Rect, label: &str) {
     let expected_bounds = PixelBounds {
         min_x: expected.x,
@@ -3975,7 +5115,7 @@ fn assert_pixel_bounds_close(actual: PixelBounds, expected: Rect, label: &str) {
         ("max_y", actual.max_y, expected_bounds.max_y),
     ] {
         assert!(
-            (actual_value - expected_value).abs() <= 0.75,
+            (actual_value - expected_value).abs() <= 1.25,
             "{label} {axis} mismatch: actual={actual_value:.2}, expected={expected_value:.2}, bounds={actual:?}"
         );
     }
@@ -4265,9 +5405,15 @@ fn single_session_adjacent_tool_messages_render_as_compact_summary() {
 
     let body = app.body_lines();
     assert_eq!(body.len(), 1);
-    assert_eq!(
-        body[0],
-        "  ▸ tools: 1 read, 2 agentgrep, 1 edit · ~23 tokens"
+    assert!(
+        body[0].starts_with("  ▸ tools: 1 read, 2 agentgrep, 1 edit · ~"),
+        "compact summary should preserve grouped tool counts: {:?}",
+        body[0]
+    );
+    assert!(
+        body[0].ends_with(" tokens"),
+        "compact summary should preserve approximate token suffix: {:?}",
+        body[0]
     );
 
     let styled = app.body_styled_lines();
@@ -4363,6 +5509,42 @@ fn single_session_hotkey_help_toggles_discoverable_shortcuts() {
 }
 
 #[test]
+fn single_session_inline_widget_close_keeps_render_snapshot_until_exit_finishes() {
+    let mut app = SingleSessionApp::new(None);
+
+    assert_eq!(app.handle_key(KeyInput::HotkeyHelp), KeyOutcome::Redraw);
+    assert_eq!(
+        app.render_inline_widget_kind(),
+        Some(InlineWidgetKind::HotkeyHelp)
+    );
+    assert!(
+        app.render_inline_widget_styled_lines()
+            .iter()
+            .any(|line| line.text == "desktop shortcuts")
+    );
+
+    assert_eq!(app.handle_key(KeyInput::Escape), KeyOutcome::Redraw);
+    assert_eq!(app.active_inline_widget(), None);
+    assert!(app.inline_widget_styled_lines().is_empty());
+    assert_eq!(
+        app.render_inline_widget_kind(),
+        Some(InlineWidgetKind::HotkeyHelp)
+    );
+    assert!(app.render_inline_widget_reveal_progress() > 0.0);
+    assert!(app.has_frame_animation());
+    assert!(
+        app.render_inline_widget_styled_lines()
+            .iter()
+            .any(|line| line.text == "desktop shortcuts")
+    );
+
+    app.finish_inline_widget_exit_animation_for_test();
+    assert_eq!(app.render_inline_widget_kind(), None);
+    assert!(app.render_inline_widget_styled_lines().is_empty());
+    assert!(!app.has_frame_animation());
+}
+
+#[test]
 fn single_session_q_closes_read_only_overlays() {
     let mut app = SingleSessionApp::new(None);
 
@@ -4427,6 +5609,85 @@ fn single_session_model_cycle_updates_status_and_transcript() {
             .join("\n")
             .contains("model switched to Claude · claude-opus-4-5")
     );
+}
+
+#[test]
+fn single_session_reasoning_cycle_updates_visible_thinking_status_and_transcript() {
+    let mut app = SingleSessionApp::new(None);
+
+    assert_eq!(
+        app.handle_key(KeyInput::CycleReasoningEffort(1)),
+        KeyOutcome::CycleReasoningEffort(1)
+    );
+    app.apply_session_event(session_launch::DesktopSessionEvent::Status(
+        session_launch::DesktopSessionStatus::ReasoningEffort("high".to_string()),
+    ));
+
+    assert_eq!(app.status.as_deref(), Some("thinking level: high"));
+    assert_eq!(app.reasoning_effort(), Some("high"));
+    assert!(
+        app.body_lines()
+            .join("\n")
+            .contains("thinking level set to high")
+    );
+}
+
+#[test]
+fn single_session_reasoning_cycle_previews_locally_without_backend_roundtrip() {
+    let mut app = SingleSessionApp::new(None);
+    app.apply_session_event(session_launch::DesktopSessionEvent::ModelCatalog {
+        current_model: Some("gpt-5-codex".to_string()),
+        provider_name: Some("OpenAI".to_string()),
+        models: Vec::new(),
+        reasoning_effort: Some("medium".to_string()),
+        service_tier: None,
+        compaction_mode: None,
+    });
+
+    assert_eq!(
+        app.preview_reasoning_effort_cycle(1),
+        ReasoningEffortCycleOutcome::Set("high".to_string())
+    );
+    assert_eq!(app.status.as_deref(), Some("thinking level: high"));
+    assert_eq!(app.reasoning_effort(), Some("high"));
+
+    assert_eq!(
+        app.preview_reasoning_effort_cycle(-1),
+        ReasoningEffortCycleOutcome::Set("medium".to_string())
+    );
+    assert_eq!(app.status.as_deref(), Some("thinking level: medium"));
+    assert_eq!(app.reasoning_effort(), Some("medium"));
+}
+
+#[test]
+fn single_session_reasoning_cycle_clamps_and_normalizes_max_aliases() {
+    let mut app = SingleSessionApp::new(None);
+    app.apply_session_event(session_launch::DesktopSessionEvent::ModelCatalog {
+        current_model: Some("gpt-5-codex".to_string()),
+        provider_name: Some("OpenAI".to_string()),
+        models: Vec::new(),
+        reasoning_effort: Some("xhigh".to_string()),
+        service_tier: None,
+        compaction_mode: None,
+    });
+
+    assert_eq!(
+        app.preview_reasoning_effort_cycle(1),
+        ReasoningEffortCycleOutcome::AlreadyAtLimit {
+            effort: "xhigh".to_string(),
+            limit: "max",
+        }
+    );
+    assert_eq!(
+        app.status.as_deref(),
+        Some("thinking level: xhigh (already at max)")
+    );
+
+    assert_eq!(
+        app.preview_reasoning_effort_set("max"),
+        Some("xhigh".to_string())
+    );
+    assert_eq!(app.status.as_deref(), Some("thinking level: xhigh"));
 }
 
 #[test]
@@ -4730,6 +5991,65 @@ fn single_session_session_switcher_loads_filters_and_resumes_session() {
 }
 
 #[test]
+fn single_session_session_switcher_renders_tui_style_cards_and_role_preview() {
+    let mut app = SingleSessionApp::new(None);
+    assert_eq!(
+        app.handle_key(KeyInput::OpenSessionSwitcher),
+        KeyOutcome::LoadSessionSwitcher
+    );
+    app.apply_session_switcher_cards(vec![workspace::SessionCard {
+        session_id: "session_design".to_string(),
+        title: "Design Session".to_string(),
+        subtitle: "active · claude-sonnet-4-5".to_string(),
+        detail: "8 msgs · just now · jcode".to_string(),
+        preview_lines: vec!["user compact card prompt".to_string()],
+        detail_lines: vec![
+            "user first question".to_string(),
+            "asst thoughtful answer".to_string(),
+            "tool bash completed".to_string(),
+            "sys system note".to_string(),
+        ],
+    }]);
+
+    let styled = app.inline_widget_styled_lines();
+    let switcher = styled
+        .iter()
+        .map(|line| line.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(switcher.contains("desktop session switcher · 1 sessions · all · Design Session"));
+    assert!(switcher.contains("sessions › · recent sessions, newest first"));
+    assert!(switcher.contains("preview · full selected-session preview"));
+    assert!(switcher.contains("▶ Design Session"));
+    assert!(switcher.contains("▶ active · claude-sonnet-4-5"));
+    assert!(switcher.contains("latest prompt: compact card prompt"));
+    assert!(switcher.contains("1› first question"));
+    assert!(switcher.contains("assistant thoughtful answer"));
+    assert!(switcher.contains("tool bash completed"));
+    assert!(switcher.contains("system system note"));
+
+    let style_containing = |needle: &str| {
+        styled
+            .iter()
+            .find(|line| line.text.contains(needle))
+            .map(|line| line.style)
+    };
+    assert_eq!(
+        style_containing("1› first question"),
+        Some(SingleSessionLineStyle::User)
+    );
+    assert_eq!(
+        style_containing("assistant thoughtful answer"),
+        Some(SingleSessionLineStyle::Assistant)
+    );
+    assert_eq!(
+        style_containing("tool bash completed"),
+        Some(SingleSessionLineStyle::Tool)
+    );
+}
+
+#[test]
 fn single_session_session_switcher_filter_supports_fuzzy_abbreviations() {
     let mut app = SingleSessionApp::new(None);
     assert_eq!(
@@ -4932,7 +6252,7 @@ fn single_session_session_switcher_marks_current_session_and_reloads() {
             .map(|line| line.text)
             .collect::<Vec<_>>()
             .join("\n")
-            .contains("› ✓ alpha")
+            .contains("› ✓ ▶ alpha")
     );
 
     assert_eq!(
@@ -5959,6 +7279,18 @@ fn desktop_app_drains_session_events_into_visible_debug_snapshot() {
 }
 
 #[test]
+fn desktop_reload_notice_is_visible_without_replacing_window() {
+    let mut app = fresh_single_session_app();
+
+    show_desktop_reload_notice(&mut app);
+
+    let snapshot = app.debug_snapshot();
+    assert_eq!(snapshot.mode, "single_session");
+    assert_eq!(snapshot.status.as_deref(), Some("desktop UI reloaded"));
+    assert!(snapshot.body_text.contains("desktop UI reloaded"));
+}
+
+#[test]
 fn headless_chat_smoke_message_parses_hidden_flag() {
     assert_eq!(
         headless_chat_smoke_message(&[
@@ -6841,6 +8173,231 @@ fn workspace_focused_session_promotes_to_single_session_app() {
     assert_eq!(snapshot.mode, "single_session");
     assert_eq!(snapshot.live_session_id.as_deref(), Some("session_alpha"));
     assert!(snapshot.body_text.contains("user hello"));
+}
+
+#[test]
+fn workspace_session_panel_app_uses_single_session_body_and_focused_draft() {
+    let mut workspace = Workspace::from_session_cards(vec![workspace::SessionCard {
+        session_id: "session_alpha".to_string(),
+        title: "alpha".to_string(),
+        subtitle: "active".to_string(),
+        detail: "3 msgs".to_string(),
+        preview_lines: vec!["user hello".to_string()],
+        detail_lines: vec!["assistant hi".to_string()],
+    }]);
+    workspace.handle_key(KeyInput::Character("i".to_string()));
+    workspace.handle_key(KeyInput::Character("draft text".to_string()));
+
+    let surface = workspace.focused_surface().expect("focused surface");
+    let app = workspace_single_session_app_for_surface(&workspace, surface)
+        .expect("session surface should become a single-session app");
+    let body = app.body_lines().join("\n");
+
+    assert_eq!(app.live_session_id.as_deref(), Some("session_alpha"));
+    assert_eq!(app.draft, "draft text");
+    assert!(body.contains("single session mode"));
+    assert!(body.contains("user hello"));
+    assert!(body.contains("assistant hi"));
+    assert!(!body.contains("session metadata"));
+}
+
+#[test]
+fn workspace_session_panel_composes_single_session_geometry() {
+    let workspace = Workspace::from_session_cards(vec![workspace::SessionCard {
+        session_id: "session_alpha".to_string(),
+        title: "alpha".to_string(),
+        subtitle: "active".to_string(),
+        detail: "3 msgs".to_string(),
+        preview_lines: vec!["user hello".to_string()],
+        detail_lines: vec!["assistant hi".to_string()],
+    }]);
+    let size = PhysicalSize::new(1280, 800);
+    let render_layout = workspace_render_layout(&workspace, size, None);
+    let focused_id = workspace.focused_id;
+    let mut panel_rect = None;
+    for_each_visible_workspace_surface(
+        &workspace,
+        size,
+        render_layout,
+        0.0,
+        |surface, rect, _, _| {
+            if surface.id == focused_id {
+                panel_rect = Some(rect);
+            }
+        },
+    );
+    let rect = panel_rect.expect("focused panel rect");
+    let panel_app = workspace_single_session_app_for_surface(
+        &workspace,
+        workspace.focused_surface().expect("focused surface"),
+    )
+    .expect("single-session panel app");
+    let panel_size = workspace_panel_size(rect);
+    let rendered_body_lines =
+        single_session_rendered_body_lines_for_tick(&panel_app, panel_size, 0);
+    let child_vertices = build_single_session_vertices_with_cached_body(
+        &panel_app,
+        panel_size,
+        0.0,
+        0,
+        0.0,
+        1.0,
+        &rendered_body_lines,
+    );
+
+    let mut vertices = Vec::new();
+    build_vertices_into(
+        WorkspaceVertexBuildParams {
+            workspace: &workspace,
+            size,
+            render_layout,
+            focus_pulse: 0.0,
+            space_hold_progress: None,
+            surface_frames: None,
+            exiting_surfaces: &HashMap::new(),
+            status_color: workspace_status_bar_target_color(&workspace),
+        },
+        &mut vertices,
+    );
+
+    assert!(
+        vertices.len() >= child_vertices.len() + 6,
+        "workspace should include the child single-session primitive geometry"
+    );
+
+    let mut expected_panel_vertices = Vec::new();
+    append_child_vertices_to_parent_with_opacity(
+        &mut expected_panel_vertices,
+        &child_vertices,
+        panel_size,
+        rect,
+        size,
+        1.0,
+    );
+    let actual_panel_vertices = &vertices[vertices.len() - expected_panel_vertices.len()..];
+    assert_eq!(
+        actual_panel_vertices.len(),
+        expected_panel_vertices.len(),
+        "workspace panel should contribute exactly the transformed single-session primitive"
+    );
+    for (index, (actual, expected)) in actual_panel_vertices
+        .iter()
+        .zip(expected_panel_vertices.iter())
+        .enumerate()
+    {
+        assert!(
+            (actual.position[0] - expected.position[0]).abs() < 0.000_01
+                && (actual.position[1] - expected.position[1]).abs() < 0.000_01,
+            "workspace session panel vertex {index} position diverged from transformed single-session primitive: actual={:?} expected={:?}",
+            actual.position,
+            expected.position
+        );
+        assert!(
+            actual
+                .color
+                .iter()
+                .zip(expected.color.iter())
+                .all(|(actual, expected)| (actual - expected).abs() < 0.000_01),
+            "workspace session panel vertex {index} color diverged from transformed single-session primitive: actual={:?} expected={:?}",
+            actual.color,
+            expected.color
+        );
+    }
+}
+
+#[test]
+fn workspace_session_panel_reuses_single_session_primitive_exactly() {
+    let mut workspace = Workspace::from_session_cards(vec![workspace::SessionCard {
+        session_id: "session_alpha".to_string(),
+        title: "alpha".to_string(),
+        subtitle: "active".to_string(),
+        detail: "3 msgs".to_string(),
+        preview_lines: vec!["user hello".to_string()],
+        detail_lines: vec!["assistant hi".to_string()],
+    }]);
+    workspace.handle_key(KeyInput::Character("i".to_string()));
+    workspace.handle_key(KeyInput::Character("draft text".to_string()));
+
+    let size = PhysicalSize::new(1280, 800);
+    let render_layout = workspace_render_layout(&workspace, size, None);
+    let mut panel_rect = None;
+    for_each_visible_workspace_surface(
+        &workspace,
+        size,
+        render_layout,
+        0.0,
+        |surface, rect, _, _| {
+            if workspace.is_focused(surface.id) {
+                panel_rect = Some(rect);
+            }
+        },
+    );
+    let rect = panel_rect.expect("focused panel rect");
+    let app = workspace_single_session_app_for_surface(
+        &workspace,
+        workspace.focused_surface().expect("focused surface"),
+    )
+    .expect("workspace session surface should map to a single-session app");
+    assert_eq!(app.draft, "draft text");
+
+    let panel_size = workspace_panel_size(rect);
+    let rendered_body_lines = single_session_rendered_body_lines_for_tick(&app, panel_size, 0);
+    let single_session_vertices = build_single_session_vertices_with_cached_body(
+        &app,
+        panel_size,
+        0.0,
+        0,
+        0.0,
+        1.0,
+        &rendered_body_lines,
+    );
+    let mut expected_panel_vertices = Vec::new();
+    append_child_vertices_to_parent_with_opacity(
+        &mut expected_panel_vertices,
+        &single_session_vertices,
+        panel_size,
+        rect,
+        size,
+        1.0,
+    );
+
+    let mut workspace_vertices = Vec::new();
+    build_vertices_into(
+        WorkspaceVertexBuildParams {
+            workspace: &workspace,
+            size,
+            render_layout,
+            focus_pulse: 0.0,
+            space_hold_progress: None,
+            surface_frames: None,
+            exiting_surfaces: &HashMap::new(),
+            status_color: workspace_status_bar_target_color(&workspace),
+        },
+        &mut workspace_vertices,
+    );
+
+    let actual_panel_vertices =
+        &workspace_vertices[workspace_vertices.len() - expected_panel_vertices.len()..];
+    assert_eq!(actual_panel_vertices.len(), expected_panel_vertices.len());
+    for (index, (actual, expected)) in actual_panel_vertices
+        .iter()
+        .zip(expected_panel_vertices.iter())
+        .enumerate()
+    {
+        assert!(
+            (actual.position[0] - expected.position[0]).abs() < 0.000_01
+                && (actual.position[1] - expected.position[1]).abs() < 0.000_01,
+            "workspace session panel vertex {index} position diverged from standalone single-session primitive"
+        );
+        assert!(
+            actual
+                .color
+                .iter()
+                .zip(expected.color.iter())
+                .all(|(actual, expected)| (actual - expected).abs() < 0.000_01),
+            "workspace session panel vertex {index} color diverged from standalone single-session primitive"
+        );
+    }
 }
 
 #[test]

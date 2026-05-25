@@ -94,7 +94,6 @@ pub enum KeyInput {
     OpenSessionSwitcher,
     ModelPickerMove(i32),
     CycleModel(i8),
-    #[allow(dead_code)]
     CycleReasoningEffort(i8),
     AttachClipboardImage,
     ClearAttachedImages,
@@ -149,7 +148,6 @@ pub enum KeyOutcome {
     RenameSession(Option<String>),
     ClearServerSession,
     CycleModel(i8),
-    #[allow(dead_code)]
     CycleReasoningEffort(i8),
     SendStdinResponse {
         request_id: String,
@@ -157,6 +155,7 @@ pub enum KeyOutcome {
     },
     AttachClipboardImage,
     PasteText,
+    ForceReload,
     StartFreshSession {
         message: String,
         images: Vec<(String, String)>,
@@ -264,6 +263,30 @@ impl Surface {
         self.body_lines = updated.body_lines;
         self.detail_lines = updated.detail_lines;
         self.session_id = updated.session_id;
+    }
+
+    pub fn session_card(&self) -> Option<SessionCard> {
+        let session_id = self.session_id.as_ref()?.clone();
+        Some(SessionCard {
+            session_id,
+            title: self.title.clone(),
+            subtitle: self.body_lines.first().cloned().unwrap_or_default(),
+            detail: self.body_lines.get(1).cloned().unwrap_or_default(),
+            preview_lines: self
+                .body_lines
+                .iter()
+                .skip_while(|line| line.as_str() != "recent transcript")
+                .skip(1)
+                .cloned()
+                .collect(),
+            detail_lines: self
+                .detail_lines
+                .iter()
+                .skip_while(|line| line.as_str() != "expanded transcript")
+                .skip(1)
+                .cloned()
+                .collect(),
+        })
     }
 
     fn workspace_placeholder(id: u64, lane: i32, column: i32, color_index: usize) -> Self {
@@ -614,23 +637,7 @@ impl Workspace {
     }
 
     pub fn focused_session_card(&self) -> Option<SessionCard> {
-        self.focused_surface().and_then(|surface| {
-            let session_id = surface.session_id.as_ref()?.clone();
-            Some(SessionCard {
-                session_id,
-                title: surface.title.clone(),
-                subtitle: surface.body_lines.first().cloned().unwrap_or_default(),
-                detail: surface.body_lines.get(1).cloned().unwrap_or_default(),
-                preview_lines: surface
-                    .body_lines
-                    .iter()
-                    .skip_while(|line| line.as_str() != "recent transcript")
-                    .skip(1)
-                    .cloned()
-                    .collect(),
-                detail_lines: surface.detail_lines.clone(),
-            })
-        })
+        self.focused_surface().and_then(Surface::session_card)
     }
 
     pub fn is_focused(&self, surface_id: u64) -> bool {
@@ -1006,6 +1013,8 @@ impl Workspace {
             "/help",
             "/clear",
             "/model",
+            "/force-reload",
+            "/reload",
             "/resume",
             "/sessions",
             "/status",
@@ -1058,6 +1067,11 @@ impl Workspace {
         if message.is_empty() && self.pending_images.is_empty() {
             return KeyOutcome::None;
         }
+        if self.pending_images.is_empty()
+            && let Some(outcome) = self.handle_slash_command(&message)
+        {
+            return outcome;
+        }
         let Some((session_id, title)) = self.focused_session_target() else {
             return KeyOutcome::None;
         };
@@ -1073,6 +1087,35 @@ impl Workspace {
             message,
             images,
         }
+    }
+
+    fn handle_slash_command(&mut self, message: &str) -> Option<KeyOutcome> {
+        if !message.starts_with('/') {
+            return None;
+        }
+
+        let mut parts = message.splitn(2, char::is_whitespace);
+        let command = parts.next().unwrap_or_default();
+
+        let outcome = match command {
+            "/resume" | "/session" | "/sessions" => {
+                self.clear_draft_after_local_command();
+                KeyOutcome::LoadSessionSwitcher
+            }
+            "/reload" | "/force-reload" => {
+                self.clear_draft_after_local_command();
+                KeyOutcome::ForceReload
+            }
+            _ => return None,
+        };
+        Some(outcome)
+    }
+
+    fn clear_draft_after_local_command(&mut self) {
+        self.draft.clear();
+        self.draft_cursor = 0;
+        self.input_undo_stack.clear();
+        self.mode = InputMode::Navigation;
     }
 
     fn focus_column(&mut self, direction: Direction) -> bool {
@@ -1509,7 +1552,7 @@ fn fuzzy_slash_completion(needle: &str, completions: &[&'static str]) -> Option<
     matches.sort_by(|a, b| {
         a.0.cmp(&b.0)
             .then_with(|| a.1.cmp(&b.1))
-            .then_with(|| a.2.cmp(&b.2))
+            .then_with(|| a.2.cmp(b.2))
     });
     matches.first().map(|(_, _, command)| *command)
 }
