@@ -282,6 +282,7 @@ pub(super) fn activate_auto_poke_local(app: &mut App) {
             app.streaming_output_tokens = 0;
             app.streaming_cache_read_tokens = None;
             app.streaming_cache_creation_tokens = None;
+            app.current_api_usage_recorded = false;
             app.upstream_provider = None;
             app.status_detail = None;
             app.streaming_tps_start = None;
@@ -808,6 +809,173 @@ pub(super) fn handle_help_command(app: &mut App, trimmed: &str) -> bool {
     }
 
     false
+}
+
+pub(super) fn handle_model_status_command(app: &mut App, trimmed: &str) -> bool {
+    let Some(rest) = slash_command_rest(trimmed, "/model-status") else {
+        return false;
+    };
+
+    let mut parts = rest.split_whitespace();
+    let provider = parts
+        .next()
+        .map(str::to_string)
+        .unwrap_or_else(|| app.provider_name().to_string());
+    let explicit_model = parts.collect::<Vec<_>>().join(" ");
+    let model = if explicit_model.trim().is_empty() {
+        app.provider_model()
+    } else {
+        explicit_model
+    };
+
+    app.model_status_content = build_model_status_report(&provider, &model);
+    app.model_status_scroll = Some(0);
+    true
+}
+
+fn build_model_status_report(provider_query: &str, model_query: &str) -> String {
+    let mut out = String::new();
+    out.push_str("# Model status\n\n");
+    out.push_str("Developer/live verification evidence recorded by jcode. This is evidence, not a guarantee of future provider availability.\n\n");
+    out.push_str(&format!("Provider: `{}`\n", provider_query));
+    out.push_str(&format!("Model: `{}`\n\n", model_query));
+
+    let (coverage, path) = match crate::live_tests::load_coverage(None) {
+        Ok(loaded) => loaded,
+        Err(err) => {
+            out.push_str("Status: **No verification ledger found on this install**\n\n");
+            out.push_str("No local or bundled developer live-test coverage file could be loaded. ");
+            out.push_str("Once jcode ships a curated developer coverage snapshot, this command should prefer that snapshot and separately show local evidence.\n\n");
+            out.push_str(&format!("Ledger error: `{}`\n\n", err));
+            out.push_str("You can generate local evidence with:\n\n");
+            out.push_str(&format!(
+                "```bash\njcode auth-test --provider {} --model {}\n```",
+                provider_query, model_query
+            ));
+            return out;
+        }
+    };
+
+    let provider_norm = normalize_model_status_key(provider_query);
+    let model_norm = normalize_model_status_key(model_query);
+    let mut matches = coverage
+        .latest
+        .values()
+        .filter(|entry| {
+            let entry_provider = normalize_model_status_key(&entry.provider_id);
+            let entry_label = normalize_model_status_key(&entry.provider_label);
+            let entry_model = entry
+                .model
+                .as_deref()
+                .map(normalize_model_status_key)
+                .unwrap_or_else(|| "*".to_string());
+            (entry_provider == provider_norm || entry_label == provider_norm)
+                && (entry_model == model_norm || model_norm == "*")
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by_key(|entry| entry.recorded_at);
+
+    let Some(entry) = matches.last() else {
+        out.push_str("Status: **Not yet covered by this jcode verification ledger**\n\n");
+        out.push_str(&format!("Ledger: `{}`\n\n", path.display()));
+        out.push_str("This does not mean the model is broken. It only means jcode has no recorded live verification evidence for this exact provider/model pair.\n");
+        return out;
+    };
+
+    let passed = entry
+        .checkpoint_statuses
+        .values()
+        .filter(|status| {
+            matches!(
+                status,
+                crate::live_tests::LiveVerificationStageStatus::Passed
+            )
+        })
+        .count();
+    let total = entry
+        .checkpoint_statuses
+        .len()
+        .max(entry.expected_checkpoints.len());
+    let all_expected_passed = entry.expected_checkpoints.iter().all(|checkpoint| {
+        matches!(
+            entry.checkpoint_statuses.get(checkpoint),
+            Some(crate::live_tests::LiveVerificationStageStatus::Passed)
+        )
+    });
+    let status = if all_expected_passed && total > 0 {
+        "Fully tested"
+    } else if passed > 0 {
+        "Partially tested"
+    } else {
+        "Tested, but no passing checkpoints recorded"
+    };
+
+    out.push_str(&format!("Status: **{}**\n", status));
+    out.push_str(&format!("Last tested: `{}`\n", entry.recorded_at));
+    out.push_str(&format!("Evidence source: `{}`\n", path.display()));
+    out.push_str(&format!("Test name: `{}`\n", entry.test_name));
+    out.push_str(&format!(
+        "Tested with: `jcode {}` ({}){}\n\n",
+        entry.jcode_version,
+        entry.jcode_git_hash,
+        if entry.jcode_git_dirty { ", dirty" } else { "" }
+    ));
+
+    out.push_str("## Checkpoints\n\n");
+    for checkpoint in &entry.expected_checkpoints {
+        let status = entry
+            .checkpoint_statuses
+            .get(checkpoint)
+            .cloned()
+            .unwrap_or(crate::live_tests::LiveVerificationStageStatus::NotRun);
+        out.push_str(&format!(
+            "{} {} - `{:?}`\n",
+            model_status_icon(&status),
+            model_status_checkpoint_label(checkpoint),
+            status
+        ));
+    }
+
+    if !entry.readiness_gaps.is_empty() {
+        out.push_str("\n## Readiness gaps\n\n");
+        for gap in &entry.readiness_gaps {
+            out.push_str(&format!("- {}\n", gap));
+        }
+    }
+
+    out.push_str("\n## What this means\n\n");
+    out.push_str("These checks exercise real jcode runtime paths, including basic chat and tool-use smoke tests when present. Missing evidence should be read as 'not yet recorded', not as a failure.\n");
+    out
+}
+
+fn normalize_model_status_key(value: &str) -> String {
+    value.trim().to_ascii_lowercase().replace('_', "-")
+}
+
+fn model_status_icon(status: &crate::live_tests::LiveVerificationStageStatus) -> &'static str {
+    match status {
+        crate::live_tests::LiveVerificationStageStatus::Passed => "✓",
+        crate::live_tests::LiveVerificationStageStatus::Failed => "✗",
+        crate::live_tests::LiveVerificationStageStatus::Blocked => "!",
+        crate::live_tests::LiveVerificationStageStatus::Skipped => "-",
+        crate::live_tests::LiveVerificationStageStatus::NotRun => "•",
+    }
+}
+
+fn model_status_checkpoint_label(checkpoint: &str) -> String {
+    match checkpoint {
+        crate::live_tests::checkpoints::AUTH_CREDENTIAL_LOADED => "Credential loaded".to_string(),
+        crate::live_tests::checkpoints::NON_STREAMING_CHAT_COMPLETION => {
+            "Basic chat completion".to_string()
+        }
+        crate::live_tests::checkpoints::TOOL_CALL_PARSE => "Tool call parsed".to_string(),
+        crate::live_tests::checkpoints::TOOL_EXECUTION_LOOP => "Tool execution loop".to_string(),
+        crate::live_tests::checkpoints::TOOL_RESULT_FOLLOWUP => "Tool result follow-up".to_string(),
+        crate::live_tests::checkpoints::REAL_JCODE_TOOL_SMOKE => {
+            "Real jcode tool smoke".to_string()
+        }
+        other => other.replace('_', " "),
+    }
 }
 
 pub(super) fn handle_ssh_command(app: &mut App, trimmed: &str) -> bool {
@@ -1632,6 +1800,14 @@ pub(super) fn handle_session_command(app: &mut App, trimmed: &str) -> bool {
         return true;
     }
 
+    if handle_test_command(app, trimmed) {
+        return true;
+    }
+
+    if handle_disabled_mission_command(app, trimmed) {
+        return true;
+    }
+
     if handle_goals_command(app, trimmed) {
         return true;
     }
@@ -1960,7 +2136,15 @@ fn handle_selfdev_command(app: &mut App, trimmed: &str) -> bool {
 }
 
 pub(super) fn handle_goals_command(app: &mut App, trimmed: &str) -> bool {
-    if trimmed == "/goals" {
+    let Some(trimmed) = trimmed
+        .strip_prefix("/initiatives")
+        .or_else(|| trimmed.strip_prefix("/goals"))
+    else {
+        return false;
+    };
+    let trimmed = format!("/initiatives{}", trimmed);
+
+    if trimmed == "/initiatives" {
         match crate::goal::open_goals_overview_for_session(
             active_session_id(app).as_str(),
             active_working_dir(app).as_deref(),
@@ -1972,21 +2156,21 @@ pub(super) fn handle_goals_command(app: &mut App, trimmed: &str) -> bool {
                     .map(|goals| goals.len())
                     .unwrap_or(0);
                 app.push_display_message(DisplayMessage::system(format!(
-                    "Opened goals overview in the side panel ({} goal{}).",
+                    "Opened initiatives overview in the side panel ({} initiative{}).",
                     count,
                     if count == 1 { "" } else { "s" }
                 )));
-                app.set_status_notice("Goals");
+                app.set_status_notice("Initiatives");
             }
             Err(e) => app.push_display_message(DisplayMessage::error(format!(
-                "Failed to open goals overview: {}",
+                "Failed to open initiatives overview: {}",
                 e
             ))),
         }
         return true;
     }
 
-    if trimmed == "/goals resume" {
+    if trimmed == "/initiatives resume" {
         match crate::goal::resume_goal_for_session(
             active_session_id(app).as_str(),
             active_working_dir(app).as_deref(),
@@ -1994,29 +2178,29 @@ pub(super) fn handle_goals_command(app: &mut App, trimmed: &str) -> bool {
         ) {
             Ok(Some(result)) => {
                 app.set_side_panel_snapshot(result.snapshot);
-                let mut msg = format!("Resumed goal **{}**.", result.goal.title);
+                let mut msg = format!("Resumed initiative **{}**.", result.goal.title);
                 if let Some(next_step) = result.goal.next_steps.first() {
                     msg.push_str(&format!(" Next step: {}", next_step));
                 }
                 app.push_display_message(DisplayMessage::system(msg));
-                app.set_status_notice(format!("Goal: {}", result.goal.title));
+                app.set_status_notice(format!("Initiative: {}", result.goal.title));
             }
             Ok(None) => app.push_display_message(DisplayMessage::system(
-                "No resumable goals found for this session.".to_string(),
+                "No resumable initiatives found for this session.".to_string(),
             )),
             Err(e) => app.push_display_message(DisplayMessage::error(format!(
-                "Failed to resume goal: {}",
+                "Failed to resume initiative: {}",
                 e
             ))),
         }
         return true;
     }
 
-    if let Some(id) = trimmed.strip_prefix("/goals show ") {
+    if let Some(id) = trimmed.strip_prefix("/initiatives show ") {
         let id = id.trim();
         if id.is_empty() {
             app.push_display_message(DisplayMessage::error(
-                "Usage: `/goals show <id>`".to_string(),
+                "Usage: `/initiatives show <id>`".to_string(),
             ));
             return true;
         }
@@ -2029,28 +2213,113 @@ pub(super) fn handle_goals_command(app: &mut App, trimmed: &str) -> bool {
             Ok(Some(result)) => {
                 app.set_side_panel_snapshot(result.snapshot);
                 app.push_display_message(DisplayMessage::system(format!(
-                    "Opened goal **{}** in the side panel.",
+                    "Opened initiative **{}** in the side panel.",
                     result.goal.title
                 )));
-                app.set_status_notice(format!("Goal: {}", result.goal.title));
+                app.set_status_notice(format!("Initiative: {}", result.goal.title));
             }
-            Ok(None) => {
-                app.push_display_message(DisplayMessage::error(format!("Goal not found: {}", id)))
-            }
-            Err(e) => app
-                .push_display_message(DisplayMessage::error(format!("Failed to open goal: {}", e))),
+            Ok(None) => app.push_display_message(DisplayMessage::error(format!(
+                "Initiative not found: {}",
+                id
+            ))),
+            Err(e) => app.push_display_message(DisplayMessage::error(format!(
+                "Failed to open initiative: {}",
+                e
+            ))),
         }
         return true;
     }
 
-    if trimmed.starts_with("/goals ") {
+    if trimmed.starts_with("/initiatives ") {
         app.push_display_message(DisplayMessage::error(
-            "Usage: `/goals`, `/goals resume`, or `/goals show <id>`".to_string(),
+            "Usage: `/initiatives`, `/initiatives resume`, or `/initiatives show <id>`".to_string(),
         ));
         return true;
     }
 
-    false
+    true
+}
+
+pub(super) fn handle_disabled_mission_command(app: &mut App, trimmed: &str) -> bool {
+    if slash_command_rest(trimmed, "/mission").is_none()
+        && slash_command_rest(trimmed, "/goal").is_none()
+    {
+        return false;
+    }
+
+    app.push_display_message(DisplayMessage::system(
+        "The /mission and /goal commands are disabled in this build.".to_string(),
+    ));
+    true
+}
+
+pub(super) fn handle_test_command(app: &mut App, trimmed: &str) -> bool {
+    let Some(rest) = slash_command_rest(trimmed, "/test") else {
+        return false;
+    };
+    let claim = rest.trim();
+    if matches!(claim, "help" | "--help" | "-h") {
+        app.push_display_message(DisplayMessage::system(test_usage()));
+        return true;
+    }
+
+    let prompt = build_test_verification_prompt(claim);
+    app.queued_messages.push(prompt);
+    if app.is_processing {
+        app.push_display_message(DisplayMessage::system(
+            "Queued `/test`; verification will run after the current turn.".to_string(),
+        ));
+        app.set_status_notice("Queued /test");
+    } else {
+        app.pending_queued_dispatch = true;
+        app.push_display_message(DisplayMessage::system(
+            "Running `/test` verification orchestrator.".to_string(),
+        ));
+        app.set_status_notice("Running /test");
+    }
+    true
+}
+
+fn slash_command_rest<'a>(trimmed: &'a str, command: &str) -> Option<&'a str> {
+    if trimmed == command {
+        Some("")
+    } else {
+        trimmed.strip_prefix(&format!("{} ", command))
+    }
+}
+
+fn test_usage() -> String {
+    "Usage: `/test [claim|feature|current changes]`\n\nRuns a layered verification pass and returns evidence, confidence, and gaps."
+        .to_string()
+}
+
+fn build_test_verification_prompt(claim: &str) -> String {
+    let target = if claim.trim().is_empty() {
+        "the current changes and the likely user-facing behavior they affect"
+    } else {
+        claim.trim()
+    };
+    format!(
+        "Run Jcode's /test verification orchestrator for: {target}\n\n\
+Goal: become as sure as reasonably possible before the user checks manually. Do not stop at compile success. Build and execute a verification plan, update todos as needed, and finish with an evidence-backed proof packet.\n\n\
+Required verification layers to consider and run when applicable:\n\
+1. Reproduction-first: if this is a bug, create or identify the exact failing repro and prove it now passes.\n\
+2. Focused unit tests plus integration tests for real module boundaries.\n\
+3. End-to-end/user-flow smoke tests that mirror what the user would manually try.\n\
+4. Property-based tests, state-machine/model-based tests, fuzzing, and exhaustive enumeration for small state spaces.\n\
+5. Static analysis: formatting, type/check build, clippy/lints, dead code, schema/contract compatibility, secret/security scans, dependency/audit checks when available.\n\
+6. Regression strategy: adjacent feature sweep, old-vs-new differential checks, oracle/golden/snapshot comparisons, and metamorphic tests.\n\
+7. Robustness: fault injection/chaos for timeouts, network errors, corrupt storage, permission errors, restarts/resume, cancellation, and invalid inputs.\n\
+8. Concurrency/race/interrupt/multi-session stress plus soak/flakiness loops where risk exists.\n\
+9. Nonfunctional checks: performance/resource regressions, observability logs/events/telemetry, UX/accessibility, and security/safety boundaries.\n\n\
+Final proof packet required:\n\
+- Claim verified or not verified.\n\
+- Commands/tests/checks actually run and their results.\n\
+- E2E/manual-equivalent flows covered.\n\
+- Adjacent regressions considered.\n\
+- Remaining gaps or untested environments.\n\
+- Confidence level and why the user should or should not expect to hit another obvious error."
+    )
 }
 
 pub(super) fn active_session_id(app: &App) -> String {
