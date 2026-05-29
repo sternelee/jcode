@@ -1,5 +1,15 @@
 import { cn } from "@/lib/utils";
-import { MessageSquare, Globe, Image, CheckSquare, Eye, Users, Settings, LogOut, Menu } from "lucide-react";
+import {
+	MessageSquare,
+	Globe,
+	Image,
+	CheckSquare,
+	Eye,
+	Users,
+	Settings,
+	LogOut,
+	Menu,
+} from "lucide-react";
 
 interface NavBarProps {
 	activeTab: string;

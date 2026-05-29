@@ -66,7 +66,11 @@ export function ConfirmDialog({
 								: "bg-primary/10 text-primary",
 						)}
 					>
-						{variant === "destructive" ? <Trash2 className="w-4 h-4" /> : <Info className="w-4 h-4" />}
+						{variant === "destructive" ? (
+							<Trash2 className="w-4 h-4" />
+						) : (
+							<Info className="w-4 h-4" />
+						)}
 					</div>
 					<div className="min-w-0 flex-1">
 						<h2 className="text-[15px] font-semibold text-foreground">

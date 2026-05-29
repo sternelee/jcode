@@ -834,5 +834,4 @@ function PlaceholderPage({
 	);
 }
 
-import { PlayIcon, ListTodo, Monitor, Users, } from "lucide-react";
-
+import { PlayIcon, ListTodo, Monitor, Users } from "lucide-react";

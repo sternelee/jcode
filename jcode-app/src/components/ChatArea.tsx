@@ -3,7 +3,19 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage, SessionInfo } from "@/types";
 import { MessageBubble } from "./MessageBubble";
 import { AgentAvatar } from "./AgentAvatar";
-import { Search, Settings, ChevronUp, ChevronDown, X, Plus, Play, UserPlus, Paperclip, AtSign, SendHorizonal } from "lucide-react";
+import {
+	Search,
+	Settings,
+	ChevronUp,
+	ChevronDown,
+	X,
+	Plus,
+	Play,
+	UserPlus,
+	Paperclip,
+	AtSign,
+	SendHorizonal,
+} from "lucide-react";
 import {
 	SlashCommandPalette,
 	AgentSettingsPopover,
@@ -469,8 +481,7 @@ export function ChatArea({
 								onClick={onAddAgent}
 								className="ml-auto flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary font-medium transition-colors"
 							>
-							<UserPlus className="w-3 h-3" />
-								+ Add Agent
+								<UserPlus className="w-3 h-3" />+ Add Agent
 							</button>
 						)}
 					</div>
@@ -520,7 +531,6 @@ export function ChatArea({
 							title="Previous"
 						>
 							<ChevronUp className="w-3 h-3" />
-
 						</button>
 						<button
 							type="button"
@@ -533,7 +543,6 @@ export function ChatArea({
 							title="Next"
 						>
 							<ChevronDown className="w-3 h-3" />
-
 						</button>
 						<button
 							type="button"

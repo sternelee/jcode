@@ -188,8 +188,8 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 
 					<div className="h-8" />
 				</div>
-				</div>
 			</div>
+		</div>
 	);
 }
 

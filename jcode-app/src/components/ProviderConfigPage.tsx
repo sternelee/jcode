@@ -298,7 +298,7 @@ export function ProviderConfigPage({
 			</div>
 
 			<div className="flex-1 overflow-y-auto min-h-0">
-									<div className="p-6 max-w-3xl mx-auto space-y-5">
+				<div className="p-6 max-w-3xl mx-auto space-y-5">
 					{/* Message */}
 					{authMessage && (
 						<div
@@ -806,9 +806,9 @@ export function ProviderConfigPage({
 						</div>
 					</div>
 
-			<div className="h-8" />
+					<div className="h-8" />
+				</div>
 			</div>
 		</div>
-	</div>
 	);
 }
