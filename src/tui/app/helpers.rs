@@ -296,6 +296,7 @@ pub(super) fn inferred_reasoning_efforts(
         || model.starts_with("claude-");
     if is_anthropic {
         let supports_effort = model.contains("claude-mythos")
+            || model.contains("claude-opus-4-8")
             || model.contains("claude-opus-4-7")
             || model.contains("claude-opus-4-6")
             || model.contains("claude-sonnet-4-6")
@@ -305,7 +306,7 @@ pub(super) fn inferred_reasoning_efforts(
         if !supports_effort {
             return Vec::new();
         }
-        if model.contains("claude-opus-4-7") {
+        if model.contains("claude-opus-4-8") || model.contains("claude-opus-4-7") {
             return vec!["none", "low", "medium", "high", "xhigh"];
         }
         return vec!["none", "low", "medium", "high"];
@@ -647,15 +648,14 @@ pub(super) fn clipboard_image() -> Option<(String, String)> {
             .output()
         {
             let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if result == "ok" {
-                if let Ok(data) = std::fs::read(&temp_path) {
+            if result == "ok"
+                && let Ok(data) = std::fs::read(&temp_path) {
                     let _ = std::fs::remove_file(&temp_path);
                     if !data.is_empty() {
                         let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
                         return Some(("image/png".to_string(), b64));
                     }
                 }
-            }
         }
     }
 

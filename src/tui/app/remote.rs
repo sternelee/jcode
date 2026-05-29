@@ -10,7 +10,9 @@ use crate::message::ToolCall;
 use crate::protocol::{ServerEvent, TranscriptMode};
 use crate::tui::backend::{RemoteConnection, RemoteDisconnectReason, RemoteEventState, RemoteRead};
 use anyhow::Result;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent};
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind,
+};
 use ratatui::{DefaultTerminal, Terminal, backend::Backend};
 use std::time::{Duration, Instant};
 
@@ -62,6 +64,14 @@ pub(super) enum RemoteEventOutcome {
 }
 
 pub(super) async fn handle_tick(app: &mut App, remote: &mut RemoteConnection) -> bool {
+    crate::tui::ui::set_frame_input_attribution(crate::tui::ui::FrameInputAttribution {
+        event: Some("tick".to_string()),
+        scroll_delta: None,
+        model_picker_open: app
+            .inline_interactive_state
+            .as_ref()
+            .is_some_and(|state| state.kind == crate::tui::PickerKind::Model),
+    });
     let mut needs_redraw = crate::tui::periodic_redraw_required(app);
     app.maybe_capture_runtime_memory_heartbeat();
     app.progress_mouse_scroll_animation();
@@ -243,11 +253,22 @@ pub(super) async fn handle_terminal_event(
     event: Option<std::result::Result<Event, std::io::Error>>,
 ) -> Result<bool> {
     let mut needs_redraw = false;
+    let mut input_attribution = crate::tui::ui::FrameInputAttribution {
+        event: None,
+        scroll_delta: None,
+        model_picker_open: app
+            .inline_interactive_state
+            .as_ref()
+            .is_some_and(|state| state.kind == crate::tui::PickerKind::Model),
+    };
     match event {
         Some(Ok(Event::FocusGained)) => {
+            input_attribution.event = Some("focus_gained".to_string());
             app.note_client_focus(true);
         }
         Some(Ok(Event::Key(key))) => {
+            input_attribution.event = Some(format!("key:{:?}:{:?}", key.code, key.kind));
+            input_attribution.scroll_delta = key_scroll_delta(&key);
             app.note_client_interaction();
             app.update_copy_badge_key_event(key);
             if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
@@ -329,22 +350,52 @@ pub(super) async fn handle_terminal_event(
             needs_redraw |= dispatch_compacted_history_load(app, remote).await;
         }
         Some(Ok(Event::Paste(text))) => {
+            input_attribution.event = Some(format!("paste:{}", text.len()));
             app.note_client_interaction();
             app.handle_paste(text);
             needs_redraw = true;
         }
         Some(Ok(Event::Mouse(mouse))) => {
+            input_attribution.event = Some(format!("mouse:{:?}", mouse.kind));
+            input_attribution.scroll_delta = mouse_scroll_delta(&mouse);
             app.note_client_interaction();
             handle_mouse_event(app, mouse);
             needs_redraw = true;
             needs_redraw |= dispatch_compacted_history_load(app, remote).await;
         }
         Some(Ok(Event::Resize(_, _))) => {
+            input_attribution.event = Some("resize".to_string());
             needs_redraw = app.should_redraw_after_resize();
         }
-        _ => {}
+        Some(Err(error)) => {
+            input_attribution.event = Some(format!("event_error:{}", error));
+        }
+        _ => {
+            input_attribution.event = Some("none".to_string());
+        }
     }
+    crate::tui::ui::set_frame_input_attribution(input_attribution);
     Ok(needs_redraw)
+}
+
+fn key_scroll_delta(key: &KeyEvent) -> Option<i32> {
+    match key.code {
+        KeyCode::Up => Some(-1),
+        KeyCode::PageUp => Some(-10),
+        KeyCode::Down => Some(1),
+        KeyCode::PageDown => Some(10),
+        _ => None,
+    }
+}
+
+fn mouse_scroll_delta(mouse: &MouseEvent) -> Option<i32> {
+    match mouse.kind {
+        MouseEventKind::ScrollUp => Some(-1),
+        MouseEventKind::ScrollDown => Some(1),
+        MouseEventKind::ScrollLeft => Some(-1),
+        MouseEventKind::ScrollRight => Some(1),
+        _ => None,
+    }
 }
 
 async fn dispatch_compacted_history_load(app: &mut App, remote: &mut RemoteConnection) -> bool {
@@ -440,27 +491,58 @@ pub(super) async fn handle_bus_event(
     }
 }
 
+/// Resolve the canonical auth provider id the server uses to attribute an
+/// auth-change refresh for a completed login.
+///
+/// `LoginCompleted.provider` is the login descriptor's display label (e.g.
+/// "Anthropic API"), id, or alias - not the canonical server provider id. This
+/// used to only map Azure and OpenAI-compatible logins, so direct logins
+/// (Claude OAuth/API key, OpenAI, OpenRouter, Bedrock, ...) sent no hint. With
+/// no hint the server fell back to the session's currently active provider,
+/// mislabeling the catalog-refresh message ("OpenAI credentials are active"
+/// after an Anthropic API-key login) and skipping the post-login model switch.
 fn auth_provider_hint_for_login_provider(provider: &str) -> Option<&'static str> {
     let provider = provider.trim();
+    // Azure's runtime id ("azure-openai") differs from its login descriptor id
+    // ("azure"); keep the dedicated mapping used across the auth lifecycle.
     if provider.eq_ignore_ascii_case("azure")
         || provider.eq_ignore_ascii_case("azure-openai")
         || provider.eq_ignore_ascii_case("azure openai")
     {
-        Some("azure-openai")
-    } else if let Some(profile) =
-        crate::provider_catalog::resolve_openai_compatible_profile_selection(provider)
-    {
-        Some(profile.id)
-    } else {
-        None
+        return Some("azure-openai");
+    }
+
+    use crate::provider_catalog::LoginProviderTarget;
+    let descriptor = crate::provider_catalog::resolve_login_provider_loose(provider)?;
+    match descriptor.target {
+        LoginProviderTarget::Azure => Some("azure-openai"),
+        // OpenAI-compatible profiles carry their own catalog namespace id.
+        LoginProviderTarget::OpenAiCompatible(profile) => Some(profile.id),
+        // Auto-import has no single runtime to attribute the refresh to.
+        LoginProviderTarget::AutoImport => None,
+        _ => Some(descriptor.id),
     }
 }
 
 fn auth_changed_event_for_login_provider(provider: &str) -> Option<crate::protocol::AuthChanged> {
     let provider_id = auth_provider_hint_for_login_provider(provider)?;
     let mut auth = crate::protocol::AuthChanged::new(provider_id);
-    auth.auth_method = Some(crate::protocol::AuthMethod::RemoteTuiPasteApiKey);
-    auth.credential_source = Some(crate::protocol::AuthCredentialSource::ApiKeyFile);
+    // These fields are informational; the server routes off `provider` and the
+    // `expected_*` hints. Reflect the descriptor's auth kind so OAuth logins are
+    // not recorded as API-key pastes.
+    let api_key_login = crate::provider_catalog::resolve_login_provider_loose(provider)
+        .map(|descriptor| {
+            use crate::provider_catalog::LoginProviderAuthKind;
+            matches!(
+                descriptor.auth_kind,
+                LoginProviderAuthKind::ApiKey | LoginProviderAuthKind::Hybrid
+            )
+        })
+        .unwrap_or(true);
+    if api_key_login {
+        auth.auth_method = Some(crate::protocol::AuthMethod::RemoteTuiPasteApiKey);
+        auth.credential_source = Some(crate::protocol::AuthCredentialSource::ApiKeyFile);
+    }
     if provider_id == "azure-openai" {
         auth.expected_runtime = Some(crate::protocol::RuntimeProviderKey::new("azure-openai"));
         auth.expected_catalog_namespace =

@@ -79,9 +79,13 @@ impl Provider for OpenAIProvider {
             "reasoning": request.get("reasoning"),
             "context_management": request.get("context_management"),
             "include": request.get("include"),
+            "service_tier": request.get("service_tier"),
             "prompt_cache_key": request.get("prompt_cache_key"),
             "prompt_cache_retention": request.get("prompt_cache_retention"),
         });
+        let prompt_cache_key_hash = request
+            .get("prompt_cache_key")
+            .map(crate::provider::fingerprint::stable_hash_json);
         crate::provider::fingerprint::log_provider_canonical_input(
             "openai",
             &model_id,
@@ -99,6 +103,30 @@ impl Provider for OpenAIProvider {
                 ("websocket_preferred", use_websocket_transport.to_string()),
                 ("input_item_count", input_item_count.to_string()),
                 ("chatgpt_mode", is_chatgpt_mode.to_string()),
+                ("request_kind", "full".to_string()),
+                ("cache_namespace", "full_request".to_string()),
+                (
+                    "prompt_cache_key_present",
+                    request.get("prompt_cache_key").is_some().to_string(),
+                ),
+                (
+                    "prompt_cache_key_hash",
+                    format!("{:?}", prompt_cache_key_hash),
+                ),
+                (
+                    "prompt_cache_retention",
+                    request
+                        .get("prompt_cache_retention")
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "null".to_string()),
+                ),
+                (
+                    "service_tier",
+                    request
+                        .get("service_tier")
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "null".to_string()),
+                ),
             ],
         );
         let usage_snapshot = crate::usage::get_openai_usage_sync();
@@ -115,6 +143,29 @@ impl Provider for OpenAIProvider {
                 ("input_item_count", input_item_count.to_string()),
                 ("tool_count", request_tool_count.to_string()),
                 ("chatgpt_mode", is_chatgpt_mode.to_string()),
+                ("request_kind", "full".to_string()),
+                (
+                    "prompt_cache_key_present",
+                    request.get("prompt_cache_key").is_some().to_string(),
+                ),
+                (
+                    "prompt_cache_key_hash",
+                    format!("{:?}", prompt_cache_key_hash),
+                ),
+                (
+                    "prompt_cache_retention",
+                    request
+                        .get("prompt_cache_retention")
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "null".to_string()),
+                ),
+                (
+                    "service_tier",
+                    request
+                        .get("service_tier")
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "null".to_string()),
+                ),
             ],
         );
         crate::logging::info(&format!(
@@ -806,6 +857,7 @@ impl Provider for OpenAIProvider {
         Arc::new(OpenAIProvider {
             client: self.client.clone(),
             credentials: Arc::clone(&self.credentials),
+            credential_mode: Arc::clone(&self.credential_mode),
             model: Arc::new(RwLock::new(model)),
             prompt_cache_key: self.prompt_cache_key.clone(),
             prompt_cache_retention: self.prompt_cache_retention.clone(),
@@ -822,7 +874,8 @@ impl Provider for OpenAIProvider {
     }
 
     async fn invalidate_credentials(&self) {
-        if let Ok(credentials) = crate::auth::codex::load_credentials() {
+        let mode = *self.credential_mode.read().await;
+        if let Ok(credentials) = mode.load_credentials() {
             let mut guard = self.credentials.write().await;
             *guard = credentials;
         }

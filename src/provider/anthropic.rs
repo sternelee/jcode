@@ -26,9 +26,9 @@ use tokio::sync::{RwLock, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
-static CACHE_TTL_1H: AtomicBool = AtomicBool::new(false);
+static CACHE_TTL_1H: AtomicBool = AtomicBool::new(true);
 
-/// Enable or disable the 1-hour cache TTL (default: 5-minute)
+/// Enable or disable the 1-hour cache TTL (default: 1-hour)
 pub fn set_cache_ttl_1h(enabled: bool) {
     CACHE_TTL_1H.store(enabled, Ordering::Relaxed);
 }
@@ -366,7 +366,7 @@ async fn ensure_oauth_preflight(
 }
 
 /// Default model
-const DEFAULT_MODEL: &str = "claude-opus-4-6";
+const DEFAULT_MODEL: &str = "claude-opus-4-8";
 
 /// API version header
 const API_VERSION: &str = "2023-06-01";
@@ -387,6 +387,8 @@ const DEFAULT_MAX_TOKENS: u32 = 32_768;
 
 /// Available models
 pub const AVAILABLE_MODELS: &[&str] = &[
+    "claude-opus-4-8",
+    "claude-opus-4-8[1m]",
     "claude-opus-4-6",
     "claude-opus-4-6[1m]",
     "claude-sonnet-4-6",
@@ -405,13 +407,45 @@ struct CachedCredentials {
     expires_at: i64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnthropicCredentialMode {
+    Auto,
+    OAuth,
+    ApiKey,
+}
+
+impl AnthropicCredentialMode {
+    fn from_runtime_env() -> Self {
+        match std::env::var("JCODE_RUNTIME_PROVIDER")
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("claude-api" | "anthropic-api") => Self::ApiKey,
+            Some("claude" | "anthropic") => Self::OAuth,
+            _ => Self::Auto,
+        }
+    }
+}
+
+pub(crate) fn load_anthropic_api_key() -> Result<String> {
+    crate::provider_catalog::load_api_key_from_env_or_config("ANTHROPIC_API_KEY", "anthropic.env")
+        .context("No Anthropic API key found")
+}
+
+pub(crate) fn has_anthropic_api_key() -> bool {
+    load_anthropic_api_key().is_ok()
+}
+
 /// Direct Anthropic API provider
 pub struct AnthropicProvider {
     client: Client,
     model: Arc<std::sync::RwLock<String>>,
     reasoning_effort: Arc<std::sync::RwLock<Option<String>>>,
+    service_tier: Arc<std::sync::RwLock<Option<String>>>,
     /// Cached OAuth credentials (None if using API key)
     credentials: Arc<RwLock<Option<CachedCredentials>>>,
+    credential_mode: Arc<RwLock<AnthropicCredentialMode>>,
     max_tokens: u32,
     oauth_session_id: String,
     oauth_preflight_done: Arc<AtomicBool>,
@@ -454,7 +488,9 @@ impl AnthropicProvider {
             client: crate::provider::shared_http_client(),
             model: Arc::new(std::sync::RwLock::new(model)),
             reasoning_effort: Arc::new(std::sync::RwLock::new(reasoning_effort)),
+            service_tier: Arc::new(std::sync::RwLock::new(None)),
             credentials: Arc::new(RwLock::new(None)),
+            credential_mode: Arc::new(RwLock::new(AnthropicCredentialMode::from_runtime_env())),
             max_tokens,
             oauth_session_id: Uuid::new_v4().to_string(),
             oauth_preflight_done: Arc::new(AtomicBool::new(false)),
@@ -468,6 +504,7 @@ impl AnthropicProvider {
     fn model_supports_output_effort(model: &str) -> bool {
         let model = Self::normalized_model_key(model);
         model.contains("claude-mythos")
+            || model.contains("claude-opus-4-8")
             || model.contains("claude-opus-4-7")
             || model.contains("claude-opus-4-6")
             || model.contains("claude-sonnet-4-6")
@@ -477,6 +514,7 @@ impl AnthropicProvider {
     fn model_supports_adaptive_thinking(model: &str) -> bool {
         let model = Self::normalized_model_key(model);
         model.contains("claude-mythos")
+            || model.contains("claude-opus-4-8")
             || model.contains("claude-opus-4-7")
             || model.contains("claude-opus-4-6")
             || model.contains("claude-sonnet-4-6")
@@ -490,7 +528,8 @@ impl AnthropicProvider {
     }
 
     fn model_supports_xhigh_effort(model: &str) -> bool {
-        Self::normalized_model_key(model).contains("claude-opus-4-7")
+        let model = Self::normalized_model_key(model);
+        model.contains("claude-opus-4-8") || model.contains("claude-opus-4-7")
     }
 
     fn model_supports_reasoning_effort(model: &str) -> bool {
@@ -527,6 +566,34 @@ impl AnthropicProvider {
         } else {
             effort.to_string()
         }
+    }
+
+    fn model_supports_priority_service_tier(model: &str) -> bool {
+        Self::normalized_model_key(model).contains("claude-opus-4-8")
+    }
+
+    fn normalize_service_tier(raw: &str) -> Result<Option<String>> {
+        let value = raw.trim().to_ascii_lowercase();
+        match value.as_str() {
+            "" | "default" => Ok(None),
+            "off" | "standard" | "standard_only" => Ok(Some("standard_only".to_string())),
+            // The Anthropic API uses `auto` for the latency-optimized tier. Keep
+            // accepting `priority` because `/fast on` is shared with OpenAI.
+            "priority" | "auto" => Ok(Some("auto".to_string())),
+            other => anyhow::bail!(
+                "Unsupported Anthropic service tier '{}'; expected priority/auto or off/standard_only",
+                other
+            ),
+        }
+    }
+
+    fn current_service_tier_for_model(&self, model: &str) -> Option<String> {
+        let tier = self
+            .service_tier
+            .read()
+            .map(|guard| guard.clone())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+        tier.filter(|_| Self::model_supports_priority_service_tier(model))
     }
 
     fn manual_thinking_budget(effort: &str, max_tokens: u32) -> Option<u32> {
@@ -583,11 +650,22 @@ impl AnthropicProvider {
     /// Supports both OAuth tokens and direct API keys
     /// Automatically refreshes OAuth tokens when expired
     async fn get_access_token(&self) -> Result<(String, bool)> {
-        // First check for direct API key in environment
-        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            return Ok((key, false)); // false = not OAuth
+        let mode = *self.credential_mode.read().await;
+        if matches!(
+            mode,
+            AnthropicCredentialMode::Auto | AnthropicCredentialMode::ApiKey
+        ) {
+            match load_anthropic_api_key() {
+                Ok(key) => return Ok((key, false)), // false = not OAuth
+                Err(error) if matches!(mode, AnthropicCredentialMode::ApiKey) => return Err(error),
+                Err(_) => {}
+            }
         }
 
+        self.get_oauth_access_token().await
+    }
+
+    async fn get_oauth_access_token(&self) -> Result<(String, bool)> {
         // Check cached credentials
         {
             let cached = self.credentials.read().await;
@@ -656,6 +734,41 @@ impl AnthropicProvider {
         });
 
         Ok((fresh_creds.access_token, true))
+    }
+
+    pub(crate) fn set_credential_mode(&self, mode: AnthropicCredentialMode) -> Result<()> {
+        match mode {
+            AnthropicCredentialMode::Auto => {}
+            AnthropicCredentialMode::ApiKey => {
+                load_anthropic_api_key()?;
+            }
+            AnthropicCredentialMode::OAuth => {
+                auth::claude::load_credentials().context("Failed to load Claude credentials")?;
+            }
+        }
+        let mut mode_guard = self.credential_mode.try_write().map_err(|_| {
+            anyhow::anyhow!(
+                "Cannot change Anthropic credential mode while a request is in progress"
+            )
+        })?;
+        *mode_guard = mode;
+        drop(mode_guard);
+        if let Ok(mut cached) = self.credentials.try_write() {
+            *cached = None;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn credential_mode_snapshot(&self) -> AnthropicCredentialMode {
+        self.credential_mode
+            .try_read()
+            .map(|mode| *mode)
+            .unwrap_or(AnthropicCredentialMode::Auto)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn test_access_token_and_oauth_mode(&self) -> Result<(String, bool)> {
+        self.get_access_token().await
     }
 
     /// Convert our Message type to Anthropic API format
@@ -1092,6 +1205,7 @@ impl Provider for AnthropicProvider {
             thinking,
             output_config,
             temperature,
+            service_tier: self.current_service_tier_for_model(&model),
             stream: true,
         };
 
@@ -1233,6 +1347,38 @@ impl Provider for AnthropicProvider {
         }
     }
 
+    fn service_tier(&self) -> Option<String> {
+        match self
+            .current_service_tier_for_model(&self.model())
+            .as_deref()
+        {
+            Some("auto") => Some("priority".to_string()),
+            _ => None,
+        }
+    }
+
+    fn set_service_tier(&self, service_tier: &str) -> Result<()> {
+        let normalized = Self::normalize_service_tier(service_tier)?;
+        if normalized.as_deref() == Some("auto")
+            && !Self::model_supports_priority_service_tier(&self.model())
+        {
+            anyhow::bail!("Anthropic priority fast tier is only supported for Claude Opus 4.8");
+        }
+        *self
+            .service_tier
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = normalized;
+        Ok(())
+    }
+
+    fn available_service_tiers(&self) -> Vec<&'static str> {
+        if Self::model_supports_priority_service_tier(&self.model()) {
+            vec!["off", "priority"]
+        } else {
+            vec![]
+        }
+    }
+
     async fn prefetch_models(&self) -> Result<()> {
         let (token, is_oauth) = self.get_access_token().await?;
         if token.trim().is_empty() {
@@ -1281,7 +1427,9 @@ impl Provider for AnthropicProvider {
                     .clone(),
             )),
             reasoning_effort: Arc::new(std::sync::RwLock::new(self.reasoning_effort())),
+            service_tier: Arc::new(std::sync::RwLock::new(self.service_tier())),
             credentials: Arc::new(RwLock::new(None)),
+            credential_mode: Arc::clone(&self.credential_mode),
             max_tokens: self.max_tokens,
             oauth_session_id: self.oauth_session_id.clone(),
             oauth_preflight_done: Arc::new(AtomicBool::new(
@@ -1350,6 +1498,7 @@ impl Provider for AnthropicProvider {
             thinking,
             output_config,
             temperature,
+            service_tier: self.current_service_tier_for_model(&model),
             stream: true,
         };
 
@@ -1946,6 +2095,8 @@ struct ApiRequest {
     output_config: Option<ApiOutputConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    service_tier: Option<String>,
     stream: bool,
 }
 

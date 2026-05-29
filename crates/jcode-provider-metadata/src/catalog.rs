@@ -311,7 +311,7 @@ pub const CEREBRAS_PROFILE: OpenAiCompatibleProfile = OpenAiCompatibleProfile {
     api_key_env: "CEREBRAS_API_KEY",
     env_file: "cerebras.env",
     setup_url: "https://inference-docs.cerebras.ai/introduction",
-    default_model: Some("qwen-3-235b-a22b-instruct-2507"),
+    default_model: Some("gpt-oss-120b"),
     requires_api_key: true,
 };
 
@@ -405,6 +405,19 @@ pub const CLAUDE_LOGIN_PROVIDER: LoginProviderDescriptor = LoginProviderDescript
     recommended: true,
     target: LoginProviderTarget::Claude,
     order: LoginProviderSurfaceOrder::new(Some(1), Some(1), Some(1), Some(1), Some(1)),
+};
+
+pub const ANTHROPIC_API_LOGIN_PROVIDER: LoginProviderDescriptor = LoginProviderDescriptor {
+    id: "anthropic-api",
+    display_name: "Anthropic API",
+    auth_kind: LoginProviderAuthKind::ApiKey,
+    auth_state_key: LoginProviderAuthStateKey::Anthropic,
+    auth_status_method: "API key",
+    aliases: &["claude-api", "anthropic-key", "claude-key"],
+    menu_detail: "direct Anthropic Messages API",
+    recommended: false,
+    target: LoginProviderTarget::ClaudeApiKey,
+    order: LoginProviderSurfaceOrder::new(Some(2), Some(2), Some(2), Some(2), Some(2)),
 };
 
 pub const AUTO_IMPORT_LOGIN_PROVIDER: LoginProviderDescriptor = LoginProviderDescriptor {
@@ -990,9 +1003,10 @@ pub const GOOGLE_LOGIN_PROVIDER: LoginProviderDescriptor = LoginProviderDescript
     order: LoginProviderSurfaceOrder::new(Some(13), None, None, None, None),
 };
 
-pub(crate) const LOGIN_PROVIDERS: [LoginProviderDescriptor; 45] = [
+pub(crate) const LOGIN_PROVIDERS: [LoginProviderDescriptor; 46] = [
     AUTO_IMPORT_LOGIN_PROVIDER,
     CLAUDE_LOGIN_PROVIDER,
+    ANTHROPIC_API_LOGIN_PROVIDER,
     OPENAI_LOGIN_PROVIDER,
     OPENAI_API_LOGIN_PROVIDER,
     JCODE_LOGIN_PROVIDER,

@@ -30,6 +30,8 @@ use std::time::Instant;
 const BTW_PAGE_ID: &str = "btw";
 pub(super) const REVIEW_PREFERRED_MODEL: &str = "gpt-5.5";
 const POKE_OFF_UI_HINT: &str = "`/poke off` to stop.";
+const TODO_CONFIDENCE_THRESHOLD: u8 = 90;
+const TODO_CONFIDENCE_SUMMARY_PREFIX: &str = "All todos are done. Todo confidence summary:";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum PokeCommand {
@@ -62,9 +64,14 @@ pub(super) fn parse_poke_command(trimmed: &str) -> Option<Result<PokeCommand, St
 }
 
 pub(super) fn is_poke_message(message: &str) -> bool {
-    message.starts_with("You have ")
+    (message.starts_with("You have ")
         && message.contains(" incomplete todo")
-        && message.ends_with("update the todo tool.")
+        && message.ends_with("update the todo tool."))
+        || message.starts_with(TODO_CONFIDENCE_SUMMARY_PREFIX)
+}
+
+pub(super) fn is_todo_confidence_summary_message(message: &str) -> bool {
+    message.starts_with(TODO_CONFIDENCE_SUMMARY_PREFIX)
 }
 
 pub(super) fn queued_messages_are_only_pokes(messages: &[String]) -> bool {
@@ -72,10 +79,14 @@ pub(super) fn queued_messages_are_only_pokes(messages: &[String]) -> bool {
 }
 
 pub(super) fn clear_queued_poke_messages(app: &mut App) -> usize {
-    let before = app.queued_messages.len();
+    let before_queued = app.queued_messages.len();
     app.queued_messages
         .retain(|message| !is_poke_message(message));
-    let removed = before.saturating_sub(app.queued_messages.len());
+    let before_hidden = app.hidden_queued_system_messages.len();
+    app.hidden_queued_system_messages
+        .retain(|message| !is_todo_confidence_summary_message(message));
+    let removed = before_queued.saturating_sub(app.queued_messages.len())
+        + before_hidden.saturating_sub(app.hidden_queued_system_messages.len());
     if removed > 0 && !app.has_queued_followups() {
         app.pending_queued_dispatch = false;
     }
@@ -515,7 +526,11 @@ pub(super) fn poke_status_message(app: &App) -> String {
     let queued_followup = app
         .queued_messages
         .iter()
-        .any(|message| is_poke_message(message));
+        .any(|message| is_poke_message(message))
+        || app
+            .hidden_queued_system_messages
+            .iter()
+            .any(|message| is_todo_confidence_summary_message(message));
     let mut message = format!(
         "Auto-poke: **{}**. {} incomplete todo{}.",
         if app.auto_poke_incomplete_todos {
@@ -812,9 +827,17 @@ pub(super) fn handle_help_command(app: &mut App, trimmed: &str) -> bool {
 }
 
 pub(super) fn handle_model_status_command(app: &mut App, trimmed: &str) -> bool {
-    let Some(rest) = slash_command_rest(trimmed, "/model-status") else {
+    let Some(rest) = slash_command_rest(trimmed, "/provider-test-coverage")
+        .or_else(|| slash_command_rest(trimmed, "/model-status"))
+    else {
         return false;
     };
+
+    if rest.trim().is_empty() {
+        app.model_status_content = build_provider_test_coverage_summary();
+        app.model_status_scroll = Some(0);
+        return true;
+    }
 
     let mut parts = rest.split_whitespace();
     let provider = parts
@@ -834,147 +857,25 @@ pub(super) fn handle_model_status_command(app: &mut App, trimmed: &str) -> bool 
 }
 
 fn build_model_status_report(provider_query: &str, model_query: &str) -> String {
-    let mut out = String::new();
-    out.push_str("# Model status\n\n");
-    out.push_str("Developer/live verification evidence recorded by jcode. This is evidence, not a guarantee of future provider availability.\n\n");
-    out.push_str(&format!("Provider: `{}`\n", provider_query));
-    out.push_str(&format!("Model: `{}`\n\n", model_query));
+    crate::live_tests::format_provider_test_coverage_report(provider_query, model_query, None)
+}
 
-    let (coverage, path) = match crate::live_tests::load_coverage(None) {
-        Ok(loaded) => loaded,
+fn build_provider_test_coverage_summary() -> String {
+    match crate::live_tests::load_coverage(None) {
+        Ok((coverage, path)) => {
+            let summary = crate::live_tests::strict_live_provider_model_coverage_summary(
+                &coverage,
+                path.display().to_string(),
+            );
+            crate::live_tests::format_strict_live_provider_model_coverage_summary(&summary, 50)
+        }
         Err(err) => {
-            out.push_str("Status: **No verification ledger found on this install**\n\n");
-            out.push_str("No local or bundled developer live-test coverage file could be loaded. ");
-            out.push_str("Once jcode ships a curated developer coverage snapshot, this command should prefer that snapshot and separately show local evidence.\n\n");
-            out.push_str(&format!("Ledger error: `{}`\n\n", err));
-            out.push_str("You can generate local evidence with:\n\n");
-            out.push_str(&format!(
-                "```bash\njcode auth-test --provider {} --model {}\n```",
-                provider_query, model_query
-            ));
-            return out;
+            let mut out = String::new();
+            out.push_str("Live provider/model E2E coverage\n");
+            out.push_str("Status: no verification ledger found on this install\n");
+            out.push_str(&format!("Ledger error: {err}\n"));
+            out
         }
-    };
-
-    let provider_norm = normalize_model_status_key(provider_query);
-    let model_norm = normalize_model_status_key(model_query);
-    let mut matches = coverage
-        .latest
-        .values()
-        .filter(|entry| {
-            let entry_provider = normalize_model_status_key(&entry.provider_id);
-            let entry_label = normalize_model_status_key(&entry.provider_label);
-            let entry_model = entry
-                .model
-                .as_deref()
-                .map(normalize_model_status_key)
-                .unwrap_or_else(|| "*".to_string());
-            (entry_provider == provider_norm || entry_label == provider_norm)
-                && (entry_model == model_norm || model_norm == "*")
-        })
-        .collect::<Vec<_>>();
-    matches.sort_by_key(|entry| entry.recorded_at);
-
-    let Some(entry) = matches.last() else {
-        out.push_str("Status: **Not yet covered by this jcode verification ledger**\n\n");
-        out.push_str(&format!("Ledger: `{}`\n\n", path.display()));
-        out.push_str("This does not mean the model is broken. It only means jcode has no recorded live verification evidence for this exact provider/model pair.\n");
-        return out;
-    };
-
-    let passed = entry
-        .checkpoint_statuses
-        .values()
-        .filter(|status| {
-            matches!(
-                status,
-                crate::live_tests::LiveVerificationStageStatus::Passed
-            )
-        })
-        .count();
-    let total = entry
-        .checkpoint_statuses
-        .len()
-        .max(entry.expected_checkpoints.len());
-    let all_expected_passed = entry.expected_checkpoints.iter().all(|checkpoint| {
-        matches!(
-            entry.checkpoint_statuses.get(checkpoint),
-            Some(crate::live_tests::LiveVerificationStageStatus::Passed)
-        )
-    });
-    let status = if all_expected_passed && total > 0 {
-        "Fully tested"
-    } else if passed > 0 {
-        "Partially tested"
-    } else {
-        "Tested, but no passing checkpoints recorded"
-    };
-
-    out.push_str(&format!("Status: **{}**\n", status));
-    out.push_str(&format!("Last tested: `{}`\n", entry.recorded_at));
-    out.push_str(&format!("Evidence source: `{}`\n", path.display()));
-    out.push_str(&format!("Test name: `{}`\n", entry.test_name));
-    out.push_str(&format!(
-        "Tested with: `jcode {}` ({}){}\n\n",
-        entry.jcode_version,
-        entry.jcode_git_hash,
-        if entry.jcode_git_dirty { ", dirty" } else { "" }
-    ));
-
-    out.push_str("## Checkpoints\n\n");
-    for checkpoint in &entry.expected_checkpoints {
-        let status = entry
-            .checkpoint_statuses
-            .get(checkpoint)
-            .cloned()
-            .unwrap_or(crate::live_tests::LiveVerificationStageStatus::NotRun);
-        out.push_str(&format!(
-            "{} {} - `{:?}`\n",
-            model_status_icon(&status),
-            model_status_checkpoint_label(checkpoint),
-            status
-        ));
-    }
-
-    if !entry.readiness_gaps.is_empty() {
-        out.push_str("\n## Readiness gaps\n\n");
-        for gap in &entry.readiness_gaps {
-            out.push_str(&format!("- {}\n", gap));
-        }
-    }
-
-    out.push_str("\n## What this means\n\n");
-    out.push_str("These checks exercise real jcode runtime paths, including basic chat and tool-use smoke tests when present. Missing evidence should be read as 'not yet recorded', not as a failure.\n");
-    out
-}
-
-fn normalize_model_status_key(value: &str) -> String {
-    value.trim().to_ascii_lowercase().replace('_', "-")
-}
-
-fn model_status_icon(status: &crate::live_tests::LiveVerificationStageStatus) -> &'static str {
-    match status {
-        crate::live_tests::LiveVerificationStageStatus::Passed => "✓",
-        crate::live_tests::LiveVerificationStageStatus::Failed => "✗",
-        crate::live_tests::LiveVerificationStageStatus::Blocked => "!",
-        crate::live_tests::LiveVerificationStageStatus::Skipped => "-",
-        crate::live_tests::LiveVerificationStageStatus::NotRun => "•",
-    }
-}
-
-fn model_status_checkpoint_label(checkpoint: &str) -> String {
-    match checkpoint {
-        crate::live_tests::checkpoints::AUTH_CREDENTIAL_LOADED => "Credential loaded".to_string(),
-        crate::live_tests::checkpoints::NON_STREAMING_CHAT_COMPLETION => {
-            "Basic chat completion".to_string()
-        }
-        crate::live_tests::checkpoints::TOOL_CALL_PARSE => "Tool call parsed".to_string(),
-        crate::live_tests::checkpoints::TOOL_EXECUTION_LOOP => "Tool execution loop".to_string(),
-        crate::live_tests::checkpoints::TOOL_RESULT_FOLLOWUP => "Tool result follow-up".to_string(),
-        crate::live_tests::checkpoints::REAL_JCODE_TOOL_SMOKE => {
-            "Real jcode tool smoke".to_string()
-        }
-        other => other.replace('_', " "),
     }
 }
 
@@ -2332,11 +2233,18 @@ pub(super) fn active_session_id(app: &App) -> String {
     }
 }
 
+pub(super) fn poke_todos(app: &App) -> Vec<crate::todo::TodoItem> {
+    crate::todo::load_todos(&active_session_id(app)).unwrap_or_default()
+}
+
+pub(super) fn is_incomplete_poke_todo(todo: &crate::todo::TodoItem) -> bool {
+    todo.status != "completed" && todo.status != "cancelled"
+}
+
 pub(super) fn incomplete_poke_todos(app: &App) -> Vec<crate::todo::TodoItem> {
-    crate::todo::load_todos(&active_session_id(app))
-        .unwrap_or_default()
+    poke_todos(app)
         .into_iter()
-        .filter(|todo| todo.status != "completed" && todo.status != "cancelled")
+        .filter(is_incomplete_poke_todo)
         .collect()
 }
 
@@ -2346,6 +2254,150 @@ pub(super) fn build_poke_message(incomplete: &[crate::todo::TodoItem]) -> String
         incomplete.len(),
         if incomplete.len() == 1 { "" } else { "s" },
     )
+}
+
+fn todo_confidence_weight(priority: &str) -> u32 {
+    match priority {
+        "high" => 3,
+        "medium" => 2,
+        _ => 1,
+    }
+}
+
+fn weighted_confidence_average(scores: impl IntoIterator<Item = (u8, u32)>) -> Option<u8> {
+    let mut weighted_sum = 0u32;
+    let mut total_weight = 0u32;
+    for (score, weight) in scores {
+        weighted_sum += u32::from(score) * weight;
+        total_weight += weight;
+    }
+    if total_weight == 0 {
+        None
+    } else {
+        Some(((weighted_sum + total_weight / 2) / total_weight) as u8)
+    }
+}
+
+pub(super) fn build_todo_confidence_summary_message(todos: &[crate::todo::TodoItem]) -> String {
+    let completed: Vec<&crate::todo::TodoItem> = todos
+        .iter()
+        .filter(|todo| todo.status == "completed")
+        .collect();
+    let cancelled_count = todos
+        .iter()
+        .filter(|todo| todo.status == "cancelled")
+        .count();
+
+    let planning_average = weighted_confidence_average(todos.iter().filter_map(|todo| {
+        todo.confidence
+            .map(|score| (score, todo_confidence_weight(&todo.priority)))
+    }));
+    let completion_scores: Vec<(&crate::todo::TodoItem, u8, u32)> = completed
+        .iter()
+        .filter_map(|todo| {
+            todo.completion_confidence
+                .map(|score| (*todo, score, todo_confidence_weight(&todo.priority)))
+        })
+        .collect();
+    let completion_average = weighted_confidence_average(
+        completion_scores
+            .iter()
+            .map(|(_, score, weight)| (*score, *weight)),
+    );
+    let missing_completion_confidence = completed
+        .iter()
+        .filter(|todo| todo.completion_confidence.is_none())
+        .count();
+    let below_threshold_count = completion_scores
+        .iter()
+        .filter(|(_, score, _)| *score < TODO_CONFIDENCE_THRESHOLD)
+        .count();
+    let lowest_completed = completion_scores
+        .iter()
+        .min_by_key(|(_, score, _)| *score)
+        .map(|(_, score, _)| *score);
+
+    let mut lines = vec![TODO_CONFIDENCE_SUMMARY_PREFIX.to_string()];
+    lines.push(format!(
+        "- Completed todos: {}{}.",
+        completed.len(),
+        if cancelled_count == 0 {
+            String::new()
+        } else {
+            format!(
+                " ({} cancelled todo{} skipped)",
+                cancelled_count,
+                if cancelled_count == 1 { "" } else { "s" }
+            )
+        }
+    ));
+
+    match completion_average {
+        Some(avg) => lines.push(format!("- Weighted completion confidence: {}%.", avg)),
+        None if !completed.is_empty() => lines.push(
+            "- Weighted completion confidence: unknown because no completed todo has completion_confidence."
+                .to_string(),
+        ),
+        None => lines.push("- No completed todos recorded completion confidence.".to_string()),
+    }
+    lines.push(format!(
+        "- Confidence threshold: {}%.",
+        TODO_CONFIDENCE_THRESHOLD
+    ));
+
+    match planning_average {
+        Some(avg) => lines.push(format!("- Weighted planning confidence: {}%.", avg)),
+        None => lines.push("- Weighted planning confidence: unknown.".to_string()),
+    }
+
+    match lowest_completed {
+        Some(score) => lines.push(format!("- Lowest completed todo confidence: {}%.", score)),
+        None => lines.push("- Lowest completed todo confidence: unknown.".to_string()),
+    }
+
+    if missing_completion_confidence > 0 {
+        lines.push(format!(
+            "- Missing completion_confidence on {} completed todo{}.",
+            missing_completion_confidence,
+            if missing_completion_confidence == 1 {
+                ""
+            } else {
+                "s"
+            }
+        ));
+    }
+
+    if below_threshold_count > 0 {
+        lines.push(format!(
+            "- {} completed todo{} below the {}% confidence threshold.",
+            below_threshold_count,
+            if below_threshold_count == 1 {
+                " is"
+            } else {
+                "s are"
+            },
+            TODO_CONFIDENCE_THRESHOLD
+        ));
+    }
+
+    let needs_validation = completion_average
+        .map(|avg| avg < TODO_CONFIDENCE_THRESHOLD)
+        .unwrap_or(true)
+        || missing_completion_confidence > 0
+        || below_threshold_count > 0;
+    if needs_validation {
+        lines.push(
+            "- Suggested action: validate or test before finalizing. Inspect the result and update completion_confidence when the evidence changes."
+                .to_string(),
+        );
+    } else {
+        lines.push(
+            "- Suggested action: use this confidence summary when deciding whether any further validation would materially improve certainty before finalizing."
+                .to_string(),
+        );
+    }
+
+    lines.join("\n")
 }
 
 pub(super) fn active_working_dir(app: &App) -> Option<std::path::PathBuf> {

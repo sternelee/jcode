@@ -19,6 +19,7 @@ fn lock_env() -> std::sync::MutexGuard<'static, ()> {
 fn test_provider_choice_arg_values() {
     assert_eq!(ProviderChoice::Jcode.as_arg_value(), "jcode");
     assert_eq!(ProviderChoice::Claude.as_arg_value(), "claude");
+    assert_eq!(ProviderChoice::AnthropicApi.as_arg_value(), "anthropic-api");
     assert_eq!(
         ProviderChoice::ClaudeSubprocess.as_arg_value(),
         "claude-subprocess"
@@ -68,24 +69,16 @@ fn test_server_bootstrap_login_selection_preserves_order() {
         Some("claude")
     );
     assert_eq!(
-        resolve_login_selection("3", &providers).map(|provider| provider.id),
-        Some("jcode")
+        resolve_login_selection("2", &providers).map(|provider| provider.id),
+        Some("anthropic-api")
     );
     assert_eq!(
         resolve_login_selection("4", &providers).map(|provider| provider.id),
+        Some("jcode")
+    );
+    assert_eq!(
+        resolve_login_selection("5", &providers).map(|provider| provider.id),
         Some("copilot")
-    );
-    assert_eq!(
-        resolve_login_selection("10", &providers).map(|provider| provider.id),
-        Some("chutes")
-    );
-    assert_eq!(
-        resolve_login_selection("11", &providers).map(|provider| provider.id),
-        Some("cerebras")
-    );
-    assert_eq!(
-        resolve_login_selection("12", &providers).map(|provider| provider.id),
-        Some("alibaba-coding-plan")
     );
 }
 
@@ -97,23 +90,27 @@ fn test_auto_init_login_selection_preserves_order() {
         Some("claude")
     );
     assert_eq!(
-        resolve_login_selection("10", &providers).map(|provider| provider.id),
-        Some("alibaba-coding-plan")
+        resolve_login_selection("2", &providers).map(|provider| provider.id),
+        Some("anthropic-api")
     );
     assert_eq!(
         resolve_login_selection("11", &providers).map(|provider| provider.id),
-        Some("cursor")
+        Some("alibaba-coding-plan")
     );
     assert_eq!(
         resolve_login_selection("12", &providers).map(|provider| provider.id),
-        Some("copilot")
+        Some("cursor")
     );
     assert_eq!(
         resolve_login_selection("13", &providers).map(|provider| provider.id),
-        Some("gemini")
+        Some("copilot")
     );
     assert_eq!(
         resolve_login_selection("14", &providers).map(|provider| provider.id),
+        Some("gemini")
+    );
+    assert_eq!(
+        resolve_login_selection("15", &providers).map(|provider| provider.id),
         Some("antigravity")
     );
 }
@@ -321,6 +318,10 @@ fn choice_for_login_provider_round_trips_core_targets() {
         Some(ProviderChoice::Openrouter)
     );
     assert_eq!(
+        choice_for_login_provider(provider_catalog::ANTHROPIC_API_LOGIN_PROVIDER),
+        Some(ProviderChoice::AnthropicApi)
+    );
+    assert_eq!(
         choice_for_login_provider(provider_catalog::AZURE_LOGIN_PROVIDER),
         Some(ProviderChoice::Azure)
     );
@@ -465,6 +466,7 @@ fn apply_login_provider_profile_env_locks_compatible_profile_for_auto_spawn() {
         "JCODE_OPENROUTER_ENV_FILE",
         "JCODE_OPENROUTER_CACHE_NAMESPACE",
         "JCODE_OPENROUTER_PROVIDER_FEATURES",
+        "JCODE_OPENROUTER_TRANSPORT_STATE",
         "JCODE_OPENROUTER_ALLOW_NO_AUTH",
         "JCODE_OPENROUTER_STATIC_MODELS",
         "JCODE_PROVIDER_PROFILE_ACTIVE",
@@ -554,6 +556,7 @@ async fn init_provider_for_ollama_reapplies_local_compat_runtime_env_after_disab
         "JCODE_OPENROUTER_ENV_FILE",
         "JCODE_OPENROUTER_CACHE_NAMESPACE",
         "JCODE_OPENROUTER_PROVIDER_FEATURES",
+        "JCODE_OPENROUTER_TRANSPORT_STATE",
         "JCODE_OPENROUTER_ALLOW_NO_AUTH",
         "JCODE_RUNTIME_PROVIDER",
         "JCODE_FORCE_PROVIDER",

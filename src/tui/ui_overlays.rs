@@ -131,8 +131,8 @@ pub(super) fn draw_help_overlay(frame: &mut Frame, area: Rect, scroll: usize, ap
     lines.push(help_entry("/model", "List or switch models"));
     lines.push(help_entry("/model <name>", "Switch to a different model"));
     lines.push(help_entry(
-        "/model-status",
-        "Show live-test evidence for the current model",
+        "/provider-test-coverage",
+        "Show live-test evidence for the current provider/model",
     ));
     lines.push(help_entry("/agents", "Configure models for agent roles"));
     lines.push(help_entry(
@@ -141,7 +141,7 @@ pub(super) fn draw_help_overlay(frame: &mut Frame, area: Rect, scroll: usize, ap
     ));
     lines.push(help_entry(
         "/fast [on|off|status|default ...]",
-        "Toggle OpenAI/Codex fast mode",
+        "Toggle fast mode",
     ));
     lines.push(help_entry(
         "/transport <mode>",
@@ -500,13 +500,16 @@ pub(super) fn draw_model_status_overlay(
         } else if raw.trim().is_empty() {
             lines.push(Line::from(""));
         } else {
-            lines.push(Line::from(Span::styled(format!("  {raw}"), text_style)));
+            lines.push(Line::from(Span::styled(
+                format!("  {raw}"),
+                model_status_line_style(raw, text_style),
+            )));
         }
     }
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "  ↑/↓ scroll, PgUp/PgDn page, q/Esc close",
+        "  ↑/↓ scroll, PgUp/PgDn page, c copy report, q/Esc close",
         dim_style,
     )));
 
@@ -514,10 +517,43 @@ pub(super) fn draw_model_status_overlay(
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title(" /model-status "),
+                .title(" /provider-test-coverage "),
         )
         .scroll((scroll.min(u16::MAX as usize) as u16, 0));
     frame.render_widget(paragraph, area);
+}
+
+fn model_status_line_style(raw: &str, default: Style) -> Style {
+    let trimmed = raw.trim_start();
+    if trimmed.starts_with('✓')
+        || trimmed.contains("**Fully tested**")
+        || trimmed.contains("strict_covered")
+        || trimmed.contains("Passed")
+    {
+        Style::default().fg(rgb(120, 220, 150))
+    } else if trimmed.starts_with('✗')
+        || trimmed.contains("Failed")
+        || trimmed.contains("0.00%")
+        || trimmed.contains("no_model_specific_live_evidence")
+    {
+        Style::default().fg(rgb(240, 110, 110))
+    } else if trimmed.starts_with('!')
+        || trimmed.starts_with('-')
+        || trimmed.contains("Skipped")
+        || trimmed.contains("Blocked")
+        || trimmed.contains("Partially tested")
+        || trimmed.contains("observed_missing_strict_checkpoints")
+    {
+        Style::default().fg(rgb(235, 190, 105))
+    } else if trimmed.starts_with('•')
+        || trimmed.contains("NotRun")
+        || trimmed.contains("Known providers")
+        || trimmed.contains("Uncovered provider/model gaps")
+    {
+        Style::default().fg(dim_color())
+    } else {
+        default
+    }
 }
 
 pub(super) fn draw_debug_overlay(

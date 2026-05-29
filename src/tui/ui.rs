@@ -201,6 +201,8 @@ thread_local! {
     static TEST_LAST_LAYOUT: RefCell<Option<LayoutSnapshot>> = const { RefCell::new(None) };
     static TEST_LAST_STATUS_AREA: RefCell<Option<Rect>> = const { RefCell::new(None) };
     static TEST_VISIBLE_COPY_TARGETS: RefCell<Vec<VisibleCopyTarget>> = RefCell::new(Vec::new());
+    static TEST_VISIBLE_EXPAND_EDIT_BADGE: Cell<bool> = const { Cell::new(false) };
+    static TEST_VISIBLE_EXPAND_EDIT_BADGE_LINE: Cell<Option<usize>> = const { Cell::new(None) };
     static TEST_PROMPT_VIEWPORT_STATE: RefCell<PromptViewportState> = RefCell::new(PromptViewportState::default());
     static TEST_COPY_VIEWPORT: RefCell<CopyViewportSnapshots> = RefCell::new(CopyViewportSnapshots::default());
 }
@@ -227,6 +229,21 @@ fn set_last_chat_scrollbar_visible(visible: bool) {
     #[cfg(not(test))]
     {
         LAST_CHAT_SCROLLBAR_VISIBLE.store(usize::from(visible), Ordering::Relaxed);
+    }
+}
+
+/// Whether the chat native scrollbar was visible on the most recent render frame.
+/// Used as hysteresis so steady-state frames only prepare a single chat width
+/// instead of both the wide and narrow variants (which thrashes the prep caches
+/// on long transcripts during streaming).
+fn last_chat_scrollbar_visible() -> bool {
+    #[cfg(test)]
+    {
+        return TEST_LAST_CHAT_SCROLLBAR_VISIBLE.with(Cell::get);
+    }
+    #[cfg(not(test))]
+    {
+        LAST_CHAT_SCROLLBAR_VISIBLE.load(Ordering::Relaxed) != 0
     }
 }
 
@@ -389,8 +406,77 @@ const COPY_BADGE_KEYS: [char; 12] = ['s', 'd', 'f', 'g', 'w', 'e', 'r', 't', 'x'
 static VISIBLE_COPY_TARGETS: OnceLock<Mutex<Vec<VisibleCopyTarget>>> = OnceLock::new();
 
 #[cfg(not(test))]
+static VISIBLE_EXPAND_EDIT_BADGE: OnceLock<Mutex<bool>> = OnceLock::new();
+
+#[cfg(not(test))]
+static VISIBLE_EXPAND_EDIT_BADGE_LINE: OnceLock<Mutex<Option<usize>>> = OnceLock::new();
+
+#[cfg(not(test))]
 fn visible_copy_targets_state() -> &'static Mutex<Vec<VisibleCopyTarget>> {
     VISIBLE_COPY_TARGETS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+#[cfg(not(test))]
+fn visible_expand_edit_badge_state() -> &'static Mutex<bool> {
+    VISIBLE_EXPAND_EDIT_BADGE.get_or_init(|| Mutex::new(false))
+}
+
+#[cfg(not(test))]
+fn visible_expand_edit_badge_line_state() -> &'static Mutex<Option<usize>> {
+    VISIBLE_EXPAND_EDIT_BADGE_LINE.get_or_init(|| Mutex::new(None))
+}
+
+pub(crate) fn set_visible_expand_edit_badge(visible: bool, line: Option<usize>) {
+    #[cfg(test)]
+    {
+        TEST_VISIBLE_EXPAND_EDIT_BADGE.with(|state| state.set(visible));
+        TEST_VISIBLE_EXPAND_EDIT_BADGE_LINE.with(|state| state.set(line));
+        return;
+    }
+    #[cfg(not(test))]
+    {
+        let mut visible_state = match visible_expand_edit_badge_state().lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *visible_state = visible;
+
+        let mut line_state = match visible_expand_edit_badge_line_state().lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *line_state = line;
+    }
+}
+
+pub(crate) fn visible_expand_edit_badge() -> bool {
+    #[cfg(test)]
+    {
+        return TEST_VISIBLE_EXPAND_EDIT_BADGE.with(Cell::get);
+    }
+    #[cfg(not(test))]
+    {
+        let state = match visible_expand_edit_badge_state().lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *state
+    }
+}
+
+pub(crate) fn visible_expand_edit_badge_line() -> Option<usize> {
+    #[cfg(test)]
+    {
+        return TEST_VISIBLE_EXPAND_EDIT_BADGE_LINE.with(Cell::get);
+    }
+    #[cfg(not(test))]
+    {
+        let state = match visible_expand_edit_badge_line_state().lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *state
+    }
 }
 
 fn set_visible_copy_targets(targets: Vec<VisibleCopyTarget>) {
@@ -999,6 +1085,10 @@ use frame_metrics::{
     note_viewport_metrics, reset_frame_perf_stats, viewport_stability_hash,
 };
 pub(crate) use frame_metrics::{
+    DrawCallAttribution, FrameInputAttribution, frame_input_attribution_snapshot,
+    record_draw_call_attribution, set_frame_input_attribution, wall_clock_ms,
+};
+pub(crate) use frame_metrics::{
     debug_flicker_frame_history, debug_slow_frame_history, recent_flicker_copy_target_for_key,
     recent_flicker_ui_notice,
 };
@@ -1586,15 +1676,15 @@ pub(crate) fn copy_selection_text(range: crate::tui::CopySelectionRange) -> Opti
                 continue;
             }
         }
-        let line_width = line_display_width(&text);
+        let line_width = line_display_width(text);
         let copy_start = snapshot.wrapped_copy_offset(abs_line).unwrap_or(0);
         let start_col = if abs_line == start.abs_line {
-            clamp_display_col(&text, start.column).max(copy_start)
+            clamp_display_col(text, start.column).max(copy_start)
         } else {
             copy_start
         };
         let end_col = if abs_line == end.abs_line {
-            clamp_display_col(&text, end.column).max(copy_start)
+            clamp_display_col(text, end.column).max(copy_start)
         } else {
             line_width
         };
@@ -1603,11 +1693,11 @@ pub(crate) fn copy_selection_text(range: crate::tui::CopySelectionRange) -> Opti
             continue;
         }
 
-        let slice = display_col_slice(&text, start_col, end_col);
+        let slice = display_col_slice(text, start_col, end_col);
         if abs_line == start.abs_line {
             out.reserve(slice.len().saturating_mul(selected_lines.min(8)));
         }
-        out.push_str(&slice);
+        out.push_str(slice);
     }
 
     Some(out)
@@ -1920,11 +2010,15 @@ fn draw_inner(frame: &mut Frame, app: &dyn TuiState) {
     let prep_start = Instant::now();
     let chat_left_inset = left_aligned_content_inset(chat_area.width, app.centered_mode());
     let wide_prepare_width = chat_area.width.saturating_sub(chat_left_inset);
+    let narrow_prepare_width = wide_prepare_width.saturating_sub(1);
     let pinned_mermaid_aspect_ratio =
         diagram_area.and_then(|area| pinned_diagram_preferred_aspect_ratio(area, pane_position));
-    let prepared_wide = mermaid::with_preferred_aspect_ratio(pinned_mermaid_aspect_ratio, || {
-        prepare::prepare_messages(app, wide_prepare_width, chat_area.height)
-    });
+    let prepare_at = |width: u16| {
+        mermaid::with_preferred_aspect_ratio(pinned_mermaid_aspect_ratio, || {
+            prepare::prepare_messages(app, width, chat_area.height)
+        })
+    };
+
     let show_donut = super::idle_donut_active(app);
     let donut_height: u16 = if show_donut { 14 } else { 0 };
     let notification_height: u16 = if app.has_notification() { 1 } else { 0 };
@@ -1936,28 +2030,54 @@ fn draw_inner(frame: &mut Frame, app: &dyn TuiState) {
         + input_height
         + donut_height; // status + queued + notification + inline UI + gap + input + donut
     let available_height = chat_area.height;
+    let overflows = |prepared: &PreparedChatFrame| {
+        (prepared.total_wrapped_lines().max(1) as u16) + fixed_height > available_height
+    };
 
-    let initial_content_height = prepared_wide.total_wrapped_lines().max(1) as u16;
-    let wide_overflows = app.chat_native_scrollbar()
-        && chat_area.width > 1
-        && initial_content_height + fixed_height > available_height;
-    let (prepared, chat_scrollbar_visible) = if !wide_overflows {
+    // Resolving native-scrollbar overflow can require wrapping the transcript at
+    // two different widths (the wide layout, and one column narrower to reserve a
+    // scrollbar column). Preparing both every frame doubles the most expensive work
+    // and thrashes the prep caches on long transcripts during streaming. Use the
+    // previous frame's scrollbar decision as hysteresis so the steady state only
+    // prepares a single width; the second width is only built at a visibility
+    // transition. This is safe because narrow wraps at least as much as wide, so
+    // "narrow fits" implies "wide fits".
+    let scrollbar_enabled = app.chat_native_scrollbar() && chat_area.width > 1;
+    let initial_content_height;
+    let (prepared, chat_scrollbar_visible) = if !scrollbar_enabled {
+        let prepared_wide = prepare_at(wide_prepare_width);
+        initial_content_height = prepared_wide.total_wrapped_lines().max(1) as u16;
         (prepared_wide, false)
-    } else {
-        let narrow_prepare_width = wide_prepare_width.saturating_sub(1);
-        let prepared_narrow =
-            mermaid::with_preferred_aspect_ratio(pinned_mermaid_aspect_ratio, || {
-                prepare::prepare_messages(app, narrow_prepare_width, chat_area.height)
-            });
-        let narrow_content_height = prepared_narrow.total_wrapped_lines().max(1) as u16;
-        let narrow_overflows = narrow_content_height + fixed_height > available_height;
-        if narrow_overflows {
+    } else if last_chat_scrollbar_visible() {
+        // Scrollbar was visible last frame: prepare the narrow (reserved-column)
+        // layout first. If it still overflows we keep it without touching wide.
+        let prepared_narrow = prepare_at(narrow_prepare_width);
+        initial_content_height = prepared_narrow.total_wrapped_lines().max(1) as u16;
+        if overflows(&prepared_narrow) {
             (prepared_narrow, true)
         } else {
-            // Reserving a scrollbar column changed the wrapped content enough to make it fit.
-            // Prefer the wide layout without the native scrollbar so the UI does not oscillate
-            // between two self-contradictory states across consecutive frames.
+            // Content shrank enough to fit even at the narrower width, so the wide
+            // layout (which wraps no more) also fits: drop the scrollbar.
+            (prepare_at(wide_prepare_width), false)
+        }
+    } else {
+        // No scrollbar last frame: prepare the wide layout first. Only when it
+        // overflows do we evaluate the narrow layout to decide on the scrollbar.
+        let prepared_wide = prepare_at(wide_prepare_width);
+        initial_content_height = prepared_wide.total_wrapped_lines().max(1) as u16;
+        if !overflows(&prepared_wide) {
             (prepared_wide, false)
+        } else {
+            let prepared_narrow = prepare_at(narrow_prepare_width);
+            if overflows(&prepared_narrow) {
+                (prepared_narrow, true)
+            } else {
+                // Reserving a scrollbar column changed the wrapped content enough to
+                // make it fit. Prefer the wide layout without the native scrollbar so
+                // the UI does not oscillate between two self-contradictory states
+                // across consecutive frames.
+                (prepared_wide, false)
+            }
         }
     };
     set_last_chat_scrollbar_visible(chat_scrollbar_visible);

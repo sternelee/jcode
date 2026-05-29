@@ -282,7 +282,10 @@ impl Provider for MixedModelRoutesProvider {
     }
 
     fn available_models_display(&self) -> Vec<String> {
-        Self::routes().into_iter().map(|route| route.model).collect()
+        Self::routes()
+            .into_iter()
+            .map(|route| route.model)
+            .collect()
     }
 
     fn model_routes(&self) -> Vec<crate::provider::ModelRoute> {
@@ -606,7 +609,12 @@ fn test_tui_cerebras_paste_key_lifecycle_has_no_degraded_success_messages() {
             .expect("Cerebras login provider"),
     );
 
-    let prompt = app.display_messages.last().expect("login prompt").content.clone();
+    let prompt = app
+        .display_messages
+        .last()
+        .expect("login prompt")
+        .content
+        .clone();
     assert!(prompt.contains("**Cerebras API Key**"), "{prompt}");
     assert!(
         prompt.contains("Stored variable: `CEREBRAS_API_KEY`"),
@@ -617,12 +625,15 @@ fn test_tui_cerebras_paste_key_lifecycle_has_no_degraded_success_messages() {
         "{prompt}"
     );
     assert!(
-        prompt.contains("Suggested default model: `qwen-3-235b-a22b-instruct-2507`"),
+        prompt.contains("Suggested default model: `gpt-oss-120b`"),
         "{prompt}"
     );
     assert!(prompt.contains("**Paste your API key below**"), "{prompt}");
 
-    let pending = app.pending_login.take().expect("pending Cerebras key login");
+    let pending = app
+        .pending_login
+        .take()
+        .expect("pending Cerebras key login");
     let _runtime_guard = rt.enter();
     app.handle_login_input(pending, "test-cerebras-key".to_string());
 
@@ -679,10 +690,15 @@ fn test_tui_cerebras_paste_key_lifecycle_has_no_degraded_success_messages() {
                 }
                 Ok(Ok(event @ crate::bus::BusEvent::ProviderModelActivated { .. })) => {
                     activation_events += 1;
-                    if let crate::bus::BusEvent::ProviderModelActivated { model, message, .. } =
-                        &event
+                    if let crate::bus::BusEvent::ProviderModelActivated {
+                        model,
+                        provider_key,
+                        message,
+                        ..
+                    } = &event
                     {
                         assert_eq!(model, "qwen-3-235b-a22b-instruct-2507");
+                        assert_eq!(provider_key.as_deref(), Some("cerebras"));
                         assert!(message.contains("**Cerebras is ready.**"), "{message}");
                         assert!(!message.contains("wrong-profile-first"), "{message}");
                     }
@@ -706,7 +722,10 @@ fn test_tui_cerebras_paste_key_lifecycle_has_no_degraded_success_messages() {
             }
             crate::bus::BusEvent::UiActivity(activity) => {
                 if activity.message.contains("Auth Model Catalog Warning") {
-                    panic!("late warning activity after successful auth: {}", activity.message);
+                    panic!(
+                        "late warning activity after successful auth: {}",
+                        activity.message
+                    );
                 }
                 assert!(
                     !activity.message.contains("did not switch models"),
@@ -714,9 +733,15 @@ fn test_tui_cerebras_paste_key_lifecycle_has_no_degraded_success_messages() {
                     activity.message
                 );
             }
-            crate::bus::BusEvent::ProviderModelActivated { model, message, .. } => {
+            crate::bus::BusEvent::ProviderModelActivated {
+                model,
+                provider_key,
+                message,
+                ..
+            } => {
                 activation_events += 1;
                 assert_eq!(model, "qwen-3-235b-a22b-instruct-2507");
+                assert_eq!(provider_key.as_deref(), Some("cerebras"));
                 assert!(message.contains("**Cerebras is ready.**"), "{message}");
             }
             _ => {}
@@ -724,13 +749,31 @@ fn test_tui_cerebras_paste_key_lifecycle_has_no_degraded_success_messages() {
     }
 
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
-    assert_eq!(login_success_events, 1, "expected exactly one successful login event");
-    assert_eq!(login_failure_events, 0, "happy auth must not publish failed login events");
-    assert_eq!(catalog_warning_events, 0, "happy auth must not publish catalog warnings");
-    assert_eq!(activation_events, 1, "expected exactly one provider activation event");
+    assert_eq!(
+        login_success_events, 1,
+        "expected exactly one successful login event"
+    );
+    assert_eq!(
+        login_failure_events, 0,
+        "happy auth must not publish failed login events"
+    );
+    assert_eq!(
+        catalog_warning_events, 0,
+        "happy auth must not publish catalog warnings"
+    );
+    assert_eq!(
+        activation_events, 1,
+        "expected exactly one provider activation event"
+    );
     assert_eq!(
         app.session.model.as_deref(),
         Some("qwen-3-235b-a22b-instruct-2507")
+    );
+    assert_eq!(app.session.provider_key.as_deref(), Some("cerebras"));
+    assert_eq!(
+        set_model_requests.lock().unwrap().as_slice(),
+        ["cerebras:qwen-3-235b-a22b-instruct-2507"],
+        "post-login activation must preserve the authenticated Cerebras route instead of switching a bare model"
     );
     let transcript = app
         .display_messages
@@ -823,6 +866,7 @@ fn test_tui_cerebras_paste_key_lifecycle_has_no_degraded_success_messages() {
         .expect("Cerebras picker selection should switch models");
 
     assert_eq!(app.session.model.as_deref(), Some("llama3.1-8b"));
+    assert_eq!(app.session.provider_key.as_deref(), Some("cerebras"));
     assert_eq!(app.provider.model(), "llama3.1-8b");
     assert_eq!(
         set_model_requests.lock().unwrap().as_slice(),
@@ -947,7 +991,11 @@ fn test_tui_openai_compatible_local_refresh_failure_is_pending_not_final_failure
         "local refresh failure must not try to switch models from an unavailable catalog"
     );
     assert!(activity.message.contains("Saved credentials are active"));
-    assert!(activity.message.contains("server auth-change catalog refresh"));
+    assert!(
+        activity
+            .message
+            .contains("server auth-change catalog refresh")
+    );
     assert!(activity.message.contains("fixture refresh failed"));
     assert!(!activity.message.contains("Login: failed"));
     assert!(!activity.message.contains("Unable to sign in"));
@@ -1040,10 +1088,7 @@ fn test_model_picker_state_space_preserves_provider_labels_after_route_hydration
     );
     assert_eq!(
         routes_by_model.get("Qwen/Qwen3-Coder-480B-A35B-Instruct"),
-        Some(&(
-            "Chutes".to_string(),
-            "openai-compatible:chutes".to_string()
-        ))
+        Some(&("Chutes".to_string(), "openai-compatible:chutes".to_string()))
     );
     assert_eq!(
         routes_by_model.get("deepseek/deepseek-v4-pro"),
@@ -1558,7 +1603,9 @@ fn test_login_smoke_model_picker_renders_unstacked_provider_rows() {
         .find(|line| line.contains("glm-51-nvfp4"))
         .unwrap_or("");
     assert!(
-        glm_row.contains("Comtegra GPU Cloud") && glm_row.contains("api key") && !glm_row.contains("copilot"),
+        glm_row.contains("Comtegra GPU Cloud")
+            && glm_row.contains("api key")
+            && !glm_row.contains("copilot"),
         "Comtegra GLM row should show its provider and API-key method, got row `{}` in:\n{}",
         glm_row,
         text
@@ -1589,8 +1636,8 @@ fn test_login_smoke_model_picker_renders_unstacked_provider_rows() {
         .find(|line| line.contains("deepseek/deepseek-v4-pro") && line.contains("DeepSeek"))
         .unwrap_or("");
     assert!(
-        deepseek_auto_row.contains('★'),
-        "OpenRouter auto route should carry the recommended marker, got row `{}` in:\n{}",
+        !deepseek_auto_row.contains('★'),
+        "OpenRouter auto route should not carry the recommended marker, got row `{}` in:\n{}",
         deepseek_auto_row,
         text
     );
@@ -1639,6 +1686,7 @@ fn test_model_picker_filter_text_includes_provider_and_method() {
         is_default: false,
         recommended: false,
         recommendation_rank: usize::MAX,
+            usage_score: 0,
         old: false,
         created_date: None,
         effort: None,
@@ -1786,6 +1834,8 @@ fn test_poke_arms_auto_poke_until_todos_are_done() {
                 priority: "high".to_string(),
                 blocked_by: Vec::new(),
                 assigned_to: None,
+                confidence: None,
+                completion_confidence: None,
             }],
         )
         .expect("save todos");
@@ -1814,6 +1864,8 @@ fn test_poke_status_reports_current_state() {
                 priority: "high".to_string(),
                 blocked_by: Vec::new(),
                 assigned_to: None,
+                confidence: None,
+                completion_confidence: None,
             }],
         )
         .expect("save todos");
@@ -1833,6 +1885,10 @@ fn test_poke_status_reports_current_state() {
             .push(super::commands::build_poke_message(
                 &super::commands::incomplete_poke_todos(&app),
             ));
+        app.hidden_queued_system_messages.push(
+            "All todos are done. Todo confidence summary:\n- Weighted completion confidence: 80%."
+                .to_string(),
+        );
 
         assert!(super::commands::handle_session_command(
             &mut app,
@@ -1860,6 +1916,8 @@ fn test_poke_off_disarms_and_clears_queued_followup() {
                 priority: "high".to_string(),
                 blocked_by: Vec::new(),
                 assigned_to: None,
+                confidence: None,
+                completion_confidence: None,
             }],
         )
         .expect("save todos");
@@ -1870,6 +1928,10 @@ fn test_poke_off_disarms_and_clears_queued_followup() {
             .push(super::commands::build_poke_message(
                 &super::commands::incomplete_poke_todos(&app),
             ));
+        app.hidden_queued_system_messages.push(
+            "All todos are done. Todo confidence summary:\n- Weighted completion confidence: 80%."
+                .to_string(),
+        );
 
         assert!(super::commands::handle_session_command(
             &mut app,
@@ -1879,10 +1941,11 @@ fn test_poke_off_disarms_and_clears_queued_followup() {
         assert!(!app.auto_poke_incomplete_todos);
         assert!(!app.pending_queued_dispatch);
         assert!(app.queued_messages().is_empty());
+        assert!(app.hidden_queued_system_messages.is_empty());
         assert_eq!(app.status_notice(), Some("Poke: OFF".to_string()));
         assert!(app.display_messages().iter().any(|msg| {
             msg.content.contains("Auto-poke disabled.")
-                && msg.content.contains("Cleared 1 queued poke follow-up")
+                && msg.content.contains("Cleared 2 queued poke follow-ups")
         }));
     });
 }
@@ -1900,6 +1963,8 @@ fn test_poke_queues_when_turn_is_in_progress() {
                 priority: "high".to_string(),
                 blocked_by: Vec::new(),
                 assigned_to: None,
+                confidence: None,
+                completion_confidence: None,
             }],
         )
         .expect("save todos");
@@ -1932,6 +1997,8 @@ fn test_poke_queues_when_turn_is_in_progress() {
                     priority: "high".to_string(),
                     blocked_by: Vec::new(),
                     assigned_to: None,
+                    confidence: None,
+                    completion_confidence: None,
                 },
                 crate::todo::TodoItem {
                     id: "todo-2".to_string(),
@@ -1940,6 +2007,8 @@ fn test_poke_queues_when_turn_is_in_progress() {
                     priority: "medium".to_string(),
                     blocked_by: Vec::new(),
                     assigned_to: None,
+                    confidence: None,
+                    completion_confidence: None,
                 },
             ],
         )
@@ -1968,6 +2037,8 @@ fn test_finish_turn_auto_pokes_again_when_todos_remain() {
                 priority: "high".to_string(),
                 blocked_by: Vec::new(),
                 assigned_to: None,
+                confidence: None,
+                completion_confidence: None,
             }],
         )
         .expect("save todos");
@@ -1979,6 +2050,113 @@ fn test_finish_turn_auto_pokes_again_when_todos_remain() {
         assert!(app.pending_queued_dispatch);
         assert_eq!(app.queued_messages().len(), 1);
         assert!(app.queued_messages()[0].contains("Continue working, or update the todo tool."));
+    });
+}
+
+#[test]
+fn test_finish_turn_auto_poke_queues_confidence_summary_when_todos_done() {
+    with_temp_jcode_home(|| {
+        let mut app = create_test_app();
+        crate::todo::save_todos(
+            &app.session.id,
+            &[
+                crate::todo::TodoItem {
+                    id: "todo-1".to_string(),
+                    content: "Finish risky provider path".to_string(),
+                    status: "completed".to_string(),
+                    priority: "high".to_string(),
+                    blocked_by: Vec::new(),
+                    assigned_to: None,
+                    confidence: Some(70),
+                    completion_confidence: Some(80),
+                },
+                crate::todo::TodoItem {
+                    id: "todo-2".to_string(),
+                    content: "Document straightforward behavior".to_string(),
+                    status: "completed".to_string(),
+                    priority: "medium".to_string(),
+                    blocked_by: Vec::new(),
+                    assigned_to: None,
+                    confidence: Some(90),
+                    completion_confidence: Some(95),
+                },
+            ],
+        )
+        .expect("save todos");
+
+        app.auto_poke_incomplete_todos = true;
+        app.is_processing = true;
+        super::local::finish_turn(&mut app);
+
+        assert!(!app.auto_poke_incomplete_todos);
+        assert!(app.pending_queued_dispatch);
+        assert!(app.queued_messages().is_empty());
+        assert_eq!(app.hidden_queued_system_messages.len(), 1);
+        let summary = &app.hidden_queued_system_messages[0];
+        assert!(super::commands::is_poke_message(summary));
+        assert!(super::commands::is_todo_confidence_summary_message(summary));
+        assert!(summary.starts_with("All todos are done. Todo confidence summary:"));
+        assert!(summary.contains("\n- Completed todos: 2."));
+        assert!(summary.contains("\n- Weighted completion confidence: 86%."));
+        assert!(summary.contains("\n- Confidence threshold: 90%."));
+        assert!(summary.contains("\n- Weighted planning confidence: 78%."));
+        assert!(summary.contains("\n- Lowest completed todo confidence: 80%."));
+        assert!(!summary.contains("Finish risky provider path"));
+        assert!(!summary.contains("Confidence meets the threshold"));
+        assert!(summary.contains("1 completed todo is below the 90% confidence threshold"));
+        assert!(summary.contains("\n- Suggested action: validate or test before finalizing."));
+        assert!(
+            app.display_messages()
+                .iter()
+                .any(|msg| msg.content.contains("queued hidden confidence reminder"))
+        );
+    });
+}
+
+#[test]
+fn test_todo_confidence_summary_hidden_queue_is_not_user_prompt() {
+    let summary =
+        "All todos are done. Todo confidence summary:\n- Weighted completion confidence: 94%."
+            .to_string();
+
+    let (user_messages, reminder, display_system_messages) =
+        super::helpers::partition_queued_messages(Vec::new(), vec![summary.clone()]);
+
+    assert!(user_messages.is_empty());
+    assert!(display_system_messages.is_empty());
+    assert_eq!(reminder.as_deref(), Some(summary.as_str()));
+}
+
+#[test]
+fn test_finish_turn_without_auto_poke_does_not_queue_confidence_summary() {
+    with_temp_jcode_home(|| {
+        let mut app = create_test_app();
+        crate::todo::save_todos(
+            &app.session.id,
+            &[crate::todo::TodoItem {
+                id: "todo-1".to_string(),
+                content: "Done without poke".to_string(),
+                status: "completed".to_string(),
+                priority: "high".to_string(),
+                blocked_by: Vec::new(),
+                assigned_to: None,
+                confidence: Some(90),
+                completion_confidence: Some(90),
+            }],
+        )
+        .expect("save todos");
+
+        app.auto_poke_incomplete_todos = false;
+        app.is_processing = true;
+        super::local::finish_turn(&mut app);
+
+        assert!(!app.pending_queued_dispatch);
+        assert!(app.queued_messages().is_empty());
+        assert!(
+            !app.display_messages()
+                .iter()
+                .any(|msg| msg.content.contains("confidence summary"))
+        );
     });
 }
 
@@ -1995,6 +2173,8 @@ fn test_finish_turn_auto_poke_preserves_visible_turn_started() {
                 priority: "high".to_string(),
                 blocked_by: Vec::new(),
                 assigned_to: None,
+                confidence: None,
+                completion_confidence: None,
             }],
         )
         .expect("save todos");
@@ -2071,10 +2251,23 @@ fn test_overnight_start_runs_as_visible_local_turn() {
             "/overnight 1m hi"
         ));
 
-        assert!(app.pending_turn, "local overnight should start a visible turn");
-        assert!(app.is_processing, "local overnight should enter processing state");
-        assert!(app.queued_messages.is_empty(), "local overnight should not use remote queue");
-        let last_message = app.session.messages.last().expect("overnight prompt message");
+        assert!(
+            app.pending_turn,
+            "local overnight should start a visible turn"
+        );
+        assert!(
+            app.is_processing,
+            "local overnight should enter processing state"
+        );
+        assert!(
+            app.queued_messages.is_empty(),
+            "local overnight should not use remote queue"
+        );
+        let last_message = app
+            .session
+            .messages
+            .last()
+            .expect("overnight prompt message");
         assert!(last_message.content.iter().any(|block| matches!(
             block,
             crate::message::ContentBlock::Text { text, .. }
@@ -2093,8 +2286,14 @@ fn test_overnight_start_queues_remote_turn_without_stuck_sending() {
             "/overnight 1m hi"
         ));
 
-        assert!(!app.pending_turn, "remote overnight should not set local pending_turn");
-        assert!(!app.is_processing, "remote overnight should not get stuck in local Sending");
+        assert!(
+            !app.pending_turn,
+            "remote overnight should not set local pending_turn"
+        );
+        assert!(
+            !app.is_processing,
+            "remote overnight should not get stuck in local Sending"
+        );
         assert_eq!(app.queued_messages.len(), 1);
         assert!(app.queued_messages[0].contains("visible Overnight Coordinator"));
     });

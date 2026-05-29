@@ -169,6 +169,52 @@ impl App {
         self.set_status_notice("Login: choose a provider");
     }
 
+    pub(super) fn show_interactive_logout(&mut self) {
+        self.open_logout_picker_inline();
+        self.set_status_notice("Logout: choose a provider");
+    }
+
+    pub(super) fn start_logout_provider(
+        &mut self,
+        provider: crate::provider_catalog::LoginProviderDescriptor,
+    ) {
+        use crate::provider_catalog::LoginProviderTarget;
+
+        let result: anyhow::Result<String> = (|| match provider.target {
+            LoginProviderTarget::Claude | LoginProviderTarget::ClaudeApiKey => {
+                let removed = crate::auth::claude::clear_accounts()?;
+                Ok(format!("Logged out of {} Anthropic account(s).", removed))
+            }
+            LoginProviderTarget::OpenAi | LoginProviderTarget::OpenAiApiKey => {
+                let removed = crate::auth::codex::clear_accounts()?;
+                Ok(format!("Logged out of {} OpenAI account(s).", removed))
+            }
+            LoginProviderTarget::Gemini => {
+                crate::auth::gemini::clear_tokens()?;
+                Ok("Logged out of Gemini.".to_string())
+            }
+            _ => Ok(format!(
+                "Logout for {} is not automated yet. Remove its saved API key or external CLI session from `/account {} settings`.",
+                provider.display_name, provider.id
+            )),
+        })();
+
+        match result {
+            Ok(message) => {
+                crate::auth::AuthStatus::invalidate_cache();
+                self.push_display_message(DisplayMessage::system(message));
+                self.set_status_notice(format!("Logout: {}", provider.display_name));
+            }
+            Err(err) => {
+                self.push_display_message(DisplayMessage::error(format!(
+                    "Failed to log out of {}: {}",
+                    provider.display_name, err
+                )));
+                self.set_status_notice("Logout failed");
+            }
+        }
+    }
+
     pub(super) fn start_login_provider(
         &mut self,
         provider: crate::provider_catalog::LoginProviderDescriptor,
@@ -203,6 +249,9 @@ impl App {
             }
             crate::provider_catalog::LoginProviderTarget::Jcode => self.start_jcode_login(),
             crate::provider_catalog::LoginProviderTarget::Claude => self.start_claude_login(),
+            crate::provider_catalog::LoginProviderTarget::ClaudeApiKey => {
+                self.start_anthropic_api_key_login()
+            }
             crate::provider_catalog::LoginProviderTarget::OpenAi => self.start_openai_login(),
             crate::provider_catalog::LoginProviderTarget::OpenAiApiKey => {
                 self.start_openai_api_key_login()
@@ -825,6 +874,19 @@ impl App {
             "OPENAI_API_KEY",
             Some("gpt-5.5"),
             Some("https://api.openai.com/v1"),
+            false,
+            None,
+        );
+    }
+
+    fn start_anthropic_api_key_login(&mut self) {
+        self.start_api_key_login(
+            "Anthropic API",
+            "https://console.anthropic.com/settings/keys",
+            "anthropic.env",
+            "ANTHROPIC_API_KEY",
+            Some("claude-opus-4-8"),
+            Some("https://api.anthropic.com"),
             false,
             None,
         );
@@ -1940,6 +2002,12 @@ impl App {
                 self.upstream_provider = None;
                 let active_model = self.provider.model();
                 self.update_context_limit_for_model(&active_model);
+                self.session.provider_key =
+                    crate::provider::MultiProvider::session_provider_key_after_model_switch(
+                        &model_request,
+                        self.provider.name(),
+                        self.session.provider_key.as_deref(),
+                    );
                 self.session.model = Some(active_model.clone());
                 let _ = self.session.save();
                 self.invalidate_model_picker_cache();
@@ -2043,13 +2111,19 @@ impl App {
                             .map(|route| route.model.clone());
 
                         if let Some(model) = selected {
-                            match provider.set_model(&model) {
+                            let model_request = format!("{}:{}", provider_id, model);
+                            match provider.set_model(&model_request) {
                                 Ok(()) => {
+                                    let provider_key = crate::provider::MultiProvider::session_provider_key_for_model_request(
+                                        &model_request,
+                                        provider.name(),
+                                    );
                                     crate::bus::Bus::global().publish_models_updated();
                                     crate::bus::Bus::global().publish(
                                         crate::bus::BusEvent::ProviderModelActivated {
                                             session_id,
                                             model: model.clone(),
+                                            provider_key,
                                             message: format!(
                                                 "**{} is ready.**\n\nFetched model catalog: +{} models, +{} routes, ~{} changed.{}\n\nSwitched to `{}`. Use `/model` if you want to choose a different accessible model.\n\nIf the model list ever looks stale, run `/refresh-model-list`.",
                                                 provider_label,

@@ -1,5 +1,39 @@
 pub use jcode_provider_metadata::*;
 use std::collections::{HashMap, HashSet};
+use std::sync::{LazyLock, RwLock};
+
+/// Fallback resolvers consulted by [`load_api_key_from_env_or_config`] after the
+/// environment and config-file lookups fail. Higher-level crates (notably
+/// `auth`, which scans trusted external CLI credential stores) register a
+/// resolver at startup so `provider_catalog` does not need to depend on `auth`.
+type ApiKeyFallbackResolver = fn(&str) -> Option<String>;
+
+static API_KEY_FALLBACK_RESOLVERS: LazyLock<RwLock<Vec<ApiKeyFallbackResolver>>> =
+    LazyLock::new(|| RwLock::new(Vec::new()));
+
+/// Register a fallback API-key resolver consulted when env/config lookups miss.
+///
+/// This inverts the historical `provider_catalog -> auth` dependency: `auth`
+/// (the higher layer) now registers its external-credential scan here, keeping
+/// `provider_catalog` free of upward references.
+pub fn register_api_key_fallback_resolver(resolver: ApiKeyFallbackResolver) {
+    API_KEY_FALLBACK_RESOLVERS
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push(resolver);
+}
+
+fn resolve_api_key_fallback(env_key: &str) -> Option<String> {
+    let resolvers = API_KEY_FALLBACK_RESOLVERS
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    for resolver in resolvers.iter() {
+        if let Some(key) = resolver(env_key) {
+            return Some(key);
+        }
+    }
+    None
+}
 
 pub const OPENAI_COMPAT_LOCAL_ENABLED_ENV: &str = "JCODE_OPENAI_COMPAT_LOCAL_ENABLED";
 pub const MINIMAX_CHINA_API_BASE: &str = "https://api.minimaxi.com/v1";
@@ -372,8 +406,8 @@ pub fn openai_compatible_profile_static_models(profile: OpenAiCompatibleProfile)
             push("accounts/fireworks/models/deepseek-v3p2");
         }
         "cerebras" => {
-            push("qwen-3-235b-a22b-instruct-2507");
-            push("llama3.1-8b");
+            push("gpt-oss-120b");
+            push("zai-glm-4.7");
         }
         "xiaomi-mimo" => {
             push("mimo-v2.5");
@@ -411,18 +445,8 @@ pub fn openai_compatible_profile_static_models(profile: OpenAiCompatibleProfile)
     models
 }
 
-pub fn openai_compatible_profile_model_supports_chat(profile_id: &str, model: &str) -> bool {
-    let profile_id = profile_id.trim().to_ascii_lowercase();
-    let model = model.trim().to_ascii_lowercase();
-
-    match profile_id.as_str() {
-        // Cerebras currently exposes these preview/reasoning IDs from GET /models
-        // for some keys, but POST /chat/completions returns model_not_found for
-        // the same key. Keep them out of the picker until the provider catalog
-        // exposes enough metadata to distinguish listable from chat-usable models.
-        "cerebras" if matches!(model.as_str(), "gpt-oss-120b" | "zai-glm-4.7") => false,
-        _ => true,
-    }
+pub fn openai_compatible_profile_model_supports_chat(_profile_id: &str, _model: &str) -> bool {
+    true
 }
 
 pub fn openai_compatible_profile_static_context_limits(
@@ -471,6 +495,7 @@ fn apply_openai_compatible_profile_env_impl(
         "JCODE_OPENROUTER_ENV_FILE",
         "JCODE_OPENROUTER_CACHE_NAMESPACE",
         "JCODE_OPENROUTER_PROVIDER_FEATURES",
+        "JCODE_OPENROUTER_TRANSPORT_STATE",
         "JCODE_OPENROUTER_ALLOW_NO_AUTH",
         "JCODE_OPENROUTER_MODEL_CATALOG",
         "JCODE_OPENROUTER_MODEL",
@@ -504,8 +529,10 @@ fn apply_openai_compatible_profile_env_impl(
         }
         if resolved.requires_api_key {
             crate::env::remove_var("JCODE_OPENROUTER_ALLOW_NO_AUTH");
+            crate::env::set_var("JCODE_OPENROUTER_TRANSPORT_STATE", "direct-api-key");
         } else {
             crate::env::set_var("JCODE_OPENROUTER_ALLOW_NO_AUTH", "1");
+            crate::env::set_var("JCODE_OPENROUTER_TRANSPORT_STATE", "direct-no-auth");
         }
     }
 }
@@ -556,12 +583,13 @@ pub fn apply_named_provider_profile_env_from_config(
     crate::env::set_var("JCODE_OPENROUTER_API_BASE", &api_base);
     crate::env::set_var("JCODE_OPENROUTER_CACHE_NAMESPACE", profile_name);
     crate::env::set_var("JCODE_NAMED_PROVIDER_PROFILE", profile_name);
-
-    let provider_features = matches!(
+    let provider_is_openrouter = matches!(
         profile.provider_type,
         crate::config::NamedProviderType::OpenRouter
-    ) || profile.provider_routing
-        || profile.allow_provider_pinning;
+    );
+
+    let provider_features =
+        provider_is_openrouter || profile.provider_routing || profile.allow_provider_pinning;
     crate::env::set_var(
         "JCODE_OPENROUTER_PROVIDER_FEATURES",
         if provider_features { "1" } else { "0" },
@@ -602,6 +630,7 @@ pub fn apply_named_provider_profile_env_from_config(
     match profile.auth {
         crate::config::NamedProviderAuth::None => {
             crate::env::set_var("JCODE_OPENROUTER_ALLOW_NO_AUTH", "1");
+            crate::env::set_var("JCODE_OPENROUTER_TRANSPORT_STATE", "direct-no-auth");
         }
         crate::config::NamedProviderAuth::Bearer | crate::config::NamedProviderAuth::Header => {
             let key_env = profile
@@ -654,6 +683,11 @@ pub fn apply_named_provider_profile_env_from_config(
                 .unwrap_or(!api_base_uses_localhost(&api_base));
             if !requires_key {
                 crate::env::set_var("JCODE_OPENROUTER_ALLOW_NO_AUTH", "1");
+                crate::env::set_var("JCODE_OPENROUTER_TRANSPORT_STATE", "direct-no-auth");
+            } else if provider_is_openrouter {
+                crate::env::set_var("JCODE_OPENROUTER_TRANSPORT_STATE", "openrouter-api-key");
+            } else {
+                crate::env::set_var("JCODE_OPENROUTER_TRANSPORT_STATE", "direct-api-key");
             }
 
             match profile.auth {
@@ -837,7 +871,7 @@ pub fn load_api_key_from_env_or_config(env_key: &str, file_name: &str) -> Option
         }
     }
 
-    if let Some(key) = crate::auth::external::load_api_key_for_env(env_key) {
+    if let Some(key) = resolve_api_key_fallback(env_key) {
         return Some(key);
     }
 

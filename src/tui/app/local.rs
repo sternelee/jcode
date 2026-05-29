@@ -166,6 +166,7 @@ pub(super) fn handle_bus_event(
         Ok(BusEvent::ProviderModelActivated {
             session_id,
             model,
+            provider_key,
             message,
             open_picker,
         }) => {
@@ -177,6 +178,13 @@ pub(super) fn handle_bus_event(
             app.upstream_provider = None;
             app.invalidate_model_picker_cache();
             app.update_context_limit_for_model(&model);
+            app.session.provider_key = provider_key.or_else(|| {
+                crate::provider::MultiProvider::session_provider_key_after_model_switch(
+                    &model,
+                    app.provider.name(),
+                    app.session.provider_key.as_deref(),
+                )
+            });
             app.session.model = Some(model.clone());
             let _ = app.session.save();
             app.push_display_message(crate::tui::DisplayMessage::system(message));
@@ -254,7 +262,16 @@ pub(super) fn handle_ui_activity(app: &mut App, activity: UiActivity) -> bool {
             app.push_display_message(DisplayMessage::background_task(activity.message.clone()))
         }
         UiActivityKind::Auth | UiActivityKind::Catalog => {
-            app.push_display_message(DisplayMessage::system(activity.message.clone()))
+            if activity.kind == UiActivityKind::Catalog
+                && crate::message::parse_background_task_progress_notification_markdown(
+                    &activity.message,
+                )
+                .is_some()
+            {
+                app.upsert_background_task_progress_message(activity.message.clone());
+            } else {
+                app.push_display_message(DisplayMessage::system(activity.message.clone()))
+            }
         }
     }
     if let Some(status_notice) = activity.status_notice {

@@ -25,8 +25,11 @@ impl App {
             "model" => {
                 "`/model`\nOpen model picker.\n\n`/model <name>`\nSwitch model.\n\n`/model <name>@<provider>`\nPin OpenRouter routing (`@auto` clears pin)."
             }
-            "model-status" | "model status" => {
-                "`/model-status`\nShow jcode live verification evidence for the current provider/model.\n\n`/model-status <provider> <model>`\nLook up a specific provider/model pair in the live-test coverage ledger.\n\nThe report shows last-tested time, jcode build, passed/missing checkpoints, readiness gaps, and a caveat that missing evidence is not a provider failure."
+            "provider-test-coverage"
+            | "provider test coverage"
+            | "model-status"
+            | "model status" => {
+                "`/provider-test-coverage`\nShow jcode live verification evidence for the current provider/model.\n\n`/provider-test-coverage <provider> <model>`\nLook up a specific provider/model pair in the live-test coverage ledger.\n\nThe report shows last-tested time, jcode build, passed/missing checkpoints, readiness gaps, and a caveat that missing evidence is not a provider failure."
             }
             "refresh-model-list" => {
                 "`/refresh-model-list`\nForce-refresh provider model catalogs, update `/model`, and persist the refreshed cache."
@@ -80,7 +83,7 @@ impl App {
                 "`/effort`\nShow current reasoning effort.\n\n`/effort <level>`\nSet reasoning effort (none|low|medium|high|xhigh).\n\nAlso: Alt+←/→ to cycle."
             }
             "fast" => {
-                "`/fast`\nShow whether OpenAI/Codex fast mode is enabled, plus the saved default.\n\n`/fast on`\nEnable fast mode (`service_tier = \"priority\"`) for the current session.\n\n`/fast off`\nDisable fast mode for the current session.\n\n`/fast status`\nShow current fast-mode status.\n\n`/fast default on`\nSave fast mode as the default on startup.\n\n`/fast default off`\nSave fast mode as the default off on startup.\n\n`/fast default status`\nShow the saved fast-mode default."
+                "`/fast`\nShow whether fast mode is enabled, plus the saved default.\n\n`/fast on`\nEnable fast mode (`service_tier = \"priority\"`) for the current session.\n\n`/fast off`\nDisable fast mode for the current session.\n\n`/fast status`\nShow current fast-mode status.\n\n`/fast default on`\nSave fast mode as the default on startup.\n\n`/fast default off`\nSave fast mode as the default off on startup.\n\n`/fast default status`\nShow the saved fast-mode default."
             }
             "memory" => "`/memory [on|off|status]`\nToggle memory features for this session.",
             "goals" => {

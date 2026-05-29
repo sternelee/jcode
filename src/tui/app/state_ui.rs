@@ -807,7 +807,7 @@ fn grouped_u64(value: u64) -> String {
     let raw = value.to_string();
     let mut grouped = String::with_capacity(raw.len() + raw.len() / 3);
     for (index, ch) in raw.chars().enumerate() {
-        if index > 0 && (raw.len() - index) % 3 == 0 {
+        if index > 0 && (raw.len() - index).is_multiple_of(3) {
             grouped.push(',');
         }
         grouped.push(ch);
@@ -1509,7 +1509,7 @@ pub(super) fn handle_info_command(app: &mut App, trimmed: &str) -> bool {
             "5m" | "5min" | "default" | "reset" => {
                 crate::provider::anthropic::set_cache_ttl_1h(false);
                 app.push_display_message(DisplayMessage::system(
-                    "Cache TTL set to 5 minutes (default).".to_string(),
+                    "Cache TTL set to 5 minutes.".to_string(),
                 ));
             }
             "" => {
@@ -1519,7 +1519,7 @@ pub(super) fn handle_info_command(app: &mut App, trimmed: &str) -> bool {
                 let msg = if new_state {
                     "Cache TTL toggled to 1 hour. Cache writes cost 2x base input tokens.\nUse `/cache 5m` to revert."
                 } else {
-                    "Cache TTL toggled to 5 minutes (default).\nUse `/cache 1h` to extend."
+                    "Cache TTL toggled to 5 minutes.\nUse `/cache 1h` to extend."
                 };
                 app.push_display_message(DisplayMessage::system(msg.to_string()));
             }
@@ -1719,9 +1719,17 @@ pub(super) fn handle_info_command(app: &mut App, trimmed: &str) -> bool {
             todo_lines.push_str("- none\n");
         } else {
             for todo in todos.iter().take(8) {
+                let (confidence_label, confidence) = if todo.status == "completed" {
+                    ("done", todo.completion_confidence.or(todo.confidence))
+                } else {
+                    ("confidence", todo.confidence)
+                };
+                let confidence = confidence
+                    .map(|score| format!("{}%", score))
+                    .unwrap_or_else(|| "?".to_string());
                 todo_lines.push_str(&format!(
-                    "- [{}|{}] {}\n",
-                    todo.status, todo.priority, todo.content
+                    "- [{}|{}|{} {}] {}\n",
+                    todo.status, todo.priority, confidence_label, confidence, todo.content
                 ));
             }
             if todos.len() > 8 {

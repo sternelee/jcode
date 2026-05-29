@@ -7,8 +7,7 @@ use std::time::SystemTime;
 struct RegisteredCommand {
     name: &'static str,
     help: &'static str,
-    autocomplete: bool,
-    remote_only: bool,
+    hidden: bool,
 }
 
 impl RegisteredCommand {
@@ -16,8 +15,7 @@ impl RegisteredCommand {
         Self {
             name,
             help,
-            autocomplete: true,
-            remote_only: false,
+            hidden: false,
         }
     }
 
@@ -25,8 +23,7 @@ impl RegisteredCommand {
         Self {
             name,
             help,
-            autocomplete: true,
-            remote_only: true,
+            hidden: false,
         }
     }
 
@@ -34,8 +31,7 @@ impl RegisteredCommand {
         Self {
             name,
             help,
-            autocomplete: false,
-            remote_only: false,
+            hidden: true,
         }
     }
 }
@@ -47,9 +43,10 @@ const REGISTERED_COMMANDS: &[RegisteredCommand] = &[
     RegisteredCommand::public("/model", "List or switch models"),
     RegisteredCommand::public("/models", "Alias for /model"),
     RegisteredCommand::public(
-        "/model-status",
-        "Show live-test evidence for the current model",
+        "/provider-test-coverage",
+        "Show live-test evidence for the current provider/model",
     ),
+    RegisteredCommand::hidden("/model-status", "Alias for /provider-test-coverage"),
     RegisteredCommand::public("/refresh-model-list", "Refresh provider model catalogs"),
     RegisteredCommand::public("/agents", "Configure models for agent roles"),
     RegisteredCommand::public("/subagent", "Launch a subagent manually"),
@@ -71,7 +68,7 @@ const REGISTERED_COMMANDS: &[RegisteredCommand] = &[
     RegisteredCommand::public("/review", "Launch a one-shot headed review session"),
     RegisteredCommand::public("/judge", "Launch a one-shot headed judge session"),
     RegisteredCommand::public("/effort", "Show/change reasoning effort (Alt+left/right)"),
-    RegisteredCommand::public("/fast", "Toggle OpenAI/Codex fast mode"),
+    RegisteredCommand::public("/fast", "Toggle fast mode"),
     RegisteredCommand::public("/transport", "Show/change connection transport"),
     RegisteredCommand::public("/alignment", "Show/change default text alignment"),
     RegisteredCommand::public("/clear", "Clear conversation history"),
@@ -100,6 +97,10 @@ const REGISTERED_COMMANDS: &[RegisteredCommand] = &[
     RegisteredCommand::public("/feedback", "Send feedback about jcode"),
     RegisteredCommand::public("/subscription", "Show jcode subscription status"),
     RegisteredCommand::public("/config", "Show or edit configuration"),
+    RegisteredCommand::public(
+        "/onboarding-preview",
+        "Preview the first-run onboarding screen",
+    ),
     RegisteredCommand::public("/reload", "Reload into newest available binary"),
     RegisteredCommand::public("/restart", "Restart with current binary"),
     RegisteredCommand::public("/rebuild", "Background rebuild and auto reload"),
@@ -119,6 +120,7 @@ const REGISTERED_COMMANDS: &[RegisteredCommand] = &[
     RegisteredCommand::public("/quit", "Exit jcode"),
     RegisteredCommand::public("/auth", "Show authentication status"),
     RegisteredCommand::public("/login", "Login to a provider"),
+    RegisteredCommand::public("/logout", "Log out of a provider"),
     RegisteredCommand::public("/account", "Open the combined account picker"),
     RegisteredCommand::public("/accounts", "Alias for /account"),
     RegisteredCommand::public("/cache", "Show cache stats or set cache TTL"),
@@ -284,8 +286,7 @@ impl App {
         let mut seen = std::collections::HashSet::new();
         let mut commands: Vec<(String, &'static str)> = REGISTERED_COMMANDS
             .iter()
-            .filter(|command| command.autocomplete)
-            .filter(|command| !command.remote_only || self.is_remote)
+            .filter(|command| !command.hidden)
             .filter_map(|command| {
                 let name = command.name.to_string();
                 seen.insert(name.clone()).then_some((name, command.help))
@@ -1097,12 +1098,13 @@ impl App {
     /// Get suggestion prompts for new users on the initial empty screen.
     /// Returns (label, prompt_text) pairs. Empty once user is experienced or not authenticated.
     pub fn suggestion_prompts(&self) -> Vec<(String, String)> {
+        let preview_mode = self.onboarding_preview_mode;
         let is_canary = if self.is_remote {
             self.remote_is_canary.unwrap_or(self.session.is_canary)
         } else {
             self.session.is_canary
         };
-        if is_canary {
+        if is_canary && !preview_mode {
             return Vec::new();
         }
 
@@ -1111,20 +1113,24 @@ impl App {
             return vec![("Log in to get started".to_string(), "/login".to_string())];
         }
 
-        if !self.display_messages.is_empty() || self.is_processing {
+        if (!self.display_messages.is_empty() || self.is_processing) && !preview_mode {
             return Vec::new();
         }
 
-        let is_new_user = crate::storage::jcode_dir()
-            .ok()
-            .and_then(|dir| {
-                let path = dir.join("setup_hints.json");
-                std::fs::read_to_string(&path).ok()
-            })
-            .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
-            .and_then(|v| v.get("launch_count")?.as_u64())
-            .map(|count| count <= 5)
-            .unwrap_or(true);
+        let is_new_user = if preview_mode {
+            true
+        } else {
+            crate::storage::jcode_dir()
+                .ok()
+                .and_then(|dir| {
+                    let path = dir.join("setup_hints.json");
+                    std::fs::read_to_string(&path).ok()
+                })
+                .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+                .and_then(|v| v.get("launch_count")?.as_u64())
+                .map(|count| count <= 5)
+                .unwrap_or(true)
+        };
 
         if !is_new_user {
             return Vec::new();
@@ -1141,16 +1147,17 @@ impl App {
             ),
         ];
 
-        if let Some(prompt) = latest_external_cli_continuation_prompt() {
-            prompts.push(("Continue my last CLI agent session".to_string(), prompt));
-        } else {
-            prompts.push(
-            (
-                "Find my social media and roast me".to_string(),
-                "Find a social media platform I use, look around at my profile and posts, then give me a brutally honest roast based on what you see.".to_string(),
-            ),
-            );
-        }
+        prompts.push((
+            "Continue my last CLI agent session".to_string(),
+            latest_external_cli_continuation_prompt().unwrap_or_else(|| {
+                "Find my recent Codex or Claude Code sessions, identify the latest useful one, summarize what was happening, and continue from there.".to_string()
+            }),
+        ));
+
+        prompts.push((
+            "Find my social media and roast me".to_string(),
+            "Find a social media platform I use, look around at my profile and posts, then give me a brutally honest roast based on what you see.".to_string(),
+        ));
 
         prompts
     }
@@ -1306,7 +1313,9 @@ impl App {
 #[derive(Clone, Debug)]
 struct ExternalCliSuggestionCandidate {
     source: &'static str,
+    path: PathBuf,
     modified: SystemTime,
+    session_id: Option<String>,
     working_dir: Option<String>,
     context: Option<String>,
 }
@@ -1330,10 +1339,23 @@ fn latest_external_cli_continuation_prompt() -> Option<String> {
     let location = candidate
         .working_dir
         .as_deref()
-        .and_then(|dir| Path::new(dir).file_name())
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.trim().is_empty())
-        .map(|name| format!(" in {name}"))
+        .map_or_else(String::new, |dir| {
+            let label = Path::new(dir)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or(dir);
+            format!(" in {label}")
+        });
+    let cwd = candidate
+        .working_dir
+        .as_deref()
+        .map(|dir| format!(" cwd `{dir}`"))
+        .unwrap_or_default();
+    let session_id = candidate
+        .session_id
+        .as_deref()
+        .map(|id| format!(" session `{id}`"))
         .unwrap_or_default();
     let context = candidate
         .context
@@ -1341,8 +1363,9 @@ fn latest_external_cli_continuation_prompt() -> Option<String> {
         .map(|context| format!(": {}", compact_suggestion_text(context, 72)))
         .unwrap_or_default();
     Some(format!(
-        "continue the latest {source} session{location}{context}",
-        source = candidate.source
+        "Continue the latest {source} session{location}. Transcript: `{path}`.{session_id}{cwd}{context}. Read that transcript if needed, summarize the current state, then continue from there.",
+        source = candidate.source,
+        path = candidate.path.display(),
     ))
 }
 
@@ -1355,7 +1378,7 @@ fn latest_jsonl_suggestion_candidates(
         return Vec::new();
     }
     let mut files = Vec::new();
-    collect_recent_jsonl_suggestion_files(root, &mut files, scan_limit.saturating_mul(8));
+    collect_jsonl_suggestion_files(root, &mut files);
     files.sort_by(|a, b| b.1.cmp(&a.1));
     files.truncate(scan_limit);
     files
@@ -1364,27 +1387,17 @@ fn latest_jsonl_suggestion_candidates(
         .collect()
 }
 
-fn collect_recent_jsonl_suggestion_files(
-    root: &Path,
-    files: &mut Vec<(PathBuf, SystemTime)>,
-    max_files: usize,
-) {
-    if files.len() >= max_files {
-        return;
-    }
+fn collect_jsonl_suggestion_files(root: &Path, files: &mut Vec<(PathBuf, SystemTime)>) {
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
     };
     for entry in entries.flatten() {
-        if files.len() >= max_files {
-            break;
-        }
         let path = entry.path();
         let Ok(metadata) = entry.metadata() else {
             continue;
         };
         if metadata.is_dir() {
-            collect_recent_jsonl_suggestion_files(&path, files, max_files);
+            collect_jsonl_suggestion_files(&path, files);
         } else if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
             files.push((path, metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH)));
         }
@@ -1398,6 +1411,7 @@ fn suggestion_candidate_from_jsonl(
 ) -> Option<ExternalCliSuggestionCandidate> {
     let content = std::fs::read_to_string(path).ok()?;
     let mut working_dir = None;
+    let mut session_id = None;
     let mut last_user_text = None;
     let mut summary_text = None;
     for line in content.lines() {
@@ -1411,9 +1425,23 @@ fn suggestion_candidate_from_jsonl(
                 .and_then(|value| value.as_str())
                 .map(str::to_string);
         }
+        if session_id.is_none() {
+            session_id = value
+                .get("sessionId")
+                .or_else(|| value.get("session_id"))
+                .or_else(|| {
+                    value
+                        .get("payload")
+                        .and_then(|payload| payload.get("session_id"))
+                })
+                .or_else(|| value.get("payload").and_then(|payload| payload.get("id")))
+                .and_then(|value| value.as_str())
+                .map(str::to_string);
+        }
         if summary_text.is_none() {
             summary_text = value
                 .get("summary")
+                .or_else(|| value.get("lastPrompt"))
                 .or_else(|| {
                     value
                         .get("payload")
@@ -1431,12 +1459,18 @@ fn suggestion_candidate_from_jsonl(
             last_user_text = Some(text);
         }
     }
-    if working_dir.is_none() && last_user_text.is_none() && summary_text.is_none() {
+    if working_dir.is_none()
+        && session_id.is_none()
+        && last_user_text.is_none()
+        && summary_text.is_none()
+    {
         return None;
     }
     Some(ExternalCliSuggestionCandidate {
         source,
+        path: path.to_path_buf(),
         modified,
+        session_id,
         working_dir,
         context: last_user_text.or(summary_text),
     })
@@ -1448,6 +1482,7 @@ fn jsonl_suggestion_role(value: &serde_json::Value) -> Option<&str> {
         .and_then(|message| message.get("role"))
         .or_else(|| value.get("role"))
         .or_else(|| value.get("payload").and_then(|payload| payload.get("role")))
+        .or_else(|| value.get("type"))
         .and_then(|role| role.as_str())
 }
 
@@ -1455,6 +1490,7 @@ fn jsonl_suggestion_text(value: &serde_json::Value) -> Option<String> {
     let content = value
         .get("message")
         .and_then(|message| message.get("content"))
+        .or_else(|| value.get("lastPrompt"))
         .or_else(|| value.get("content"))
         .or_else(|| {
             value
@@ -1474,6 +1510,8 @@ fn jsonl_suggestion_text(value: &serde_json::Value) -> Option<String> {
         .filter_map(|block| {
             block
                 .get("text")
+                .or_else(|| block.get("input_text"))
+                .or_else(|| block.get("output_text"))
                 .or_else(|| block.get("content"))
                 .and_then(|value| value.as_str())
                 .map(str::trim)
@@ -1495,4 +1533,87 @@ fn compact_suggestion_text(text: &str, max_chars: usize) -> String {
         .collect::<String>();
     truncated.push('…');
     truncated
+}
+
+#[cfg(test)]
+mod external_cli_suggestion_tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn parses_claude_code_jsonl_with_session_path_and_context() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("session.jsonl");
+        std::fs::write(
+            &path,
+            r#"{"type":"queue-operation","operation":"enqueue","timestamp":"2026-05-28T02:30:54.188Z","sessionId":"abc","content":"queued prompt"}
+{"type":"user","message":{"role":"user","content":"Organize my windows by project"},"cwd":"/home/jeremy","sessionId":"abc"}
+{"type":"last-prompt","lastPrompt":"fallback prompt","sessionId":"abc"}
+"#,
+        )
+        .expect("write fixture");
+
+        let candidate =
+            suggestion_candidate_from_jsonl(&path, "Claude Code", SystemTime::UNIX_EPOCH)
+                .expect("candidate");
+        assert_eq!(candidate.source, "Claude Code");
+        assert_eq!(candidate.path, path);
+        assert_eq!(candidate.session_id.as_deref(), Some("abc"));
+        assert_eq!(candidate.working_dir.as_deref(), Some("/home/jeremy"));
+        assert_eq!(
+            candidate.context.as_deref(),
+            Some("Organize my windows by project")
+        );
+    }
+
+    #[test]
+    fn parses_codex_input_text_blocks() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("codex.jsonl");
+        std::fs::write(
+            &path,
+            r#"{"type":"session_meta","payload":{"id":"sid","cwd":"/home/jeremy/jcode"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"check in on jcode"}]}}
+"#,
+        )
+        .expect("write fixture");
+
+        let candidate = suggestion_candidate_from_jsonl(&path, "Codex", SystemTime::UNIX_EPOCH)
+            .expect("candidate");
+        assert_eq!(candidate.session_id.as_deref(), Some("sid"));
+        assert_eq!(candidate.working_dir.as_deref(), Some("/home/jeremy/jcode"));
+        assert_eq!(candidate.context.as_deref(), Some("check in on jcode"));
+    }
+
+    #[test]
+    fn discovery_sorts_after_collecting_nested_files() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let old_dir = temp.path().join("a");
+        let new_dir = temp.path().join("z/deep");
+        std::fs::create_dir_all(&old_dir).expect("old dir");
+        std::fs::create_dir_all(&new_dir).expect("new dir");
+        std::fs::write(
+            old_dir.join("old.jsonl"),
+            r#"{"type":"user","message":{"role":"user","content":"old"},"sessionId":"old"}"#,
+        )
+        .expect("old fixture");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+
+        let new_path = new_dir.join("new.jsonl");
+        std::fs::write(
+            &new_path,
+            r#"{"type":"user","message":{"role":"user","content":"new"},"sessionId":"new"}"#,
+        )
+        .expect("new fixture");
+        // Ensure the newer file has a strictly later mtime even on coarse filesystems.
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&new_path)
+            .expect("open new");
+        writeln!(file).expect("touch new");
+
+        let candidates = latest_jsonl_suggestion_candidates(temp.path(), "Claude Code", 1);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].context.as_deref(), Some("new"));
+    }
 }

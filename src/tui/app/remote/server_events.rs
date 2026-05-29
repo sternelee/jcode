@@ -77,7 +77,10 @@ pub(in crate::tui::app) fn handle_server_event(
             true
         }
         ServerEvent::ToolStart { id, name } => {
-            app.pause_streaming_tps(false);
+            // Tool-call JSON is provider-generated output and is included in output-token
+            // usage. Keep the TPS timer running until the server reports ToolExec; actual
+            // tool execution time is excluded after that point.
+            app.resume_streaming_tps();
             app.clear_active_experimental_feature_notice();
             remote.handle_tool_start(&id, &name);
             app.commit_pending_streaming_assistant_message();
@@ -98,7 +101,10 @@ pub(in crate::tui::app) fn handle_server_event(
             false
         }
         ServerEvent::ToolExec { id, name } => {
-            app.pause_streaming_tps(false);
+            // Provider output generation for this tool call is complete, but final usage
+            // snapshots often arrive later. Keep collecting deltas while excluding tool
+            // runtime from the elapsed TPS denominator.
+            app.pause_streaming_tps(true);
             let parsed_input = remote.get_current_tool_input();
             let tool_call = ToolCall {
                 id: id.clone(),
@@ -232,6 +238,7 @@ pub(in crate::tui::app) fn handle_server_event(
             ephemeral_chars,
             ephemeral_message_count,
         } => {
+            remote.reset_call_output_tokens_seen();
             app.begin_remote_kv_cache_request(app_mod::KvCacheRequestSignature {
                 system_static_hash,
                 tools_hash,
@@ -271,6 +278,7 @@ pub(in crate::tui::app) fn handle_server_event(
                 _ => crate::message::ConnectionPhase::Connecting,
             };
             app.status = if matches!(cp, crate::message::ConnectionPhase::Streaming) {
+                app.resume_streaming_tps();
                 ProcessingStatus::Streaming
             } else {
                 ProcessingStatus::Connecting(cp)
@@ -722,13 +730,13 @@ pub(in crate::tui::app) fn handle_server_event(
                 app.swarm_plan_swarm_id = None;
                 remote.reset_call_output_tokens_seen();
             }
-            if let Some(name) = provider_name {
-                app.remote_provider_name = Some(name);
-            }
-            if let Some(model) = provider_model {
-                app.update_context_limit_for_model(&model);
-                app.remote_provider_model = Some(model);
-            }
+            let model_catalog_snapshot = jcode_provider_core::ModelCatalogSnapshot::new(
+                provider_name,
+                provider_model,
+                available_models,
+                available_model_routes,
+            );
+            app.replace_remote_model_catalog_snapshot(model_catalog_snapshot);
             app.clear_remote_startup_phase();
             app.session.subagent_model = subagent_model;
             app.session.autoreview_enabled = autoreview_enabled;
@@ -751,10 +759,7 @@ pub(in crate::tui::app) fn handle_server_event(
             app.remote_compaction_mode = Some(compaction_mode);
             app.set_side_panel_snapshot(side_panel);
             app.remote_side_pane_images = images;
-            app.remote_available_entries = available_models;
-            app.remote_model_options = available_model_routes;
             app.persist_remote_model_catalog_cache();
-            app.invalidate_model_picker_cache();
             app.remote_skills = skills;
             app.invalidate_command_candidates_cache();
             app.remote_sessions = all_sessions;
@@ -1127,14 +1132,20 @@ pub(in crate::tui::app) fn handle_server_event(
             available_models,
             available_model_routes,
         } => {
+            let model_catalog_snapshot = jcode_provider_core::ModelCatalogSnapshot::new(
+                provider_name,
+                provider_model,
+                available_models,
+                available_model_routes,
+            );
             if let Some((before_models, before_routes)) =
                 app.pending_remote_model_refresh_snapshot.take()
             {
                 let summary = crate::provider::summarize_model_catalog_refresh(
                     before_models,
-                    available_models.clone(),
+                    model_catalog_snapshot.available_models.clone(),
                     before_routes,
-                    available_model_routes.clone(),
+                    model_catalog_snapshot.model_routes.clone(),
                 );
                 app.push_display_message(DisplayMessage::system(
                     app_mod::model_context::format_model_refresh_summary(&summary),
@@ -1144,24 +1155,9 @@ pub(in crate::tui::app) fn handle_server_event(
                     summary.models_added, summary.routes_added, summary.routes_changed
                 ));
             }
-            let mut provider_meta_changed = false;
-            if let Some(name) = provider_name
-                && app.remote_provider_name.as_deref() != Some(name.as_str())
-            {
-                app.remote_provider_name = Some(name);
-                provider_meta_changed = true;
-            }
-            if let Some(model) = provider_model
-                && app.remote_provider_model.as_deref() != Some(model.as_str())
-            {
-                app.update_context_limit_for_model(&model);
-                app.remote_provider_model = Some(model);
-                provider_meta_changed = true;
-            }
-            app.remote_available_entries = available_models;
-            app.remote_model_options = available_model_routes;
+            let provider_meta_changed =
+                app.replace_remote_model_catalog_snapshot(model_catalog_snapshot);
             app.persist_remote_model_catalog_cache();
-            app.invalidate_model_picker_cache();
             if provider_meta_changed {
                 app.update_terminal_title();
             }
@@ -1379,7 +1375,18 @@ pub(in crate::tui::app) fn handle_server_event(
             }
 
             if let Some(scope) = runtime_activity_scope {
-                if scope == "background_activity" {
+                if scope == "catalog_activity"
+                    && let Some(progress) =
+                        crate::message::parse_background_task_progress_notification_markdown(
+                            &message,
+                        )
+                {
+                    let status_notice = progress.summary.clone();
+                    app.upsert_background_task_progress_message(message.clone());
+                    persist_replay_display_message(app, "background_task", None, &message);
+                    app.set_status_notice(status_notice);
+                    return false;
+                } else if scope == "background_activity" {
                     app.push_display_message(DisplayMessage::background_task(message.clone()));
                     persist_replay_display_message(app, "background_task", None, &message);
                 } else {

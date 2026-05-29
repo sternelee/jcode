@@ -1,6 +1,6 @@
 [package]
 name = "jcode"
-version = "0.14.2"
+version = "0.14.6"
 description = "Possibly the greatest coding agent ever built — blazing-fast TUI, multi-model, swarm coordination, 30+ tools"
 edition = "2024"
 autobins = false
@@ -22,6 +22,7 @@ members = [
   "crates/jcode-embedding",
   "crates/jcode-gateway-types",
   "crates/jcode-import-core",
+  "crates/jcode-logging",
   "crates/jcode-memory-types",
   "crates/jcode-message-types",
   "crates/jcode-mobile-core",
@@ -43,6 +44,7 @@ members = [
   "crates/jcode-swarm-core",
   "crates/jcode-task-types",
   "crates/jcode-terminal-launch",
+  "crates/jcode-terminal-image",
   "crates/jcode-tool-core",
   "crates/jcode-tool-types",
   "crates/jcode-tui-account-picker",
@@ -156,6 +158,7 @@ uuid = { version = "1", features = ["v4", "v5"] }
 jcode-embedding = { path = "crates/jcode-embedding", optional = true }
 jcode-gateway-types = { path = "crates/jcode-gateway-types" }
 jcode-import-core = { path = "crates/jcode-import-core" }
+jcode-logging = { path = "crates/jcode-logging" }
 
 # OAuth
 base64 = "0.22"
@@ -177,14 +180,17 @@ jcode-tui-markdown = { path = "crates/jcode-tui-markdown" }
 jcode-tui-mermaid = { path = "crates/jcode-tui-mermaid" }
 jcode-tui-messages = { path = "crates/jcode-tui-messages" }
 jcode-tui-render = { path = "crates/jcode-tui-render" }
-jcode-tui-session-picker = { path = "crates/jcode-tui-session-picker", features = ["serde"] }
+jcode-tui-session-picker = { path = "crates/jcode-tui-session-picker", features = [
+  "serde",
+] }
 jcode-tui-style = { path = "crates/jcode-tui-style" }
 jcode-tui-tool-display = { path = "crates/jcode-tui-tool-display" }
 jcode-tui-usage-overlay = { path = "crates/jcode-tui-usage-overlay" }
+jcode-terminal-image = { path = "crates/jcode-terminal-image" }
 jcode-tui-workspace = { path = "crates/jcode-tui-workspace" }
 jcode-update-core = { path = "crates/jcode-update-core" }
 jcode-usage-types = { path = "crates/jcode-usage-types" }
-open = "5"                                                                # Open URLs in browser
+open = "5" # Open URLs in browser
 rand = "0.9.3"
 sha2 = "0.10"
 url = "2"

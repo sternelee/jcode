@@ -10,6 +10,7 @@ use jcode_provider_core::{ActiveProvider, provider_key};
 pub enum RuntimeProviderId {
     Jcode,
     Claude,
+    ClaudeApiKey,
     OpenAi,
     OpenAiApiKey,
     OpenRouter,
@@ -28,6 +29,7 @@ impl RuntimeProviderId {
         match self {
             Self::Jcode => "jcode",
             Self::Claude => "claude",
+            Self::ClaudeApiKey => "claude-api",
             Self::OpenAi => "openai",
             Self::OpenAiApiKey => "openai-api",
             Self::OpenRouter => "openrouter",
@@ -46,6 +48,7 @@ impl RuntimeProviderId {
         match self {
             Self::Jcode => "Jcode Subscription",
             Self::Claude => "Anthropic/Claude",
+            Self::ClaudeApiKey => "Anthropic API",
             Self::OpenAi => "OpenAI",
             Self::OpenAiApiKey => "OpenAI API",
             Self::OpenRouter => "OpenRouter",
@@ -155,6 +158,25 @@ impl ProviderActivation {
 
     pub fn apply_env(&self) -> Result<()> {
         crate::env::set_var("JCODE_RUNTIME_PROVIDER", self.runtime_id.key());
+        match self.runtime_id {
+            RuntimeProviderId::Jcode => {
+                crate::env::set_var("JCODE_OPENROUTER_TRANSPORT_STATE", "jcode-subscription")
+            }
+            RuntimeProviderId::OpenRouter => {
+                crate::env::set_var("JCODE_OPENROUTER_TRANSPORT_STATE", "openrouter-api-key")
+            }
+            RuntimeProviderId::AzureOpenAi => {
+                crate::env::set_var("JCODE_OPENROUTER_TRANSPORT_STATE", "direct-api-key")
+            }
+            RuntimeProviderId::OpenAiCompatible => {
+                if std::env::var_os("JCODE_OPENROUTER_TRANSPORT_STATE").is_none() {
+                    crate::env::set_var("JCODE_OPENROUTER_TRANSPORT_STATE", "direct-api-key");
+                }
+            }
+            _ => {
+                crate::env::remove_var("JCODE_OPENROUTER_TRANSPORT_STATE");
+            }
+        }
 
         let mut active_key_for_log = "";
         match self.selection {
