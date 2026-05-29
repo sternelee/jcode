@@ -43,6 +43,11 @@ interface ChatAreaProps {
 	memoryEnabled?: boolean;
 	availableModels?: string[];
 	onSetModel?: (model: string, profileId?: string) => void;
+	onSetAgentModel?: (
+		sessionId: string,
+		model: string,
+		profileId?: string,
+	) => void;
 	onSetEffort?: (effort: string) => void;
 	onToggleMemory?: () => void;
 	onCompact?: () => void;
@@ -110,6 +115,7 @@ export function ChatArea({
 	memoryEnabled = true,
 	availableModels = [],
 	onSetModel,
+	onSetAgentModel,
 	onSetEffort,
 	onToggleMemory,
 	onCompact,
@@ -125,15 +131,24 @@ export function ChatArea({
 	const [convening, setConvening] = useState(false);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
+	const [agentPopoverSessionId, setAgentPopoverSessionId] = useState<
+		string | null
+	>(null);
+	const [modelPickerAgentSessionId, setModelPickerAgentSessionId] = useState<
+		string | null
+	>(null);
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [searchText, setSearchText] = useState("");
 	const [searchMatchIdx, setSearchMatchIdx] = useState(0);
-	const [attachedImages, setAttachedImages] = useState<Array<{ id: string; mediaType: string; base64: string; name: string }>>([]);
+	const [attachedImages, setAttachedImages] = useState<
+		Array<{ id: string; mediaType: string; base64: string; name: string }>
+	>([]);
 
 	const feedRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const agentPopoverRef = useRef<HTMLDivElement>(null);
 
 	const channelMembers = useMemo(() => {
 		if (_channelMembers) return _channelMembers;
@@ -242,11 +257,26 @@ export function ChatArea({
 		return () => window.removeEventListener("keydown", onKey);
 	}, [searchOpen]);
 
+	// ── Agent popover click-outside ───────────────────────────────────────
+	useEffect(() => {
+		if (!agentPopoverSessionId) return;
+		const onClick = (e: MouseEvent) => {
+			if (agentPopoverRef.current && !agentPopoverRef.current.contains(e.target as Node)) {
+				setAgentPopoverSessionId(null);
+			}
+		};
+		setTimeout(() => document.addEventListener("mousedown", onClick), 0);
+		return () => document.removeEventListener("mousedown", onClick);
+	}, [agentPopoverSessionId]);
+
 	// ── Input handlers ────────────────────────────────────────────────────
 	const handleSend = () => {
 		const content = text.trim();
 		if (!content && attachedImages.length === 0) return;
-		const images: [string, string][] = attachedImages.map((img) => [img.mediaType, img.base64]);
+		const images: [string, string][] = attachedImages.map((img) => [
+			img.mediaType,
+			img.base64,
+		]);
 		onSend(content, images.length > 0 ? images : undefined);
 		setText("");
 		setMentionQuery(null);
@@ -264,7 +294,12 @@ export function ChatArea({
 				const mediaType = file.type || "image/png";
 				setAttachedImages((prev) => [
 					...prev,
-					{ id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, mediaType, base64, name: file.name },
+					{
+						id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+						mediaType,
+						base64,
+						name: file.name,
+					},
 				]);
 			};
 			reader.readAsDataURL(file);
@@ -393,17 +428,30 @@ export function ChatArea({
 						{/* Presence */}
 						{channelMembers.length > 0 && (
 							<div className="hidden md:flex items-center -space-x-1.5 mr-2">
-								{channelMembers.slice(0, 4).map((name) => (
-									<div key={name} className="relative" title={name}>
-										<AgentAvatar name={name} size="sm" />
-										<span
-											className={cn(
-												"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-card",
-												presenceDot(name),
-											)}
-										/>
-									</div>
-								))}
+								{channelMembers.slice(0, 4).map((name) => {
+									const session = sessionByRoleName.get(name);
+									return (
+										<button
+											key={name}
+											type="button"
+											onClick={() => {
+												const sid = session?.sessionId;
+												if (!sid) return;
+												setAgentPopoverSessionId((prev) => (prev === sid ? null : sid));
+											}}
+											className="relative cursor-pointer hover:scale-110 transition-transform"
+											title={`${name}: ${session?.model || session?.providerModel || "unknown"}`}
+										>
+											<AgentAvatar name={name} size="sm" />
+											<span
+												className={cn(
+													"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-card",
+													presenceDot(name),
+												)}
+											/>
+										</button>
+									);
+								})}
 								{channelMembers.length > 4 && (
 									<div className="w-6 h-6 rounded-full bg-muted border-2 border-card flex items-center justify-center text-[9px] font-medium text-muted-foreground -ml-1.5">
 										+{channelMembers.length - 4}
@@ -411,11 +459,64 @@ export function ChatArea({
 								)}
 							</div>
 						)}
-						{/* Search */}
-						<button
-							type="button"
-							onClick={() => setSearchOpen((o) => !o)}
-							title="Search (Cmd+F)"
+					{/* Agent config popover */}
+					{agentPopoverSessionId && (() => {
+						const agentSession = workspaceSessions.find((s) => s.sessionId === agentPopoverSessionId);
+						if (!agentSession || !agentSession.roleName) return null;
+						return (
+							<div ref={agentPopoverRef} className="absolute top-full left-0 mt-2 w-[260px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50">
+								<div className="px-4 py-3 border-b border-border flex items-center gap-3">
+									<AgentAvatar name={agentSession.roleName} size="md" />
+									<div className="min-w-0">
+										<div className="text-[13px] font-semibold text-foreground truncate">
+											{agentSession.roleName}
+										</div>
+										<div className="flex items-center gap-1.5 mt-0.5">
+											<span className={cn("w-1.5 h-1.5 rounded-full", agentSession.liveProcessing ? "bg-primary animate-pulse" : "bg-emerald-500")} />
+											<span className="text-[11px] text-muted-foreground">
+												{agentSession.liveProcessing ? "Thinking…" : "Online"}
+											</span>
+										</div>
+									</div>
+								</div>
+								<div className="px-4 py-3 border-b border-border">
+									<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+										Model
+									</div>
+									<div className="flex items-center justify-between gap-2">
+										<span className="text-[12px] text-foreground truncate">
+											{agentSession.model || agentSession.providerModel || "default"}
+										</span>
+										<button
+											type="button"
+											onClick={() => {
+												setModelPickerAgentSessionId(agentPopoverSessionId);
+												setAgentPopoverSessionId(null);
+												setModelPickerOpen(true);
+											}}
+											className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+										>
+											Change
+										</button>
+									</div>
+								</div>
+								<div className="px-4 py-2 flex justify-end">
+									<button
+										type="button"
+										onClick={() => setAgentPopoverSessionId(null)}
+										className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+									>
+										Close
+									</button>
+								</div>
+							</div>
+						);
+					})()}
+					{/* Search */}
+					<button
+						type="button"
+						onClick={() => setSearchOpen((o) => !o)}
+						title="Search (Cmd+F)"
 							className={cn(
 								"w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150",
 								searchOpen
@@ -881,30 +982,34 @@ export function ChatArea({
 							</div>
 						)}
 
-					{/* Input box */}
-					<div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all duration-150">
-						{/* Image previews */}
-						{attachedImages.length > 0 && (
-							<div className="flex gap-2 px-4 pt-3 pb-1 flex-wrap">
-								{attachedImages.map((img) => (
-									<div key={img.id} className="relative group/img shrink-0">
-										<img
-											src={`data:${img.mediaType};base64,${img.base64}`}
-											alt={img.name}
-											className="w-14 h-14 rounded-lg object-cover border border-border"
-										/>
-										<button
-											type="button"
-											onClick={() => setAttachedImages((prev) => prev.filter((i) => i.id !== img.id))}
-											className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-destructive opacity-0 group-hover/img:opacity-100 transition-opacity shadow-sm"
-											title="Remove"
-										>
-											<X className="w-2.5 h-2.5" />
-										</button>
-									</div>
-								))}
-							</div>
-						)}
+						{/* Input box */}
+						<div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all duration-150">
+							{/* Image previews */}
+							{attachedImages.length > 0 && (
+								<div className="flex gap-2 px-4 pt-3 pb-1 flex-wrap">
+									{attachedImages.map((img) => (
+										<div key={img.id} className="relative group/img shrink-0">
+											<img
+												src={`data:${img.mediaType};base64,${img.base64}`}
+												alt={img.name}
+												className="w-14 h-14 rounded-lg object-cover border border-border"
+											/>
+											<button
+												type="button"
+												onClick={() =>
+													setAttachedImages((prev) =>
+														prev.filter((i) => i.id !== img.id),
+													)
+												}
+												className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-destructive opacity-0 group-hover/img:opacity-100 transition-opacity shadow-sm"
+												title="Remove"
+											>
+												<X className="w-2.5 h-2.5" />
+											</button>
+										</div>
+									))}
+								</div>
+							)}
 							<textarea
 								ref={textareaRef}
 								value={text}
@@ -965,7 +1070,7 @@ export function ChatArea({
 										disabled={!text.trim() && attachedImages.length === 0}
 										className={cn(
 											"inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-150",
-											(text.trim() || attachedImages.length > 0)
+											text.trim() || attachedImages.length > 0
 												? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
 												: "bg-muted text-muted-foreground/50 cursor-not-allowed",
 										)}
@@ -980,23 +1085,30 @@ export function ChatArea({
 				</div>
 			</div>
 
-		{/* ── Hidden file input ── */}
-		<input
-			ref={fileInputRef}
-			type="file"
-			accept="image/*"
-			multiple
-			onChange={handleFileSelect}
-			className="hidden"
-		/>
-		{/* Model picker modal */}
-		<ModelPickerModal
+			{/* ── Hidden file input ── */}
+			<input
+				ref={fileInputRef}
+				type="file"
+				accept="image/*"
+				multiple
+				onChange={handleFileSelect}
+				className="hidden"
+			/>
+			{/* Model picker modal */}
+			<ModelPickerModal
 				open={modelPickerOpen}
 				onClose={() => setModelPickerOpen(false)}
 				availableModels={availableModels}
 				currentModel={currentModel}
 				currentProfileId={currentProfileId}
-				onSelectModel={(m, pid) => onSetModel?.(m, pid)}
+					onSelectModel={(m, pid) => {
+						if (modelPickerAgentSessionId && onSetAgentModel) {
+							onSetAgentModel(modelPickerAgentSessionId, m, pid);
+							setModelPickerAgentSessionId(null);
+						} else {
+							onSetModel?.(m, pid);
+						}
+					}}
 			/>
 		</>
 	);

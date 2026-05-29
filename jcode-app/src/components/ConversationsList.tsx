@@ -88,7 +88,7 @@ function buildSwarmItems(
 
 	items.push({
 		id: virtualId,
-		name: `${workspaceLabel(workspaceId)} Thread`,
+		name: `#${workspaceLabel(workspaceId)}`,
 		avatarType: "group",
 		members: swarmSessions.map((s) => s.roleName!),
 		time: preview
@@ -109,48 +109,6 @@ function buildSwarmItems(
 			: undefined,
 		isActive: anyResponding,
 	});
-
-	for (const session of wsSessions) {
-		if (!session.roleName) continue;
-		const preview = sessionPreviewMap[session.sessionId];
-		const isProcessing = session.liveProcessing;
-		items.push({
-			id: session.sessionId,
-			name: session.roleName,
-			avatarType: "single",
-			members: [session.roleName],
-			time: isProcessing ? "now" : formatPreviewTime(preview?.timestamp) || "—",
-			preview: isProcessing
-				? session.liveStatusDetail || "thinking…"
-				: (preview?.text ??
-					session.detail ??
-					`${session.model || "assistant"} ready`),
-			previewType: isProcessing ? "typing" : "text",
-			typingRole: isProcessing ? session.roleName : undefined,
-			isActive: isProcessing,
-		});
-	}
-
-	const coordinator = wsSessions.find(
-		(s) => !s.roleName && s.swarmRole === "coordinator",
-	);
-	if (coordinator) {
-		const preview = sessionPreviewMap[coordinator.sessionId];
-		const isProcessing = coordinator.liveProcessing;
-		items.push({
-			id: coordinator.sessionId,
-			name: coordinator.title || "JCode (Lead)",
-			avatarType: "single",
-			members: [],
-			time: isProcessing ? "now" : formatPreviewTime(preview?.timestamp) || "—",
-			preview: isProcessing
-				? coordinator.liveStatusDetail || "coordinating…"
-				: (preview?.text ?? coordinator.detail ?? "Lead agent — ready"),
-			previewType: isProcessing ? "typing" : "text",
-			typingRole: isProcessing ? "JCode" : undefined,
-			isActive: isProcessing,
-		});
-	}
 
 	return items;
 }
@@ -344,11 +302,6 @@ export function ConversationsList({
 							{/* Expanded items */}
 							{isExpanded && (
 								<div className="pl-3 pr-1 mt-0.5 space-y-0.5">
-									{isSwarm && (
-										<div className="px-2 py-1 text-[10px] font-medium text-sidebar-foreground/40 uppercase tracking-wider">
-											Agents
-										</div>
-									)}
 									{items.map((item) => (
 										<ConvItem
 											key={item.id}

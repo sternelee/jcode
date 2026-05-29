@@ -695,6 +695,7 @@ export default function App() {
 							onSetModel={(m, pid) =>
 								void setModel(m, pid, resolveTargetSessionId() || undefined)
 							}
+							onSetAgentModel={(sid, m, pid) => void setModel(m, pid, sid)}
 							onSetEffort={(e) =>
 								void setReasoningEffort(
 									e,
