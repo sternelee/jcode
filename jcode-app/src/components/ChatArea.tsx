@@ -15,6 +15,8 @@ import {
 	Paperclip,
 	AtSign,
 	SendHorizonal,
+	Mic,
+	Loader2,
 } from "lucide-react";
 import {
 	SlashCommandPalette,
@@ -37,6 +39,7 @@ interface ChatAreaProps {
 	onAddAgent?: () => void;
 	lastReadTimestamp?: number;
 	isLoading?: boolean;
+	connected?: boolean;
 	currentModel?: string | null;
 	currentProfileId?: string | null;
 	reasoningEffort?: string | null;
@@ -54,6 +57,7 @@ interface ChatAreaProps {
 	onClearChat?: () => void;
 	onRenameSession?: (sessionId: string, newName: string) => void;
 	currentSessionId?: string | null;
+	onRunDictation?: () => Promise<{ text: string; mode: string } | null>;
 }
 
 // ── Member role color map ────────────────────────────────────────────────
@@ -109,6 +113,7 @@ export function ChatArea({
 	onAddAgent,
 	lastReadTimestamp,
 	isLoading = false,
+	connected = true,
 	currentModel = null,
 	currentProfileId = null,
 	reasoningEffort = null,
@@ -122,6 +127,7 @@ export function ChatArea({
 	onClearChat,
 	onRenameSession,
 	currentSessionId,
+	onRunDictation,
 }: ChatAreaProps) {
 	const [text, setText] = useState("");
 	const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -143,6 +149,7 @@ export function ChatArea({
 	const [attachedImages, setAttachedImages] = useState<
 		Array<{ id: string; mediaType: string; base64: string; name: string }>
 	>([]);
+	const [dictating, setDictating] = useState(false);
 
 	const feedRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -282,6 +289,63 @@ export function ChatArea({
 		setAttachedImages([]);
 	};
 
+	const handleDictation = async () => {
+		if (!onRunDictation || dictating) return;
+		setDictating(true);
+		try {
+			const result = await onRunDictation();
+			if (!result) return;
+			const { text: transcript, mode } = result;
+			if (!transcript) return;
+			const normalized = transcript.trim();
+			if (!normalized) return;
+			switch (mode) {
+				case "send": {
+					onSend(normalized, undefined);
+					setText("");
+					break;
+				}
+				case "replace": {
+					setText(normalized);
+					break;
+				}
+				case "append": {
+					setText((prev) =>
+						prev.trim() ? `${prev.trim()} ${normalized}` : normalized,
+					);
+					break;
+				}
+				case "insert":
+				default: {
+					const ta = textareaRef.current;
+					if (ta) {
+						const cursor = ta.selectionStart ?? text.length;
+						const before = text.slice(0, cursor);
+						const after = text.slice(cursor);
+						const spacer =
+							before.length > 0 && !before.endsWith(" ") ? " " : "";
+						const newText = before + spacer + normalized + after;
+						setText(newText);
+						setTimeout(() => {
+							ta.focus();
+							ta.selectionStart = cursor + spacer.length + normalized.length;
+							ta.selectionEnd = ta.selectionStart;
+						}, 0);
+					} else {
+						setText((prev) =>
+							prev.trim() ? `${prev.trim()} ${normalized}` : normalized,
+						);
+					}
+					break;
+				}
+			}
+		} catch (e) {
+			console.error("Dictation failed:", e);
+		} finally {
+			setDictating(false);
+		}
+	};
+
 	const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const files = e.target.files;
 		if (!files || files.length === 0) return;
@@ -412,9 +476,22 @@ export function ChatArea({
 							<Plus className="w-[18px] h-[18px]" />
 						</div>
 						<div className="min-w-0">
-							<h2 className="text-[15px] font-semibold text-foreground leading-tight">
-								{channelName}
-							</h2>
+							<div className="flex items-center gap-2">
+								<h2 className="text-[15px] font-semibold text-foreground leading-tight">
+									{channelName}
+								</h2>
+								<span
+									title={connected ? "Connected" : "Disconnected"}
+									className={cn(
+										"w-2 h-2 rounded-full shrink-0",
+										connected
+											? isLoading
+												? "bg-amber-500 animate-pulse"
+												: "bg-emerald-500"
+											: "bg-destructive",
+									)}
+								/>
+							</div>
 							{channelMembers.length > 0 && (
 								<p className="text-[12px] text-muted-foreground mt-0.5 truncate">
 									{channelMembers.join(", ")}
@@ -1063,6 +1140,27 @@ export function ChatArea({
 									>
 										<AtSign className="w-4 h-4" />
 									</button>
+									{/* Dictation */}
+									{onRunDictation && (
+										<button
+											type="button"
+											title="Voice input"
+											onClick={handleDictation}
+											disabled={dictating}
+											className={cn(
+												"w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150",
+												dictating
+													? "text-primary bg-primary/10 animate-pulse"
+													: "text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted",
+											)}
+										>
+											{dictating ? (
+												<Loader2 className="w-4 h-4 animate-spin" />
+											) : (
+												<Mic className="w-4 h-4" />
+											)}
+										</button>
+									)}
 								</div>
 
 								<div className="flex items-center gap-2">

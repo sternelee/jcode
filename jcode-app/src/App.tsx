@@ -6,11 +6,16 @@ import { CreateSessionDialog } from "@/components/CreateSessionDialog";
 import { StdinInputModal } from "@/components/StdinInputModal";
 import { SessionSwitcherDialog } from "@/components/SessionSwitcherDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { PermissionDialog } from "@/components/PermissionDialog";
 import { SettingsPage } from "@/components/SettingsPage";
 import { ProviderConfigPage } from "@/components/ProviderConfigPage";
+import { TasksPage } from "@/components/TasksPage";
+import { MonitorPage } from "@/components/MonitorPage";
+import { TeamPage } from "@/components/TeamPage";
+import { MediaPage } from "@/components/MediaPage";
 import { parseSlashCommand } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
-import type { SessionInfo } from "@/types";
+import type { SessionInfo, PermissionRequest } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useEffect, useRef, useMemo } from "react";
 
@@ -55,6 +60,9 @@ export default function App() {
 		gitStatus,
 		toggleWorkspace,
 		renameSession,
+		runDictation,
+		exportMemories,
+		importMemories,
 	} = useJcodeSession();
 
 	const [activeNavTab, setActiveNavTab] = useState("chat");
@@ -76,6 +84,10 @@ export default function App() {
 	>([]);
 	// Read cursor: track when each conversation was last viewed
 	const [lastReadAt, setLastReadAt] = useState<Record<string, number>>({});
+	// Pending permission requests
+	const [permissionRequests, setPermissionRequests] = useState<
+		PermissionRequest[]
+	>([]);
 
 	const currentWorkspaceId = state.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
 
@@ -202,6 +214,22 @@ export default function App() {
 			hasPolledOnConnect.current = false;
 		}
 	}, [state.connected, listSessions]);
+
+	// Poll permission requests
+	useEffect(() => {
+		if (!state.connected) return;
+		const interval = setInterval(async () => {
+			try {
+				const result = await invoke<{ requests: PermissionRequest[] }>(
+					"get_permission_requests",
+				);
+				setPermissionRequests(result.requests || []);
+			} catch {
+				// ignore
+			}
+		}, 3000);
+		return () => clearInterval(interval);
+	}, [state.connected]);
 
 	// Cmd+P keyboard shortcut
 	useEffect(() => {
@@ -641,6 +669,7 @@ export default function App() {
 							messages={displayMessages}
 							isProcessing={displayIsProcessing}
 							isLoading={displayIsLoading}
+							connected={state.connected}
 							onSend={handleSendMessage}
 							onCancel={() => cancel(resolveTargetSessionId() || undefined)}
 							channelName={channelName}
@@ -687,14 +716,28 @@ export default function App() {
 							onClearChat={() =>
 								void clearChat(resolveTargetSessionId() || undefined)
 							}
+							onRunDictation={runDictation}
 						/>
 					</>
 				) : (
 					<div key={activeNavTab} className="animate-fade-in flex-1 flex">
 						{activeNavTab === "settings" ? (
-							<SettingsPage theme={effectiveTheme} onThemeChange={setTheme} />
+							<SettingsPage
+								theme={effectiveTheme}
+								onThemeChange={setTheme}
+								onExportMemories={exportMemories}
+								onImportMemories={importMemories}
+							/>
 						) : activeNavTab === "network" ? (
 							<ProviderConfigPage onAuthStatusChange={() => listSessions()} />
+						) : activeNavTab === "tasks" ? (
+							<TasksPage />
+						) : activeNavTab === "monitor" ? (
+							<MonitorPage />
+						) : activeNavTab === "team" ? (
+							<TeamPage sessions={state.sessions} />
+						) : activeNavTab === "media" ? (
+							<MediaPage sessionData={state.sessionData} />
 						) : (
 							<PlaceholderPage
 								key={activeNavTab}
@@ -744,6 +787,21 @@ export default function App() {
 				variant="destructive"
 				onConfirm={handleConfirmRemove}
 				onCancel={() => setConfirmRemove(null)}
+			/>
+			<PermissionDialog
+				requests={permissionRequests}
+				onRespond={async (id, approved, message) => {
+					try {
+						await invoke("respond_to_permission", {
+							requestId: id,
+							approved,
+							message: message || null,
+						});
+						setPermissionRequests((prev) => prev.filter((r) => r.id !== id));
+					} catch (e) {
+						console.error("Permission response failed:", e);
+					}
+				}}
 			/>
 		</div>
 	);

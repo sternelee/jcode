@@ -3,17 +3,41 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AuthStatus, VersionInfo } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Moon, Sun, Key, Cpu } from "lucide-react";
+import {
+	Moon,
+	Sun,
+	Key,
+	Cpu,
+	Brain,
+	Download,
+	Upload,
+	CheckCircle2,
+} from "lucide-react";
 
 interface SettingsPageProps {
 	theme: "light" | "dark";
 	onThemeChange: (theme: "light" | "dark") => void;
+	onExportMemories?: (path: string) => Promise<void>;
+	onImportMemories?: (
+		path: string,
+	) => Promise<{ project_count: number; global_count: number } | null>;
 }
 
-export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
+export function SettingsPage({
+	theme,
+	onThemeChange,
+	onExportMemories,
+	onImportMemories,
+}: SettingsPageProps) {
 	const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
 	const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
 	const [copiedText, setCopiedText] = useState<string | null>(null);
+	const [exportPath, setExportPath] = useState("");
+	const [importPath, setImportPath] = useState("");
+	const [memoryAction, setMemoryAction] = useState<{
+		type: "export" | "import";
+		status: string;
+	} | null>(null);
 
 	useEffect(() => {
 		void invoke<VersionInfo>("get_version_info")
@@ -50,7 +74,7 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 						Settings
 					</h1>
 					<p className="text-[12px] text-muted-foreground">
-						Appearance, authentication, version info
+						Appearance, authentication, memory, version info
 					</p>
 				</div>
 			</div>
@@ -139,6 +163,107 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 							</div>
 						)}
 					</SettingsCard>
+
+					{/* Memory */}
+					{(onExportMemories || onImportMemories) && (
+						<SettingsCard icon={<Brain className="w-4 h-4" />} title="Memory">
+							<div className="space-y-3">
+								{onExportMemories && (
+									<div className="flex items-center gap-2">
+										<input
+											type="text"
+											value={exportPath}
+											onChange={(e) => setExportPath(e.target.value)}
+											placeholder="Export path (e.g. ~/memories.json)"
+											className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
+										/>
+										<button
+											type="button"
+											onClick={async () => {
+												if (!exportPath.trim()) return;
+												setMemoryAction({
+													type: "export",
+													status: "Exporting…",
+												});
+												try {
+													await onExportMemories(exportPath.trim());
+													setMemoryAction({
+														type: "export",
+														status: "Exported successfully",
+													});
+												} catch {
+													setMemoryAction({
+														type: "export",
+														status: "Export failed",
+													});
+												}
+												setTimeout(() => setMemoryAction(null), 3000);
+											}}
+											disabled={!exportPath.trim()}
+											className="shrink-0 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+										>
+											<Download className="w-3.5 h-3.5" />
+											Export
+										</button>
+									</div>
+								)}
+								{onImportMemories && (
+									<div className="flex items-center gap-2">
+										<input
+											type="text"
+											value={importPath}
+											onChange={(e) => setImportPath(e.target.value)}
+											placeholder="Import path (e.g. ~/memories.json)"
+											className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
+										/>
+										<button
+											type="button"
+											onClick={async () => {
+												if (!importPath.trim()) return;
+												setMemoryAction({
+													type: "import",
+													status: "Importing…",
+												});
+												try {
+													const result = await onImportMemories(
+														importPath.trim(),
+													);
+													if (result) {
+														setMemoryAction({
+															type: "import",
+															status: `Imported ${result.project_count} project + ${result.global_count} global memories`,
+														});
+													} else {
+														setMemoryAction({
+															type: "import",
+															status: "Import failed",
+														});
+													}
+												} catch {
+													setMemoryAction({
+														type: "import",
+														status: "Import failed",
+													});
+												}
+												setTimeout(() => setMemoryAction(null), 3000);
+											}}
+											disabled={!importPath.trim()}
+											className="shrink-0 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+										>
+											<Upload className="w-3.5 h-3.5" />
+											Import
+										</button>
+									</div>
+								)}
+								{memoryAction && (
+									<div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+										<CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+										{memoryAction.status}
+									</div>
+								)}
+							</div>
+						</SettingsCard>
+					)}
 
 					{/* Version */}
 					<SettingsCard icon={<Cpu className="w-4 h-4" />} title="Version">
