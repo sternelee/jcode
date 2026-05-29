@@ -5,6 +5,7 @@ interface NavBarProps {
 	onTabChange: (tab: string) => void;
 	unreadCount: number;
 	onLogout?: () => void;
+	onToggleSidebar?: () => void;
 }
 
 const navItems = [
@@ -21,9 +22,23 @@ export function NavBar({
 	onTabChange,
 	unreadCount,
 	onLogout,
+	onToggleSidebar,
 }: NavBarProps) {
 	return (
 		<nav className="w-[56px] min-w-[56px] bg-sidebar border-r border-sidebar-border flex flex-col items-center py-3 select-none gap-1">
+			{/* Logo / avatar */}
+			{onToggleSidebar && (
+				<button
+					type="button"
+					onClick={onToggleSidebar}
+					className="w-10 h-10 rounded-xl flex items-center justify-center text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-all duration-150 lg:hidden"
+					title="Toggle sidebar"
+				>
+					<svg viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+						<path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 10.5a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10z" clipRule="evenodd" />
+					</svg>
+				</button>
+			)}
 			{/* Logo / avatar */}
 			<div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center mb-3 shadow-sm">
 				<span className="text-white text-[15px] font-bold">J</span>

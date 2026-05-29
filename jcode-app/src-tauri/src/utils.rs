@@ -594,7 +594,10 @@ pub fn desktop_history_messages(session: &Session) -> Vec<serde_json::Value> {
                         "label": current_tool.as_ref().and_then(fallback_image_label),
                     }));
                 }
-                ContentBlock::Reasoning { .. } | ContentBlock::OpenAICompaction { .. } => {}
+                ContentBlock::Reasoning { .. }
+                | ContentBlock::OpenAICompaction { .. }
+                | ContentBlock::AnthropicThinking { .. }
+                | ContentBlock::OpenAIReasoning { .. } => {}
             }
         }
 

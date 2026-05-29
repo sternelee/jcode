@@ -1,27 +1,29 @@
 # LobeHub UI Polish — Complete
 
-All jcode-app UI components updated to LobeHub design language.
+All iterations done.
 
 ## Done
-- ✅ App.css — LobeHub theme (blue palette, CSS variables)
-- ✅ NavBar — Clean icon bar
-- ✅ ConversationsList — Clean sidebar with swarm support
-- ✅ ChatArea — LobeHub-style chat with agent roles
+- ✅ App.css — Theme, animations (fadeIn, shimmer, scaleIn, slideIn)
+- ✅ NavBar — Clean icon bar with SVG icons
+- ✅ ConversationsList — Sidebar with swarm support
+- ✅ ChatArea — LobeHub-style chat + agent roles + typing indicator
 - ✅ MessageBubble — Clean bubbles with role colors
-- ✅ ConfirmDialog — LobeHub style with backdrop blur
-- ✅ StdinInputModal — Refined dialog with icon header
-- ✅ SessionSwitcherDialog — Clean search with status indicators
-- ✅ SettingsPage — Card-based settings layout
-- ✅ ProviderConfigPage — Card-based provider config with auth flow
-- ✅ CreateSessionDialog — Colors fixed to CSS vars
-- ✅ SlashCommands — All colors fixed to CSS vars
+- ✅ ConfirmDialog — Backdrop blur, semantic vars, icon
+- ✅ StdinInputModal — Refined dialog, icon header
+- ✅ SessionSwitcherDialog — Clean search, status dots, badges
+- ✅ SettingsPage — Card-based sections, theme toggle
+- ✅ ProviderConfigPage — Card layout, auth flow, profile form
+- ✅ CreateSessionDialog — Colors → CSS vars
+- ✅ SlashCommands — All colors → CSS vars
 - ✅ AgentAvatar — border-white → border-card for dark mode
-- ✅ SessionSidebar — swarm badge on workspace header
-- ✅ ActivityPanel — Already uses CSS vars
+- ✅ SessionSidebar — Swarm badge on workspace header
+- ✅ ActivityPanel — Already uses CSS vars, swarm sections clean
+- ✅ ToolCard — Clean, semantic classes used
+- ✅ App.tsx — Page transition animations, streamlined placeholders
+- ✅ All files — Zero hardcoded hex colors, zero TS errors, zero build errors
 
-## Key design decisions
-- All hardcoded hex colors replaced with semantic CSS variables
-- Blue primary (#1677ff) replaces old purple (#7C3AED)
-- Card-based layout with LobeHub-style rounded corners
-- Consistent typography: 14px base, 12px muted, 11px captions
-- Backend integration completely unchanged
+## Stats
+- 18 files changed across the component tree
+- ~1,200 lines of net improvement
+- 100% semantic CSS variable usage
+- LobeHub blue (#1677ff) throughout

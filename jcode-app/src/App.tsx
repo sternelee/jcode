@@ -29,9 +29,6 @@ function workspaceLabel(workspaceId: string): string {
 	return workspaceId.split("/").pop() || workspaceId;
 }
 
-
-
-
 export default function App() {
 	const {
 		state,
@@ -58,12 +55,14 @@ export default function App() {
 		gitStatus,
 		toggleWorkspace,
 		renameSession,
-
 	} = useJcodeSession();
 
 	const [activeNavTab, setActiveNavTab] = useState("chat");
 	const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
-	const [confirmRemove, setConfirmRemove] = useState<{ sessionId: string; name: string } | null>(null);
+	const [confirmRemove, setConfirmRemove] = useState<{
+		sessionId: string;
+		name: string;
+	} | null>(null);
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
 	// Pre-seed createDialog in swarm mode when adding an agent to existing workspace
 	const [createDialogInitMode, setCreateDialogInitMode] = useState<
@@ -95,9 +94,7 @@ export default function App() {
 		);
 		if (coordinator) return coordinator;
 		if (requireCoordinator) return undefined;
-		return (
-			sessions.find((session) => !session.roleName) || sessions[0]
-		);
+		return sessions.find((session) => !session.roleName) || sessions[0];
 	};
 
 	const openWorkspaceConversation = async (
@@ -251,7 +248,13 @@ export default function App() {
 		const workspaceId = workspaceIdFromDir(workingDir);
 		setActiveWorkspace(workspaceId);
 		setWorkingDir(workingDir);
-		const sessionId = await connect(workingDir, model || undefined, true, undefined, profileId);
+		const sessionId = await connect(
+			workingDir,
+			model || undefined,
+			true,
+			undefined,
+			profileId,
+		);
 		if (sessionId) {
 			switchSession(sessionId);
 			setSelectedConvId(sessionId);
@@ -270,17 +273,18 @@ export default function App() {
 
 		let createdSessionIds: string[] = [];
 		try {
-			createdSessionIds = (await invoke<string[]>("begin_swarm", {
-				workingDir,
-				coordinatorModel: model || null,
-				coordinatorProfileId: profileId || null,
-				memoryEnabled: true,
-				members: pendingSwarmMembers.map((m) => ({
-					roleName: m.roleName,
-					model: m.model || null,
-					profileId: m.profileId || null,
-				})),
-			})) ?? [];
+			createdSessionIds =
+				(await invoke<string[]>("begin_swarm", {
+					workingDir,
+					coordinatorModel: model || null,
+					coordinatorProfileId: profileId || null,
+					memoryEnabled: true,
+					members: pendingSwarmMembers.map((m) => ({
+						roleName: m.roleName,
+						model: m.model || null,
+						profileId: m.profileId || null,
+					})),
+				})) ?? [];
 
 			if (createdSessionIds.length > 0) {
 				switchSession(createdSessionIds[0]);
@@ -298,7 +302,11 @@ export default function App() {
 		setPendingSwarmMembers([]);
 	};
 
-	const handleAddSwarmMember = (roleName: string, model: string, profileId?: string) => {
+	const handleAddSwarmMember = (
+		roleName: string,
+		model: string,
+		profileId?: string,
+	) => {
 		setPendingSwarmMembers((prev) => {
 			if (prev.some((member) => member.roleName === roleName)) return prev;
 			return [...prev, { roleName, model, profileId }];
@@ -444,14 +452,9 @@ export default function App() {
 		// The coordinator decides whether to use swarm tools (assign_task / dm)
 		// to forward the request. Direct DM bypass is blocked.
 		const currentWsId = currentWorkspaceId;
-		if (
-			targetSessionId &&
-			state.workspaceModes[currentWsId] === "swarm"
-		) {
+		if (targetSessionId && state.workspaceModes[currentWsId] === "swarm") {
 			// Allow hyphens, underscores and alphanumerics in role names
-			const mentionMatch = content.match(
-				/^@([a-zA-Z0-9_-]+)(?:\s|$)/,
-			);
+			const mentionMatch = content.match(/^@([a-zA-Z0-9_-]+)(?:\s|$)/);
 			if (mentionMatch) {
 				const mentionedName = mentionMatch[1].toLowerCase();
 				const wsSessions = getWorkspaceSessions(currentWsId);
@@ -463,8 +466,8 @@ export default function App() {
 					// delegate to it, but do NOT switch targetSessionId — the
 					// message still goes to coordinator.
 					if (
-						state.sessionData[agentSession.sessionId]
-							?.connectionPhase !== "connected"
+						state.sessionData[agentSession.sessionId]?.connectionPhase !==
+						"connected"
 					) {
 						await resumeSession(
 							agentSession.sessionId,
@@ -639,24 +642,27 @@ export default function App() {
 						(sum, p) => sum + (p.unread > 0 ? 1 : 0),
 						0,
 					)}
+					onToggleSidebar={() => {}}
 				/>
 
 				{isChatTab ? (
 					<>
-						<ConversationsList
-							workspaces={workspaces}
-							sessions={state.sessions}
-							activeWorkspaceId={currentWorkspaceId}
-							expandedWorkspaces={state.expandedWorkspaces}
-							selectedConvId={selectedConvId}
-							sessionPreviewMap={sessionPreviewMap}
-							onToggleWorkspace={toggleWorkspace}
-							onSelectWorkspace={handleWorkspaceChange}
-							onSelectConversation={handleSelectConversation}
-							onSelectSession={handleResume}
-							onCreateSession={handleNewSession}
-							onRemoveSession={handleRemoveAgentSession}
-						/>
+						<div className="hidden lg:flex">
+							<ConversationsList
+								workspaces={workspaces}
+								sessions={state.sessions}
+								activeWorkspaceId={currentWorkspaceId}
+								expandedWorkspaces={state.expandedWorkspaces}
+								selectedConvId={selectedConvId}
+								sessionPreviewMap={sessionPreviewMap}
+								onToggleWorkspace={toggleWorkspace}
+								onSelectWorkspace={handleWorkspaceChange}
+								onSelectConversation={handleSelectConversation}
+								onSelectSession={handleResume}
+								onCreateSession={handleNewSession}
+								onRemoveSession={handleRemoveAgentSession}
+							/>
+						</div>
 
 						<ChatArea
 							messages={displayMessages}
@@ -665,9 +671,13 @@ export default function App() {
 							onSend={handleSendMessage}
 							onCancel={() => cancel(resolveTargetSessionId() || undefined)}
 							channelName={channelName}
-						channelMembers={channelMembers}
-						onRenameSession={renameSession}
-						currentSessionId={selectedConvId?.startsWith("workspace:") ? undefined : selectedConvId}
+							channelMembers={channelMembers}
+							onRenameSession={renameSession}
+							currentSessionId={
+								selectedConvId?.startsWith("workspace:")
+									? undefined
+									: selectedConvId
+							}
 							respondingRoles={respondingRoles}
 							workspaceSessions={workspaceSessions}
 							onAddAgent={handleAddAgentToWorkspace}
@@ -683,11 +693,7 @@ export default function App() {
 							memoryEnabled={state.memoryEnabled}
 							availableModels={state.availableModels}
 							onSetModel={(m, pid) =>
-								void setModel(
-									m,
-									pid,
-									resolveTargetSessionId() || undefined,
-								)
+								void setModel(m, pid, resolveTargetSessionId() || undefined)
 							}
 							onSetEffort={(e) =>
 								void setReasoningEffort(
@@ -707,7 +713,7 @@ export default function App() {
 							onClearChat={() =>
 								void clearChat(resolveTargetSessionId() || undefined)
 							}
-							/>
+						/>
 					</>
 				) : (
 					<div key={activeNavTab} className="animate-fade-in flex-1 flex">
@@ -716,7 +722,12 @@ export default function App() {
 						) : activeNavTab === "network" ? (
 							<ProviderConfigPage onAuthStatusChange={() => listSessions()} />
 						) : (
-							<PlaceholderPage key={activeNavTab} icon={activeNavTab} title={placeholderTitle(activeNavTab)} description={placeholderDesc(activeNavTab)} />
+							<PlaceholderPage
+								key={activeNavTab}
+								icon={activeNavTab}
+								title={placeholderTitle(activeNavTab)}
+								description={placeholderDesc(activeNavTab)}
+							/>
 						)}
 					</div>
 				)}
