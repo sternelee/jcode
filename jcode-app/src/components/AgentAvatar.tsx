@@ -64,7 +64,11 @@ export function AgentAvatarStack({
 	const displayMembers = members.slice(0, maxDisplay);
 	const remaining = members.length - maxDisplay;
 	const overlapClass =
-		size === "xs" ? "-space-x-1" : size === "sm" ? "-space-x-1.5" : "-space-x-2";
+		size === "xs"
+			? "-space-x-1"
+			: size === "sm"
+				? "-space-x-1.5"
+				: "-space-x-2";
 
 	return (
 		<div className={cn("flex shrink-0", overlapClass)}>

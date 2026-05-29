@@ -17,11 +17,15 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 	const [copiedText, setCopiedText] = useState<string | null>(null);
 
 	useEffect(() => {
-		void invoke<VersionInfo>("get_version_info").then(setVersionInfo).catch(() => {});
+		void invoke<VersionInfo>("get_version_info")
+			.then(setVersionInfo)
+			.catch(() => {});
 	}, []);
 
 	useEffect(() => {
-		void invoke<AuthStatus>("get_auth_status").then(setAuthStatus).catch(() => {});
+		void invoke<AuthStatus>("get_auth_status")
+			.then(setAuthStatus)
+			.catch(() => {});
 	}, []);
 
 	const copyToClipboard = useCallback(async (text: string, label: string) => {
@@ -29,7 +33,9 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 			await navigator.clipboard.writeText(text);
 			setCopiedText(label);
 			setTimeout(() => setCopiedText(null), 2000);
-		} catch { /* ignore */ }
+		} catch {
+			/* ignore */
+		}
 	}, []);
 
 	return (
@@ -41,8 +47,12 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 					</svg>
 				</div>
 				<div>
-					<h1 className="text-[15px] font-semibold text-foreground">Settings</h1>
-					<p className="text-[12px] text-muted-foreground">Appearance, authentication, version info</p>
+					<h1 className="text-[15px] font-semibold text-foreground">
+						Settings
+					</h1>
+					<p className="text-[12px] text-muted-foreground">
+						Appearance, authentication, version info
+					</p>
 				</div>
 			</div>
 
@@ -54,20 +64,36 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 						title="Theme"
 						action={
 							<div className="flex items-center gap-1 rounded-lg border border-border p-0.5 bg-muted/30">
-								<button type="button" onClick={() => onThemeChange("light")}
-									className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all duration-150",
-										theme === "light" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+								<button
+									type="button"
+									onClick={() => onThemeChange("light")}
+									className={cn(
+										"flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all duration-150",
+										theme === "light"
+											? "bg-card text-foreground shadow-sm"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+								>
 									<Sun className="w-3.5 h-3.5" /> Light
 								</button>
-								<button type="button" onClick={() => onThemeChange("dark")}
-									className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all duration-150",
-										theme === "dark" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+								<button
+									type="button"
+									onClick={() => onThemeChange("dark")}
+									className={cn(
+										"flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all duration-150",
+										theme === "dark"
+											? "bg-card text-foreground shadow-sm"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+								>
 									<Moon className="w-3.5 h-3.5" /> Dark
 								</button>
 							</div>
 						}
 					>
-						<p className="text-[12px] text-muted-foreground">Switch between light and dark mode</p>
+						<p className="text-[12px] text-muted-foreground">
+							Switch between light and dark mode
+						</p>
 					</SettingsCard>
 
 					{/* Auth */}
@@ -75,25 +101,40 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 						icon={<Key className="w-4 h-4" />}
 						title="Authentication"
 						action={
-							<Badge variant={authStatus?.any_available ? "default" : "outline"} className="text-[10px]">
+							<Badge
+								variant={authStatus?.any_available ? "default" : "outline"}
+								className="text-[10px]"
+							>
 								{authStatus?.any_available ? "Available" : "Not configured"}
 							</Badge>
 						}
 					>
 						<div className="text-[12px] text-muted-foreground mb-3">
-							{authStatus?.any_available ? "At least one provider is authenticated" : "No providers configured yet"}
+							{authStatus?.any_available
+								? "At least one provider is authenticated"
+								: "No providers configured yet"}
 						</div>
 						{authStatus?.providers && authStatus.providers.length > 0 && (
 							<div className="space-y-1.5">
 								{authStatus.providers.map((p) => (
-									<div key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2">
+									<div
+										key={p.id}
+										className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2"
+									>
 										<div className="flex items-center gap-2">
-											<span className="text-[13px] font-medium text-foreground">{p.display_name}</span>
-											<Badge variant={p.configured ? "secondary" : "outline"} className="text-[9px] h-[18px]">
+											<span className="text-[13px] font-medium text-foreground">
+												{p.display_name}
+											</span>
+											<Badge
+												variant={p.configured ? "secondary" : "outline"}
+												className="text-[9px] h-[18px]"
+											>
 												{p.configured ? "configured" : p.status}
 											</Badge>
 										</div>
-										<span className="text-[11px] text-muted-foreground">{p.method}</span>
+										<span className="text-[11px] text-muted-foreground">
+											{p.method}
+										</span>
 									</div>
 								))}
 							</div>
@@ -101,31 +142,48 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 					</SettingsCard>
 
 					{/* Version */}
-					<SettingsCard
-						icon={<Cpu className="w-4 h-4" />}
-						title="Version"
-					>
+					<SettingsCard icon={<Cpu className="w-4 h-4" />} title="Version">
 						{versionInfo ? (
 							<div className="space-y-1.5">
-								{([["Version", versionInfo.version],
-									["Semver", versionInfo.semver],
-									["Git Hash", versionInfo.git_hash],
-									["Git Tag", versionInfo.git_tag],
-									["Git Date", versionInfo.git_date],
-									["Build", versionInfo.release_build ? "Release" : "Debug"],
-								] as const).map(([label, value]) => (
-									<div key={label} className="flex items-center justify-between py-0.5">
-										<span className="text-[12px] text-muted-foreground">{label}</span>
-										<button type="button" onClick={() => copyToClipboard(value, label)}
-											className={cn("font-mono text-[12px] px-2 py-0.5 rounded-md hover:bg-muted transition-colors",
-												copiedText === label ? "text-emerald-500" : "text-foreground")}>
-											{value}{copiedText === label && <span className="ml-1.5 text-emerald-500">✓</span>}
+								{(
+									[
+										["Version", versionInfo.version],
+										["Semver", versionInfo.semver],
+										["Git Hash", versionInfo.git_hash],
+										["Git Tag", versionInfo.git_tag],
+										["Git Date", versionInfo.git_date],
+										["Build", versionInfo.release_build ? "Release" : "Debug"],
+									] as const
+								).map(([label, value]) => (
+									<div
+										key={label}
+										className="flex items-center justify-between py-0.5"
+									>
+										<span className="text-[12px] text-muted-foreground">
+											{label}
+										</span>
+										<button
+											type="button"
+											onClick={() => copyToClipboard(value, label)}
+											className={cn(
+												"font-mono text-[12px] px-2 py-0.5 rounded-md hover:bg-muted transition-colors",
+												copiedText === label
+													? "text-emerald-500"
+													: "text-foreground",
+											)}
+										>
+											{value}
+											{copiedText === label && (
+												<span className="ml-1.5 text-emerald-500">✓</span>
+											)}
 										</button>
 									</div>
 								))}
 							</div>
 						) : (
-							<div className="text-[13px] text-muted-foreground animate-pulse">Loading…</div>
+							<div className="text-[13px] text-muted-foreground animate-pulse">
+								Loading…
+							</div>
 						)}
 					</SettingsCard>
 
@@ -137,7 +195,10 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 }
 
 function SettingsCard({
-	icon, title, action, children,
+	icon,
+	title,
+	action,
+	children,
 }: {
 	icon: React.ReactNode;
 	title: string;

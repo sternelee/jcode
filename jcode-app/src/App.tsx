@@ -707,37 +707,19 @@ export default function App() {
 							onClearChat={() =>
 								void clearChat(resolveTargetSessionId() || undefined)
 							}
-						/>
+							/>
 					</>
-				) : activeNavTab === "settings" ? (
-					<SettingsPage theme={effectiveTheme} onThemeChange={setTheme} />
-				) : activeNavTab === "network" ? (
-					<ProviderConfigPage onAuthStatusChange={() => listSessions()} />
-				) : activeNavTab === "media" ? (
-					<PlaceholderPage
-						icon="media"
-						title="Media"
-						description="Multimedia and image generation history"
-					/>
-				) : activeNavTab === "tasks" ? (
-					<PlaceholderPage
-						icon="tasks"
-						title="Tasks"
-						description="Background tasks and job queue"
-					/>
-				) : activeNavTab === "monitor" ? (
-					<PlaceholderPage
-						icon="monitor"
-						title="Monitor"
-						description="System monitoring and diagnostics"
-					/>
-				) : activeNavTab === "team" ? (
-					<PlaceholderPage
-						icon="team"
-						title="Swarm"
-						description="Multi-agent collaboration and orchestration"
-					/>
-				) : null}
+				) : (
+					<div key={activeNavTab} className="animate-fade-in flex-1 flex">
+						{activeNavTab === "settings" ? (
+							<SettingsPage theme={effectiveTheme} onThemeChange={setTheme} />
+						) : activeNavTab === "network" ? (
+							<ProviderConfigPage onAuthStatusChange={() => listSessions()} />
+						) : (
+							<PlaceholderPage key={activeNavTab} icon={activeNavTab} title={placeholderTitle(activeNavTab)} description={placeholderDesc(activeNavTab)} />
+						)}
+					</div>
+				)}
 			</div>
 
 			<CreateSessionDialog
@@ -780,6 +762,26 @@ export default function App() {
 			/>
 		</div>
 	);
+}
+
+function placeholderTitle(icon: string): string {
+	const map: Record<string, string> = {
+		media: "Media",
+		tasks: "Tasks",
+		monitor: "Monitor",
+		team: "Swarm",
+	};
+	return map[icon] || icon;
+}
+
+function placeholderDesc(icon: string): string {
+	const map: Record<string, string> = {
+		media: "Multimedia and image generation history",
+		tasks: "Background tasks and job queue",
+		monitor: "System monitoring and diagnostics",
+		team: "Multi-agent collaboration and orchestration",
+	};
+	return map[icon] || "";
 }
 
 function PlaceholderPage({
