@@ -1,25 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { SessionInfo } from "@/types";
 import {
-  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
   CommandItem,
   CommandList,
-  CommandShortcut,
 } from "@/components/ui/command";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { Search, Users, Sparkles } from "lucide-react";
+  Search,
+  Users,
+  Sparkles,
+  Circle,
+  Loader2,
+} from "lucide-react";
 
 interface SessionSwitcherDialogProps {
   open: boolean;
@@ -31,53 +27,30 @@ interface SessionSwitcherDialogProps {
 
 function workspaceLabel(path?: string): string {
   if (!path) return "Default";
-  const parts = path.split(/[/\\]/);
-  return parts[parts.length - 1] || path;
+  return path.split("/").pop() || path;
 }
 
 function sessionSearchText(session: SessionInfo): string {
   return [
-    session.sessionId,
-    session.title,
-    session.subtitle,
-    session.detail,
-    session.workingDir,
-    session.model,
-    session.provider,
-    ...(session.previewLines || []),
-    ...(session.detailLines || []),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+    session.sessionId, session.title, session.subtitle, session.detail,
+    session.workingDir, session.model, session.provider,
+    ...(session.previewLines || []), ...(session.detailLines || []),
+  ].filter(Boolean).join(" ").toLowerCase();
 }
 
-function matchesStatusFilter(session: SessionInfo, statusFilter: "all" | "problem" | "crashed" | "running" | "swarm"): boolean {
-  if (statusFilter === "all") return true;
-  const normalized = session.status?.toLowerCase() || "";
-  if (statusFilter === "crashed") return normalized.includes("crash");
-  if (statusFilter === "running") {
-    return normalized.includes("running") || normalized.includes("chunking") || Boolean(session.liveProcessing);
-  }
-  if (statusFilter === "swarm") {
-    return Boolean(session.swarmEnabled);
-  }
-  return normalized.includes("error") || normalized.includes("fail") || normalized.includes("crash") || normalized.includes("blocked");
+function statusBadge(session: SessionInfo): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } | null {
+  const s = session.status?.toLowerCase() || "";
+  if (s.includes("crash") || s.includes("error") || s.includes("fail")) return { label: session.status!, variant: "destructive" };
+  if (session.livePhase === "chunking" || session.livePhase === "thinking") return { label: session.livePhase, variant: "default" };
+  if (session.liveProcessing) return { label: "running", variant: "secondary" };
+  if (s.includes("running")) return { label: "running", variant: "secondary" };
+  return null;
 }
 
-function livePhaseLabel(session: SessionInfo): string | null {
-  switch (session.livePhase) {
-    case "chunking":
-      return "chunking";
-    case "tool":
-      return session.liveToolName || "tool";
-    case "thinking":
-      return "thinking";
-    case "waiting":
-      return "waiting";
-    default:
-      return null;
-  }
+function livePhaseBadge(session: SessionInfo) {
+  const phase = session.livePhase;
+  if (!phase) return null;
+  return { label: phase === "chunking" ? "streaming" : phase };
 }
 
 export function SessionSwitcherDialog({
@@ -87,216 +60,128 @@ export function SessionSwitcherDialog({
   onOpenChange,
   onSelectSession,
 }: SessionSwitcherDialogProps) {
-  const [query, setQuery] = useState(() => localStorage.getItem("desktop-session-switcher-search") || "");
-  const [workspaceFilter, setWorkspaceFilter] = useState(() => localStorage.getItem("desktop-session-switcher-workspace-filter") || "all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "problem" | "crashed" | "running" | "swarm">(() => {
-    const saved = localStorage.getItem("desktop-session-switcher-status-filter");
-    return saved === "problem" || saved === "crashed" || saved === "running" || saved === "swarm" ? saved : "all";
-  });
-
-  useEffect(() => {
-    localStorage.setItem("desktop-session-switcher-search", query);
-  }, [query]);
-
-  useEffect(() => {
-    localStorage.setItem("desktop-session-switcher-workspace-filter", workspaceFilter);
-  }, [workspaceFilter]);
-
-  useEffect(() => {
-    localStorage.setItem("desktop-session-switcher-status-filter", statusFilter);
-  }, [statusFilter]);
-
-  const workspaces = useMemo(() => {
-    const items = Array.from(
-      new Map(
-        sessions.map((session) => [session.workingDir || "default", workspaceLabel(session.workingDir)]),
-      ).entries(),
-    );
-    return items.sort((a, b) => a[1].localeCompare(b[1]));
-  }, [sessions]);
+  const [query, setQuery] = useState("");
 
   const filteredSessions = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
+    const q = query.trim().toLowerCase();
     return [...sessions]
-      .filter((session) => workspaceFilter === "all" || (session.workingDir || "default") === workspaceFilter)
-      .filter((session) => matchesStatusFilter(session, statusFilter))
-      .filter((session) => !normalizedQuery || sessionSearchText(session).includes(normalizedQuery))
+      .filter((s) => !q || sessionSearchText(s).includes(q))
       .sort((a, b) => {
         if (a.sessionId === activeSessionId) return -1;
         if (b.sessionId === activeSessionId) return 1;
-        return a.title.localeCompare(b.title);
+        return (b.status?.localeCompare(a.status || "") || 0) || a.title.localeCompare(b.title);
       });
-  }, [sessions, workspaceFilter, statusFilter, query, activeSessionId]);
+  }, [sessions, query, activeSessionId]);
 
   return (
     <CommandDialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Session Switcher"
-      description="Search recent sessions by title, metadata, transcript preview, workspace, or error state."
-      className="sm:max-w-2xl"
-      showCloseButton={false}
+      title="Switch Session"
+      description="Search recent sessions"
+      className="sm:max-w-xl"
     >
-      <div className="border-b p-3 space-y-2.5 bg-background/60">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            autoFocus
-            placeholder="Search sessions, prompts, tools"
-            className="pl-8 text-sm"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={workspaceFilter} onValueChange={(value) => setWorkspaceFilter(value || "all")}>
-            <SelectTrigger className="h-8 flex-1 text-xs">
-              <SelectValue placeholder="Filter workspace" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All workspaces</SelectItem>
-              {workspaces.map(([id, label]) => (
-                <SelectItem key={id} value={id}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          <Button
-            variant={statusFilter === "all" ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => setStatusFilter("all")}
-          >
-            all
-          </Button>
-          <Button
-            variant={statusFilter === "problem" ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => setStatusFilter("problem")}
-          >
-            problem
-          </Button>
-          <Button
-            variant={statusFilter === "running" ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => setStatusFilter("running")}
-          >
-            running
-          </Button>
-          <Button
-            variant={statusFilter === "swarm" ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => setStatusFilter("swarm")}
-          >
-            swarm
-          </Button>
-          <Button
-            variant={statusFilter === "crashed" ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-[10px]"
-            onClick={() => setStatusFilter("crashed")}
-          >
-            crashed
-          </Button>
-        </div>
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <Search className="w-4 h-4 text-muted-foreground shrink-0" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          autoFocus
+          placeholder="Search sessions, prompts, models…"
+          className="flex-1 text-[14px] text-foreground bg-transparent outline-none placeholder-muted-foreground/60"
+        />
+        {sessions.length > 0 && (
+          <span className="text-[11px] text-muted-foreground/40 shrink-0">{filteredSessions.length} sessions</span>
+        )}
       </div>
 
-      <Command shouldFilter={false}>
-        <CommandList className="max-h-[70vh]">
-          <CommandEmpty>No matching sessions.</CommandEmpty>
-          <CommandGroup heading={`Recent sessions (${filteredSessions.length})`}>
-            {filteredSessions.map((session) => {
-              return (
-                <CommandItem
-                  key={session.sessionId}
-                  value={session.sessionId}
-                  onSelect={() => {
-                    onSelectSession(session);
-                    onOpenChange(false);
-                  }}
-                  className="items-start py-2.5"
-                >
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                      <span className="truncate font-medium">{session.title}</span>
-                      {session.sessionId === activeSessionId && (
-                        <Badge variant="secondary" className="h-5 text-[10px]">
-                          current
-                        </Badge>
+      <CommandList className="max-h-[60vh] p-2">
+        <CommandEmpty>
+          <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+            <Search className="w-8 h-8 opacity-30" />
+            <span className="text-sm">No matching sessions</span>
+          </div>
+        </CommandEmpty>
+        <CommandGroup>
+          {filteredSessions.map((session) => {
+            const isActive = session.sessionId === activeSessionId;
+            const badge = statusBadge(session);
+            const phase = livePhaseBadge(session);
+
+            return (
+              <CommandItem
+                key={session.sessionId}
+                value={session.sessionId}
+                onSelect={() => {
+                  onSelectSession(session);
+                  onOpenChange(false);
+                }}
+                className="px-3 py-2.5 rounded-lg aria-selected:bg-primary/10 cursor-default"
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isActive ? (
+                        <Circle className="w-2 h-2 fill-primary text-primary shrink-0" />
+                      ) : (
+                        <Circle className="w-2 h-2 text-muted-foreground/30 shrink-0" />
                       )}
-                      <Badge variant="outline" className="h-5 text-[10px]">
-                        {workspaceLabel(session.workingDir)}
-                      </Badge>
-                      {session.status && (
-                        <Badge variant={
-                          session.status.toLowerCase().includes("crash") ||
-                          session.status.toLowerCase().includes("error") ||
-                          session.status.toLowerCase().includes("fail")
-                            ? "destructive"
-                            : "outline"
-                        } className="h-5 text-[10px] uppercase">
-                          {session.status}
-                        </Badge>
-                      )}
-                      {session.swarmEnabled && (
-                        <Badge variant="outline" className="h-5 text-[10px]">
-                          <Users className="w-3 h-3 mr-1" />swarm {session.swarmPeerCount || 0}
-                        </Badge>
-                      )}
-                      {session.swarmEnabled && session.swarmRole && (
-                        <Badge variant="outline" className="h-5 text-[10px] uppercase">
-                          {session.swarmRole}
-                        </Badge>
-                      )}
-                      {livePhaseLabel(session) && (
-                        <Badge variant={session.livePhase === "chunking" ? "default" : "secondary"} className="h-5 text-[10px]">
-                          <Sparkles className="w-3 h-3 mr-1" />{livePhaseLabel(session)}
-                        </Badge>
-                      )}
+                      <span className={cn("text-[13px] font-medium truncate", isActive && "text-primary")}>
+                        {session.title || "Untitled"}
+                      </span>
                     </div>
-                    {session.subtitle && (
-                      <div className="text-xs text-muted-foreground truncate">
-                        {session.subtitle}
-                      </div>
+
+                    {badge && (
+                      <Badge variant={badge.variant} className="h-[18px] text-[9px] leading-none px-1.5">
+                        {badge.label}
+                      </Badge>
                     )}
-                    {session.detail && (
-                      <div className="text-xs text-muted-foreground/90 truncate">
-                        {session.detail}
-                      </div>
+
+                    {phase && (
+                      <Badge variant="secondary" className="h-[18px] text-[9px] leading-none px-1.5">
+                        <Sparkles className="w-2.5 h-2.5 mr-1" />
+                        {phase.label}
+                      </Badge>
                     )}
-                    {session.liveStatusDetail && (
-                      <div className="text-xs text-muted-foreground truncate">
-                        {session.liveStatusDetail}
-                      </div>
+
+                    {session.swarmEnabled && (
+                      <Badge variant="outline" className="h-[18px] text-[9px] leading-none px-1.5">
+                        <Users className="w-2.5 h-2.5 mr-0.5" />
+                        swarm
+                      </Badge>
                     )}
-                    {session.previewLines && session.previewLines.length > 0 && (
-                      <div className="space-y-0.5 pt-0.5">
-                        {session.previewLines.slice(0, 2).map((line, index) => (
-                          <div
-                            key={`${session.sessionId}-preview-${index}`}
-                            className="truncate font-mono text-[11px] text-muted-foreground"
-                          >
-                            {line}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+
+                    <span className="text-[10px] text-muted-foreground/50 ml-auto">
+                      {workspaceLabel(session.workingDir)}
+                    </span>
                   </div>
-                  <CommandShortcut>
-                    {session.sessionId === activeSessionId ? "open" : "resume"}
-                  </CommandShortcut>
-                </CommandItem>
-              );
-            })}
-          </CommandGroup>
-        </CommandList>
-      </Command>
+
+                  {session.detail && (
+                    <div className="text-[12px] text-muted-foreground/70 truncate pl-5">
+                      {session.detail}
+                    </div>
+                  )}
+
+                  {session.liveStatusDetail && (
+                    <div className="text-[12px] text-primary/60 truncate pl-5 flex items-center gap-1">
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                      {session.liveStatusDetail}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0 ml-3">
+                  {session.sessionId === activeSessionId ? (
+                    <Badge variant="default" className="h-5 text-[9px]">active</Badge>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground/40">switch</span>
+                  )}
+                </div>
+              </CommandItem>
+            );
+          })}
+        </CommandGroup>
+      </CommandList>
     </CommandDialog>
   );
 }

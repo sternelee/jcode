@@ -2,20 +2,9 @@ import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AuthStatus, VersionInfo } from "@/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import {
-	Moon,
-	Sun,
-	Info,
-	Key,
-	Database,
-	Smartphone,
-	Cpu,
-	Globe,
-} from "lucide-react";
+import { Moon, Sun, Key, Cpu } from "lucide-react";
 
 interface SettingsPageProps {
 	theme: "light" | "dark";
@@ -28,25 +17,11 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 	const [copiedText, setCopiedText] = useState<string | null>(null);
 
 	useEffect(() => {
-		void (async () => {
-			try {
-				const version = await invoke<VersionInfo>("get_version_info");
-				setVersionInfo(version);
-			} catch {
-				// ignore
-			}
-		})();
+		void invoke<VersionInfo>("get_version_info").then(setVersionInfo).catch(() => {});
 	}, []);
 
 	useEffect(() => {
-		void (async () => {
-			try {
-				const status = await invoke<AuthStatus>("get_auth_status");
-				setAuthStatus(status);
-			} catch {
-				// ignore
-			}
-		})();
+		void invoke<AuthStatus>("get_auth_status").then(setAuthStatus).catch(() => {});
 	}, []);
 
 	const copyToClipboard = useCallback(async (text: string, label: string) => {
@@ -54,251 +29,105 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 			await navigator.clipboard.writeText(text);
 			setCopiedText(label);
 			setTimeout(() => setCopiedText(null), 2000);
-		} catch {
-			// ignore
-		}
+		} catch { /* ignore */ }
 	}, []);
 
 	return (
 		<div className="flex flex-col h-full bg-background">
-			<div className="flex items-center justify-between px-6 py-4 border-b border-border">
-				<div className="flex items-center gap-3">
-					<Info className="w-5 h-5 text-primary" />
-					<h1 className="text-lg font-semibold">Settings</h1>
+			<div className="flex items-center gap-3 px-6 py-4 border-b border-border shrink-0">
+				<div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+					<svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+						<path d="M8 1.5c.35 0 .65.23.73.57l.5 2.19a.9.9 0 00.58.65l2.14.75c.42.15.6.62.44 1.05l-1 2.02a.9.9 0 00.08.86l1.33 1.96c.32.47.17 1.1-.33 1.37l-1.73 1a.9.9 0 01-.98-.27l-1.3-1.6a.9.9 0 00-.98-.27l-2.14.75a.9.9 0 01-1.05-.44l-1-2.02a.9.9 0 01.44-1.2l2.14-.75a.9.9 0 00.58-.65l.5-2.19A.75.75 0 018 1.5z" />
+					</svg>
+				</div>
+				<div>
+					<h1 className="text-[15px] font-semibold text-foreground">Settings</h1>
+					<p className="text-[12px] text-muted-foreground">Appearance, authentication, version info</p>
 				</div>
 			</div>
 
 			<ScrollArea className="flex-1">
-				<div className="p-6 max-w-2xl space-y-8">
-					{/* ── Appearance ── */}
-					<section className="space-y-4">
-						<div className="flex items-center gap-2">
-							<Sun className="w-4 h-4 text-muted-foreground" />
-							<h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-								Appearance
-							</h2>
-						</div>
-						<div className="rounded-xl border bg-card p-4 space-y-4">
-							<div className="flex items-center justify-between">
-								<div className="space-y-1">
-									<div className="text-sm font-medium">Theme</div>
-									<div className="text-xs text-muted-foreground">
-										Switch between light and dark mode
-									</div>
-								</div>
-								<div className="flex items-center gap-1.5 rounded-lg border p-1">
-									<button
-										type="button"
-										onClick={() => onThemeChange("light")}
-										className={cn(
-											"flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-											theme === "light"
-												? "bg-primary text-primary-foreground"
-												: "text-muted-foreground hover:text-foreground",
-										)}
-									>
-										<Sun className="w-3.5 h-3.5" />
-										Light
-									</button>
-									<button
-										type="button"
-										onClick={() => onThemeChange("dark")}
-										className={cn(
-											"flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-											theme === "dark"
-												? "bg-primary text-primary-foreground"
-												: "text-muted-foreground hover:text-foreground",
-										)}
-									>
-										<Moon className="w-3.5 h-3.5" />
-										Dark
-									</button>
-								</div>
+				<div className="p-6 max-w-xl mx-auto space-y-6">
+					{/* Theme */}
+					<SettingsCard
+						icon={<Sun className="w-4 h-4" />}
+						title="Theme"
+						action={
+							<div className="flex items-center gap-1 rounded-lg border border-border p-0.5 bg-muted/30">
+								<button type="button" onClick={() => onThemeChange("light")}
+									className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all duration-150",
+										theme === "light" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+									<Sun className="w-3.5 h-3.5" /> Light
+								</button>
+								<button type="button" onClick={() => onThemeChange("dark")}
+									className={cn("flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] font-medium transition-all duration-150",
+										theme === "dark" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+									<Moon className="w-3.5 h-3.5" /> Dark
+								</button>
 							</div>
-						</div>
-					</section>
+						}
+					>
+						<p className="text-[12px] text-muted-foreground">Switch between light and dark mode</p>
+					</SettingsCard>
 
-					<Separator />
-
-					{/* ── Provider Auth ── */}
-					<section className="space-y-4">
-						<div className="flex items-center gap-2">
-							<Key className="w-4 h-4 text-muted-foreground" />
-							<h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-								Authentication
-							</h2>
+					{/* Auth */}
+					<SettingsCard
+						icon={<Key className="w-4 h-4" />}
+						title="Authentication"
+						action={
+							<Badge variant={authStatus?.any_available ? "default" : "outline"} className="text-[10px]">
+								{authStatus?.any_available ? "Available" : "Not configured"}
+							</Badge>
+						}
+					>
+						<div className="text-[12px] text-muted-foreground mb-3">
+							{authStatus?.any_available ? "At least one provider is authenticated" : "No providers configured yet"}
 						</div>
-						<div className="rounded-xl border bg-card p-4 space-y-3">
-							<div className="flex items-center justify-between">
-								<div className="space-y-1">
-									<div className="text-sm font-medium">Provider Status</div>
-									<div className="text-xs text-muted-foreground">
-										{authStatus?.any_available
-											? "At least one provider is authenticated"
-											: "No providers configured yet"}
-									</div>
-								</div>
-								<Badge
-									variant={authStatus?.any_available ? "default" : "outline"}
-									className={cn(
-										"text-xs",
-										authStatus?.any_available
-											? "bg-emerald-500/10 text-emerald-600 border-emerald-200"
-											: "",
-									)}
-								>
-									{authStatus?.any_available ? "Available" : "Not configured"}
-								</Badge>
-							</div>
-							{authStatus?.providers && authStatus.providers.length > 0 && (
-								<div className="space-y-2">
-									{authStatus.providers.map((provider) => (
-										<div
-											key={provider.id}
-											className="flex items-center justify-between rounded-lg border bg-secondary/50 px-3 py-2"
-										>
-											<div className="flex items-center gap-2">
-												<Globe className="w-3.5 h-3.5 text-muted-foreground" />
-												<span className="text-sm">{provider.display_name}</span>
-												<Badge
-													variant={
-														provider.configured ? "secondary" : "outline"
-													}
-													className="text-[10px]"
-												>
-													{provider.configured ? "configured" : provider.status}
-												</Badge>
-											</div>
-											<span className="text-xs text-muted-foreground">
-												{provider.method}
-											</span>
-										</div>
-									))}
-								</div>
-							)}
-						</div>
-					</section>
-
-					<Separator />
-
-					{/* ── Version Info ── */}
-					<section className="space-y-4">
-						<div className="flex items-center gap-2">
-							<Cpu className="w-4 h-4 text-muted-foreground" />
-							<h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-								Version
-							</h2>
-						</div>
-						<div className="rounded-xl border bg-card p-4 space-y-3">
-							{versionInfo ? (
-								<div className="space-y-2 text-sm">
-									{(
-										[
-											["Version", versionInfo.version],
-											["Semver", versionInfo.semver],
-											["Git Hash", versionInfo.git_hash],
-											["Git Tag", versionInfo.git_tag],
-											["Git Date", versionInfo.git_date],
-											[
-												"Build",
-												versionInfo.release_build ? "Release" : "Debug",
-											],
-										] as const
-									).map(([label, value]) => (
-										<div
-											key={label}
-											className="flex items-center justify-between py-1"
-										>
-											<span className="text-muted-foreground">{label}</span>
-											<button
-												type="button"
-												onClick={() => copyToClipboard(value, label)}
-												className={cn(
-													"font-mono text-xs px-2 py-0.5 rounded hover:bg-secondary transition-colors",
-													copiedText === label
-														? "text-emerald-500"
-														: "text-foreground",
-												)}
-											>
-												{value}
-												{copiedText === label && (
-													<span className="ml-1 text-emerald-500">✓</span>
-												)}
-											</button>
-										</div>
-									))}
-									{versionInfo.update_semver && (
-										<div className="flex items-center justify-between py-1">
-											<span className="text-muted-foreground">
-												Update Available
-											</span>
-											<Badge variant="default" className="text-xs">
-												{versionInfo.update_semver}
+						{authStatus?.providers && authStatus.providers.length > 0 && (
+							<div className="space-y-1.5">
+								{authStatus.providers.map((p) => (
+									<div key={p.id} className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2">
+										<div className="flex items-center gap-2">
+											<span className="text-[13px] font-medium text-foreground">{p.display_name}</span>
+											<Badge variant={p.configured ? "secondary" : "outline"} className="text-[9px] h-[18px]">
+												{p.configured ? "configured" : p.status}
 											</Badge>
 										</div>
-									)}
-								</div>
-							) : (
-								<div className="text-sm text-muted-foreground">Loading...</div>
-							)}
-						</div>
-					</section>
-
-					<Separator />
-
-					{/* ── Memory ── */}
-					<section className="space-y-4">
-						<div className="flex items-center gap-2">
-							<Database className="w-4 h-4 text-muted-foreground" />
-							<h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-								Memory
-							</h2>
-						</div>
-						<div className="rounded-xl border bg-card p-4 space-y-3">
-							<div className="text-xs text-muted-foreground">
-								Memory is managed automatically by jcode. Use the Memory page to
-								browse, search, import, and export memories.
+										<span className="text-[11px] text-muted-foreground">{p.method}</span>
+									</div>
+								))}
 							</div>
-							<Button
-								variant="outline"
-								size="sm"
-								className="text-xs"
-								onClick={async () => {
-									try {
-										const stats = await invoke<{
-											project_count: number;
-											global_count: number;
-											total: number;
-											unique_tags: number;
-										}>("get_memory_stats");
-										// Show stats via a simple UI update
-										alert(
-											`Total memories: ${stats.total}\nProject: ${stats.project_count}\nGlobal: ${stats.global_count}\nUnique tags: ${stats.unique_tags}`,
-										);
-									} catch (e) {
-										console.error(e);
-									}
-								}}
-							>
-								Show Memory Stats
-							</Button>
-						</div>
-					</section>
+						)}
+					</SettingsCard>
 
-					<Separator />
-
-					{/* ── Device Pairing ── */}
-					<section className="space-y-4">
-						<div className="flex items-center gap-2">
-							<Smartphone className="w-4 h-4 text-muted-foreground" />
-							<h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-								Paired Devices
-							</h2>
-						</div>
-						<div className="rounded-xl border bg-card p-4 space-y-3">
-							<DeviceManager />
-						</div>
-					</section>
+					{/* Version */}
+					<SettingsCard
+						icon={<Cpu className="w-4 h-4" />}
+						title="Version"
+					>
+						{versionInfo ? (
+							<div className="space-y-1.5">
+								{([["Version", versionInfo.version],
+									["Semver", versionInfo.semver],
+									["Git Hash", versionInfo.git_hash],
+									["Git Tag", versionInfo.git_tag],
+									["Git Date", versionInfo.git_date],
+									["Build", versionInfo.release_build ? "Release" : "Debug"],
+								] as const).map(([label, value]) => (
+									<div key={label} className="flex items-center justify-between py-0.5">
+										<span className="text-[12px] text-muted-foreground">{label}</span>
+										<button type="button" onClick={() => copyToClipboard(value, label)}
+											className={cn("font-mono text-[12px] px-2 py-0.5 rounded-md hover:bg-muted transition-colors",
+												copiedText === label ? "text-emerald-500" : "text-foreground")}>
+											{value}{copiedText === label && <span className="ml-1.5 text-emerald-500">✓</span>}
+										</button>
+									</div>
+								))}
+							</div>
+						) : (
+							<div className="text-[13px] text-muted-foreground animate-pulse">Loading…</div>
+						)}
+					</SettingsCard>
 
 					<div className="h-8" />
 				</div>
@@ -307,127 +136,24 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 	);
 }
 
-function DeviceManager() {
-	const [pairedDevices, setPairedDevices] = useState<
-		Array<{ id: string; name: string; paired_at: string; last_seen: string }>
-	>([]);
-	const [pairingCode, setPairingCode] = useState<string | null>(null);
-	const [message, setMessage] = useState<{
-		text: string;
-		type: "ok" | "error";
-	} | null>(null);
-
-	const refreshDevices = useCallback(async () => {
-		try {
-			const result = await invoke<{
-				devices: Array<{
-					id: string;
-					name: string;
-					paired_at: string;
-					last_seen: string;
-				}>;
-			}>("list_paired_devices");
-			setPairedDevices(result.devices);
-		} catch {
-			// ignore
-		}
-	}, []);
-
-	const generateCode = useCallback(async () => {
-		try {
-			const code = await invoke<string>("generate_pairing_code");
-			setPairingCode(code);
-			setMessage({ text: "Pairing code generated", type: "ok" });
-		} catch (e) {
-			setMessage({ text: String(e), type: "error" });
-		}
-	}, []);
-
-	const revokeDevice = useCallback(
-		async (deviceId: string) => {
-			try {
-				await invoke("revoke_device", { deviceId });
-				setMessage({ text: "Device revoked", type: "ok" });
-				void refreshDevices();
-			} catch (e) {
-				setMessage({ text: String(e), type: "error" });
-			}
-		},
-		[refreshDevices],
-	);
-
-	useEffect(() => {
-		void refreshDevices();
-	}, [refreshDevices]);
-
+function SettingsCard({
+	icon, title, action, children,
+}: {
+	icon: React.ReactNode;
+	title: string;
+	action?: React.ReactNode;
+	children?: React.ReactNode;
+}) {
 	return (
-		<div className="space-y-3">
-			<div className="flex items-center justify-between">
-				<div className="text-xs text-muted-foreground">
-					{pairedDevices.length > 0
-						? `${pairedDevices.length} paired device(s)`
-						: "No devices paired"}
+		<div className="rounded-xl border border-border bg-card overflow-hidden">
+			<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+				<div className="flex items-center gap-2.5">
+					<span className="text-muted-foreground shrink-0">{icon}</span>
+					<h2 className="text-[14px] font-semibold text-foreground">{title}</h2>
 				</div>
-				<Button
-					variant="outline"
-					size="sm"
-					className="text-xs"
-					onClick={generateCode}
-				>
-					Generate Pairing Code
-				</Button>
+				{action}
 			</div>
-
-			{pairingCode && (
-				<div className="rounded-lg border bg-primary/5 px-3 py-2 space-y-1">
-					<div className="text-xs text-muted-foreground">Pairing Code</div>
-					<div className="font-mono text-sm font-bold tracking-wider select-all">
-						{pairingCode}
-					</div>
-					<div className="text-[10px] text-muted-foreground">
-						Enter this code on your mobile device
-					</div>
-				</div>
-			)}
-
-			{message && (
-				<div
-					className={cn(
-						"text-xs px-2 py-1 rounded",
-						message.type === "error"
-							? "bg-red-500/10 text-red-600"
-							: "bg-emerald-500/10 text-emerald-600",
-					)}
-				>
-					{message.text}
-				</div>
-			)}
-
-			{pairedDevices.length > 0 && (
-				<div className="space-y-2">
-					{pairedDevices.map((device) => (
-						<div
-							key={device.id}
-							className="flex items-center justify-between rounded-lg border bg-secondary/50 px-3 py-2"
-						>
-							<div>
-								<div className="text-sm font-medium">{device.name}</div>
-								<div className="text-[10px] text-muted-foreground font-mono">
-									{device.id.slice(0, 12)}…
-								</div>
-							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								className="h-7 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-500/10"
-								onClick={() => revokeDevice(device.id)}
-							>
-								Revoke
-							</Button>
-						</div>
-					))}
-				</div>
-			)}
+			{children && <div className="px-4 py-3">{children}</div>}
 		</div>
 	);
 }
