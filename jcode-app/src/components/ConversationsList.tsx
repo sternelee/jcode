@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import type { SessionInfo } from "@/types";
+import type { SessionInfo, PerSessionData } from "@/types";
 import { AgentAvatar, AgentAvatarStack } from "./AgentAvatar";
 
 export interface SessionPreview {
@@ -30,6 +30,7 @@ interface ConversationsListProps {
 	expandedWorkspaces: Set<string>;
 	selectedConvId?: string;
 	sessionPreviewMap?: Record<string, SessionPreview>;
+	sessionData?: Record<string, PerSessionData>;
 	onToggleWorkspace: (workspaceId: string) => void;
 	onSelectWorkspace: (workspaceId: string) => void;
 	onSelectConversation: (id: string) => void;
@@ -155,6 +156,7 @@ export function ConversationsList({
 	onCreateSession,
 	onRemoveSession,
 	sessionPreviewMap = {},
+	sessionData = {},
 }: ConversationsListProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 
@@ -299,6 +301,7 @@ export function ConversationsList({
 											key={item.id}
 											item={item}
 											isSelected={selectedConvId === item.id}
+											isProcessing={sessionData[item.id]?.isProcessing}
 											onRemove={
 												onRemoveSession && item.avatarType === "single"
 													? () => onRemoveSession(item.id)
@@ -339,11 +342,13 @@ export function ConversationsList({
 function ConvItem({
 	item,
 	isSelected,
+	isProcessing,
 	onSelect,
 	onRemove,
 }: {
 	item: ConversationItemData;
 	isSelected: boolean;
+	isProcessing?: boolean;
 	onSelect: () => void;
 	onRemove?: () => void;
 }) {
@@ -382,7 +387,12 @@ function ConvItem({
 						</span>
 					</div>
 					<div className="mt-0.5 flex items-center gap-2">
-						{item.previewType === "typing" ? (
+						{isProcessing ? (
+							<span className="text-[12px] text-sidebar-primary truncate font-medium flex items-center gap-1.5">
+								<span className="w-1.5 h-1.5 bg-sidebar-primary rounded-full animate-pulse" />
+								{item.previewType === "typing" ? item.preview : "Processing…"}
+							</span>
+						) : item.previewType === "typing" ? (
 							<span className="text-[12px] text-sidebar-primary truncate font-medium">
 								{item.preview}
 							</span>

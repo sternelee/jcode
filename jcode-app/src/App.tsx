@@ -558,35 +558,22 @@ export default function App() {
 	}, [state.sessionData, lastReadAt]);
 
 	const displayMessages = useMemo(() => {
-		if (!selectedConvId) return state.messages;
+		if (!selectedConvId) return [];
 		if (selectedConvId.startsWith("workspace:")) {
 			const workspaceId = selectedConvId.slice("workspace:".length);
 			const virtualSessionId = `workspace:${workspaceId}`;
 			return state.sessionData[virtualSessionId]?.messages || [];
 		}
-		const data = state.sessionData[selectedConvId];
-		if (data) return data.messages;
-		return state.messages;
-	}, [selectedConvId, state.messages, state.sessionData]);
+		return state.sessionData[selectedConvId]?.messages || [];
+	}, [selectedConvId, state.sessionData]);
 
 	const displayIsProcessing = useMemo(() => {
-		if (!selectedConvId) return state.isProcessing;
+		if (!selectedConvId) return false;
 		if (selectedConvId.startsWith("workspace:")) {
 			return respondingRoles.length > 0;
 		}
-		const data = state.sessionData[selectedConvId];
-		if (typeof data?.isProcessing === "boolean") return data.isProcessing;
-		return (
-			workspaceSessions.find((session) => session.sessionId === selectedConvId)
-				?.liveProcessing ?? false
-		);
-	}, [
-		respondingRoles,
-		selectedConvId,
-		state.isProcessing,
-		state.sessionData,
-		workspaceSessions,
-	]);
+		return state.sessionData[selectedConvId]?.isProcessing ?? false;
+	}, [respondingRoles, selectedConvId, state.sessionData]);
 
 	// True while a DM session is in the process of loading its history
 	const displayIsLoading = useMemo(() => {
@@ -640,6 +627,7 @@ export default function App() {
 								expandedWorkspaces={state.expandedWorkspaces}
 								selectedConvId={selectedConvId}
 								sessionPreviewMap={sessionPreviewMap}
+								sessionData={state.sessionData}
 								onToggleWorkspace={toggleWorkspace}
 								onSelectWorkspace={handleWorkspaceChange}
 								onSelectConversation={handleSelectConversation}
