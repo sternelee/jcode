@@ -100,7 +100,7 @@ export function SlashCommandPalette({
 
 	return (
 		<div className="absolute bottom-full left-0 right-0 mb-1.5 bg-card border border-border rounded-xl shadow-xl overflow-hidden z-50 max-h-[320px] overflow-y-auto">
-			<div className="px-3 py-1.5 border-b border-[#F3F4F6] text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+			<div className="px-3 py-1.5 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
 				Commands — ↑↓ navigate · Enter run · Esc close
 			</div>
 			{matches.map((cmd, i) => (
@@ -1124,7 +1124,7 @@ export function AgentSettingsPopover({
 		>
 			{/* Rename session / role */}
 			{onRenameSession && currentSessionId && (
-				<div className="px-4 py-3 border-b border-[#F3F4F6]">
+				<div className="px-4 py-3 border-b border-border">
 					<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
 						{isSwarmRole ? "Role Name" : "Session Title"}
 					</div>
@@ -1153,7 +1153,7 @@ export function AgentSettingsPopover({
 				</div>
 			)}
 			{/* Model row */}
-			<div className="px-4 py-3 border-b border-[#F3F4F6]">
+			<div className="px-4 py-3 border-b border-border">
 				<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
 					Model
 				</div>
@@ -1172,7 +1172,7 @@ export function AgentSettingsPopover({
 			</div>
 
 			{/* Reasoning effort */}
-			<div className="px-4 py-3 border-b border-[#F3F4F6]">
+			<div className="px-4 py-3 border-b border-border">
 				<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
 					Reasoning Effort
 				</div>
@@ -1197,7 +1197,7 @@ export function AgentSettingsPopover({
 			</div>
 
 			{/* Memory toggle */}
-			<div className="px-4 py-3 border-b border-[#F3F4F6]">
+			<div className="px-4 py-3 border-b border-border">
 				<div className="flex items-center justify-between">
 					<div>
 						<div className="text-[13px] font-semibold text-foreground">Memory</div>
@@ -1229,7 +1229,7 @@ export function AgentSettingsPopover({
 				<button
 					type="button"
 					onClick={() => { onClose(); onCompact(); }}
-					className="w-full text-left px-3 py-2 rounded-xl text-[13px] text-foreground hover:bg-[#F3F4F6] transition-colors flex items-center gap-2"
+					className="w-full text-left px-3 py-2 rounded-xl text-[13px] text-foreground hover:bg-muted/50 transition-colors flex items-center gap-2"
 				>
 					<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-muted-foreground">
 						<path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
@@ -1241,7 +1241,7 @@ export function AgentSettingsPopover({
 					type="button"
 					onClick={() => { onClose(); onClearChat(); }}
 					disabled={isProcessing}
-					className="w-full text-left px-3 py-2 rounded-xl text-[13px] text-[#EF4444] hover:bg-[#FEF2F2] transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+					className="w-full text-left px-3 py-2 rounded-xl text-[13px] text-destructive hover:bg-destructive/10 transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
 				>
 					<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
 						<path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />

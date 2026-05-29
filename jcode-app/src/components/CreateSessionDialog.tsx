@@ -161,15 +161,15 @@ export function CreateSessionDialog({
 				/>
 				<div className="relative w-[480px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden">
 					{/* Header */}
-					<div className="px-6 pt-5 pb-3 border-b border-[#F3F4F6]">
+					<div className="px-6 pt-5 pb-3 border-b border-border">
 						<div className="flex items-center justify-between">
-							<h2 className="text-[17px] font-bold text-[#111827]">
+							<h2 className="text-[17px] font-bold text-foreground">
 								New Session
 							</h2>
 							<button
 								type="button"
 								onClick={() => onOpenChange(false)}
-								className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-muted-foreground hover:bg-[#F3F4F6]"
+								className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-muted-foreground hover:bg-muted/50"
 							>
 								<svg
 									viewBox="0 0 20 20"
@@ -184,14 +184,14 @@ export function CreateSessionDialog({
 
 					<div className="px-6 py-4 space-y-5">
 						{/* Mode selector */}
-						<div className="flex rounded-xl bg-[#F3F4F6] p-1">
+						<div className="flex rounded-xl bg-muted/50 p-1">
 							<button
 								type="button"
 								onClick={() => setMode("normal")}
 								className={cn(
 									"flex-1 px-4 py-2 rounded-[10px] text-[13px] font-medium transition-all",
 									mode === "normal"
-										? "bg-card text-[#111827] shadow-sm"
+										? "bg-card text-foreground shadow-sm"
 										: "text-muted-foreground hover:text-foreground",
 								)}
 							>
@@ -212,7 +212,7 @@ export function CreateSessionDialog({
 								className={cn(
 									"flex-1 px-4 py-2 rounded-[10px] text-[13px] font-medium transition-all",
 									mode === "swarm"
-										? "bg-card text-[#111827] shadow-sm"
+										? "bg-card text-foreground shadow-sm"
 										: "text-muted-foreground hover:text-foreground",
 								)}
 							>
@@ -247,7 +247,7 @@ export function CreateSessionDialog({
 											<button
 												type="button"
 												onClick={() => setSelectedWorkspace("")}
-												className="text-muted-foreground hover:text-[#EF4444]"
+												className="text-muted-foreground hover:text-destructive"
 											>
 												<svg
 													viewBox="0 0 20 20"
@@ -380,7 +380,7 @@ export function CreateSessionDialog({
 													<button
 														type="button"
 														onClick={() => onRemoveSwarmMember?.(name)}
-														className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-[#DBEAFE]"
+														className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-primary/10"
 													>
 														<svg
 															viewBox="0 0 12 12"
@@ -410,7 +410,7 @@ export function CreateSessionDialog({
 													className={cn(
 														"text-left px-3 py-2 rounded-xl border text-[12px] transition-all",
 														alreadyAdded
-															? "bg-[#F3F4F6] border-border text-muted-foreground cursor-not-allowed"
+															? "bg-muted/50 border-border text-muted-foreground cursor-not-allowed"
 															: "bg-card border-border hover:border-primary/50 hover:bg-muted/80 text-foreground",
 													)}
 												>
@@ -450,7 +450,7 @@ export function CreateSessionDialog({
 												"px-3 py-1.5 rounded-xl text-[12px] font-medium transition-all",
 												newRoleName.trim()
 													? "bg-primary text-white hover:bg-primary"
-													: "bg-[#F3F4F6] text-muted-foreground cursor-not-allowed",
+													: "bg-muted/50 text-muted-foreground cursor-not-allowed",
 											)}
 										>
 											Add
@@ -462,11 +462,11 @@ export function CreateSessionDialog({
 					</div>
 
 					{/* Footer */}
-					<div className="px-6 py-4 border-t border-[#F3F4F6] flex items-center justify-end gap-2">
+					<div className="px-6 py-4 border-t border-border flex items-center justify-end gap-2">
 						<button
 							type="button"
 							onClick={() => onOpenChange(false)}
-							className="px-4 py-2 rounded-xl text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-[#F3F4F6] transition-all"
+							className="px-4 py-2 rounded-xl text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all"
 						>
 							Cancel
 						</button>
