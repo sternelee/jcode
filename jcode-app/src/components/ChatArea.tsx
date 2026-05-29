@@ -423,110 +423,106 @@ export function ChatArea({
 						</div>
 					</div>
 
-						<div className="flex items-center gap-1 shrink-0">
-							{/* Presence */}
-							{channelMembers.length > 0 && (
-								<div className="hidden md:flex items-center -space-x-1.5 mr-2">
-									{channelMembers.slice(0, 4).map((name) => {
-										const session = sessionByRoleName.get(name);
-										const isOpen =
-											agentPopoverSessionId === session?.sessionId;
-										return (
-											<div
-												key={name}
-												className="relative agent-popover-anchor"
+					<div className="flex items-center gap-1 shrink-0">
+						{/* Presence */}
+						{channelMembers.length > 0 && (
+							<div className="hidden md:flex items-center -space-x-1.5 mr-2">
+								{channelMembers.slice(0, 4).map((name) => {
+									const session = sessionByRoleName.get(name);
+									const isOpen = agentPopoverSessionId === session?.sessionId;
+									return (
+										<div key={name} className="relative agent-popover-anchor">
+											<button
+												type="button"
+												onClick={() => {
+													const sid = session?.sessionId;
+													if (!sid) return;
+													setAgentPopoverSessionId((prev) =>
+														prev === sid ? null : sid,
+													);
+												}}
+												className="relative cursor-pointer hover:scale-110 transition-transform"
+												title={`${name}: ${session?.model || session?.providerModel || "unknown"}`}
 											>
-												<button
-													type="button"
-													onClick={() => {
-														const sid = session?.sessionId;
-														if (!sid) return;
-														setAgentPopoverSessionId((prev) =>
-															prev === sid ? null : sid,
-														);
-													}}
-													className="relative cursor-pointer hover:scale-110 transition-transform"
-													title={`${name}: ${session?.model || session?.providerModel || "unknown"}`}
-												>
-													<AgentAvatar name={name} size="sm" />
-													<span
-														className={cn(
-															"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-card",
-															presenceDot(name),
-														)}
-													/>
-												</button>
-												{isOpen && session && (
-													<div className="absolute top-full left-0 mt-2 w-[240px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50">
-														<div className="px-4 py-3 border-b border-border flex items-center gap-3">
-															<AgentAvatar name={name} size="md" />
-															<div className="min-w-0">
-																<div className="text-[13px] font-semibold text-foreground truncate">
-																	{name}
-																</div>
-																<div className="flex items-center gap-1.5 mt-0.5">
-																	<span
-																		className={cn(
-																			"w-1.5 h-1.5 rounded-full",
-																			session.liveProcessing
-																				? "bg-primary animate-pulse"
-																				: "bg-emerald-500",
-																		)}
-																	/>
-																	<span className="text-[11px] text-muted-foreground">
-																		{session.liveProcessing
-																			? "Thinking…"
-																			: "Online"}
-																	</span>
-																</div>
+												<AgentAvatar name={name} size="sm" />
+												<span
+													className={cn(
+														"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-card",
+														presenceDot(name),
+													)}
+												/>
+											</button>
+											{isOpen && session && (
+												<div className="absolute top-full right-0 mt-2 w-[240px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50">
+													<div className="px-4 py-3 border-b border-border flex items-center gap-3">
+														<AgentAvatar name={name} size="md" />
+														<div className="min-w-0">
+															<div className="text-[13px] font-semibold text-foreground truncate">
+																{name}
 															</div>
-														</div>
-														<div className="px-4 py-3 border-b border-border">
-															<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-																Model
-															</div>
-															<div className="flex items-center justify-between gap-2">
-																<span className="text-[12px] text-foreground truncate">
-																	{session.model ||
-																		session.providerModel ||
-																		"default"}
+															<div className="flex items-center gap-1.5 mt-0.5">
+																<span
+																	className={cn(
+																		"w-1.5 h-1.5 rounded-full",
+																		session.liveProcessing
+																			? "bg-primary animate-pulse"
+																			: "bg-emerald-500",
+																	)}
+																/>
+																<span className="text-[11px] text-muted-foreground">
+																	{session.liveProcessing
+																		? "Thinking…"
+																		: "Online"}
 																</span>
-																<button
-																	type="button"
-																	onClick={() => {
-																		setModelPickerAgentSessionId(
-																			session.sessionId,
-																		);
-																		setAgentPopoverSessionId(null);
-																		setModelPickerOpen(true);
-																	}}
-																	className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-																>
-																	Change
-																</button>
 															</div>
 														</div>
-														<div className="px-4 py-2 flex justify-end">
+													</div>
+													<div className="px-4 py-3 border-b border-border">
+														<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+															Model
+														</div>
+														<div className="flex items-center justify-between gap-2">
+															<span className="text-[12px] text-foreground truncate">
+																{session.model ||
+																	session.providerModel ||
+																	"default"}
+															</span>
 															<button
 																type="button"
-																onClick={() => setAgentPopoverSessionId(null)}
-																className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+																onClick={() => {
+																	setModelPickerAgentSessionId(
+																		session.sessionId,
+																	);
+																	setAgentPopoverSessionId(null);
+																	setModelPickerOpen(true);
+																}}
+																className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
 															>
-																Close
+																Change
 															</button>
 														</div>
 													</div>
-												)}
-											</div>
-										);
-									})}
-									{channelMembers.length > 4 && (
-										<div className="w-6 h-6 rounded-full bg-muted border-2 border-card flex items-center justify-center text-[9px] font-medium text-muted-foreground -ml-1.5">
-											+{channelMembers.length - 4}
+													<div className="px-4 py-2 flex justify-end">
+														<button
+															type="button"
+															onClick={() => setAgentPopoverSessionId(null)}
+															className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+														>
+															Close
+														</button>
+													</div>
+												</div>
+											)}
 										</div>
-									)}
-								</div>
-							)}
+									);
+								})}
+								{channelMembers.length > 4 && (
+									<div className="w-6 h-6 rounded-full bg-muted border-2 border-card flex items-center justify-center text-[9px] font-medium text-muted-foreground -ml-1.5">
+										+{channelMembers.length - 4}
+									</div>
+								)}
+							</div>
+						)}
 						{/* Search */}
 						<button
 							type="button"
