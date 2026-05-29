@@ -128,10 +128,12 @@ export function ChatArea({
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [searchText, setSearchText] = useState("");
 	const [searchMatchIdx, setSearchMatchIdx] = useState(0);
+	const [attachedImages, setAttachedImages] = useState<Array<{ id: string; mediaType: string; base64: string; name: string }>>([]);
 
 	const feedRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const searchInputRef = useRef<HTMLInputElement>(null);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const channelMembers = useMemo(() => {
 		if (_channelMembers) return _channelMembers;
@@ -243,10 +245,31 @@ export function ChatArea({
 	// ── Input handlers ────────────────────────────────────────────────────
 	const handleSend = () => {
 		const content = text.trim();
-		if (!content) return;
-		onSend(content);
+		if (!content && attachedImages.length === 0) return;
+		const images: [string, string][] = attachedImages.map((img) => [img.mediaType, img.base64]);
+		onSend(content, images.length > 0 ? images : undefined);
 		setText("");
 		setMentionQuery(null);
+		setAttachedImages([]);
+	};
+
+	const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const files = e.target.files;
+		if (!files || files.length === 0) return;
+		for (const file of Array.from(files)) {
+			const reader = new FileReader();
+			reader.onload = () => {
+				const result = reader.result as string;
+				const base64 = result.split(",")[1] || "";
+				const mediaType = file.type || "image/png";
+				setAttachedImages((prev) => [
+					...prev,
+					{ id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, mediaType, base64, name: file.name },
+				]);
+			};
+			reader.readAsDataURL(file);
+		}
+		e.target.value = "";
 	};
 
 	const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -366,7 +389,7 @@ export function ChatArea({
 						</div>
 					</div>
 
-					<div className="flex items-center gap-1 shrink-0">
+					<div className="flex items-center gap-1 shrink-0 relative">
 						{/* Presence */}
 						{channelMembers.length > 0 && (
 							<div className="hidden md:flex items-center -space-x-1.5 mr-2">
@@ -858,8 +881,30 @@ export function ChatArea({
 							</div>
 						)}
 
-						{/* Input box */}
-						<div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all duration-150">
+					{/* Input box */}
+					<div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all duration-150">
+						{/* Image previews */}
+						{attachedImages.length > 0 && (
+							<div className="flex gap-2 px-4 pt-3 pb-1 flex-wrap">
+								{attachedImages.map((img) => (
+									<div key={img.id} className="relative group/img shrink-0">
+										<img
+											src={`data:${img.mediaType};base64,${img.base64}`}
+											alt={img.name}
+											className="w-14 h-14 rounded-lg object-cover border border-border"
+										/>
+										<button
+											type="button"
+											onClick={() => setAttachedImages((prev) => prev.filter((i) => i.id !== img.id))}
+											className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-destructive opacity-0 group-hover/img:opacity-100 transition-opacity shadow-sm"
+											title="Remove"
+										>
+											<X className="w-2.5 h-2.5" />
+										</button>
+									</div>
+								))}
+							</div>
+						)}
 							<textarea
 								ref={textareaRef}
 								value={text}
@@ -875,6 +920,7 @@ export function ChatArea({
 									{/* Attach */}
 									<button
 										type="button"
+										onClick={() => fileInputRef.current?.click()}
 										className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted transition-all duration-150"
 										title="Attach"
 									>
@@ -916,10 +962,10 @@ export function ChatArea({
 									<button
 										type="button"
 										onClick={handleSend}
-										disabled={!text.trim()}
+										disabled={!text.trim() && attachedImages.length === 0}
 										className={cn(
 											"inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-150",
-											text.trim()
+											(text.trim() || attachedImages.length > 0)
 												? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
 												: "bg-muted text-muted-foreground/50 cursor-not-allowed",
 										)}
@@ -934,8 +980,17 @@ export function ChatArea({
 				</div>
 			</div>
 
-			{/* Model picker modal */}
-			<ModelPickerModal
+		{/* ── Hidden file input ── */}
+		<input
+			ref={fileInputRef}
+			type="file"
+			accept="image/*"
+			multiple
+			onChange={handleFileSelect}
+			className="hidden"
+		/>
+		{/* Model picker modal */}
+		<ModelPickerModal
 				open={modelPickerOpen}
 				onClose={() => setModelPickerOpen(false)}
 				availableModels={availableModels}
