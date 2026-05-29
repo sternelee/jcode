@@ -1,26 +1,27 @@
-# LobeHub UI Polish — Multiple Iterations
+# LobeHub UI Polish — Complete
 
-Polish all remaining jcode-app UI components to match LobeHub's design language.
+All jcode-app UI components updated to LobeHub design language.
 
-## Current status
+## Done
 - ✅ App.css — LobeHub theme (blue palette, CSS variables)
 - ✅ NavBar — Clean icon bar
-- ✅ ConversationsList — Clean sidebar
-- ✅ ChatArea — LobeHub-style chat
-- ✅ MessageBubble — Clean bubbles
-- ✅ SlashCommands/CreateSessionDialog — Colors fixed
+- ✅ ConversationsList — Clean sidebar with swarm support
+- ✅ ChatArea — LobeHub-style chat with agent roles
+- ✅ MessageBubble — Clean bubbles with role colors
+- ✅ ConfirmDialog — LobeHub style with backdrop blur
+- ✅ StdinInputModal — Refined dialog with icon header
+- ✅ SessionSwitcherDialog — Clean search with status indicators
+- ✅ SettingsPage — Card-based settings layout
+- ✅ ProviderConfigPage — Card-based provider config with auth flow
+- ✅ CreateSessionDialog — Colors fixed to CSS vars
+- ✅ SlashCommands — All colors fixed to CSS vars
+- ✅ AgentAvatar — border-white → border-card for dark mode
+- ✅ SessionSidebar — swarm badge on workspace header
+- ✅ ActivityPanel — Already uses CSS vars
 
-## Todo (each iteration handles 2-3 items)
-1. ConfirmDialog + StdinInputModal → LobeHub style
-2. SessionSwitcherDialog → LobeHub style
-3. SettingsPage → LobeHub settings layout, use new CSS vars
-4. ProviderConfigPage → LobeHub provider config
-5. Swarm UI polish (ChatArea swarm mode, SessionSidebar)
-6. Final visual consistency pass
-
-## Guidelines
-- Use semantic Tailwind v4 classes (bg-card, border-border, text-foreground, bg-primary etc.)
-- No hardcoded hex colors
-- LobeHub look: clean cards, subtle shadows, blue accent, rounded corners
-- Keep all backend logic intact — this is purely visual
-- After each file, run `npx tsc --noEmit` to verify TypeScript
+## Key design decisions
+- All hardcoded hex colors replaced with semantic CSS variables
+- Blue primary (#1677ff) replaces old purple (#7C3AED)
+- Card-based layout with LobeHub-style rounded corners
+- Consistent typography: 14px base, 12px muted, 11px captions
+- Backend integration completely unchanged

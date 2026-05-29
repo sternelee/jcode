@@ -73,13 +73,13 @@ export function AgentAvatarStack({
 					key={m}
 					name={m}
 					size={size}
-					className="border-2 border-white"
+					className="border-2 border-card"
 				/>
 			))}
 			{remaining > 0 && (
 				<div
 					className={cn(
-						"rounded-full flex items-center justify-center bg-muted text-muted-foreground font-medium border-2 border-white shrink-0",
+						"rounded-full flex items-center justify-center bg-muted text-muted-foreground font-medium border-2 border-card shrink-0",
 						SIZE_MAP[size] <= 24 ? "w-5 h-5 text-[7px]" : "w-6 h-6 text-[8px]",
 					)}
 				>

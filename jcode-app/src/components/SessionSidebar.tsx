@@ -428,6 +428,11 @@ export function SessionSidebar({
 										)}
 										<Folder className="w-4 h-4 shrink-0 text-muted-foreground" />
 										<span className="font-semibold truncate">{ws.name}</span>
+										{workspaceModes[ws.id] === "swarm" && (
+											<span className="shrink-0 text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-primary/10 text-primary leading-none">
+												swarm
+											</span>
+										)}
 										<span className="text-[11px] text-muted-foreground ml-auto shrink-0 bg-secondary px-1.5 py-0.5 rounded-full">
 											{ws.filteredSessions.length !== ws.totalSessions
 												? `${ws.filteredSessions.length}/${ws.totalSessions}`
