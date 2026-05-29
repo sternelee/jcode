@@ -11,6 +11,9 @@ import {
 	Pause,
 	Play,
 	AlertCircle,
+	Globe,
+	CheckCircle2,
+	XCircle,
 } from "lucide-react";
 
 interface AmbientStatus {
@@ -28,8 +31,22 @@ interface AmbientStatus {
 	}>;
 }
 
+interface BrowserStatus {
+	backend: string;
+	browser: string;
+	setup_complete: boolean;
+	binary_installed: boolean;
+	responding: boolean;
+	compatible: boolean;
+	missing_actions: string[];
+	ready: boolean;
+}
+
 export function MonitorPage() {
 	const [status, setStatus] = useState<AmbientStatus | null>(null);
+	const [browserStatus, setBrowserStatus] = useState<BrowserStatus | null>(
+		null,
+	);
 	const [loading, setLoading] = useState(false);
 
 	const fetchStatus = async () => {
@@ -41,9 +58,22 @@ export function MonitorPage() {
 		}
 	};
 
+	const fetchBrowserStatus = async () => {
+		try {
+			const result = await invoke<BrowserStatus>("get_browser_status");
+			setBrowserStatus(result);
+		} catch (e) {
+			console.error("Failed to get browser status:", e);
+		}
+	};
+
 	useEffect(() => {
 		fetchStatus();
-		const interval = setInterval(fetchStatus, 5000);
+		fetchBrowserStatus();
+		const interval = setInterval(() => {
+			fetchStatus();
+			fetchBrowserStatus();
+		}, 5000);
 		return () => clearInterval(interval);
 	}, []);
 
@@ -190,6 +220,103 @@ export function MonitorPage() {
 							</div>
 						)}
 					</div>
+
+					{/* Browser status */}
+					{browserStatus && (
+						<div className="rounded-xl border border-border bg-card p-5 space-y-4">
+							<div className="flex items-center justify-between">
+								<div className="flex items-center gap-3">
+									<div
+										className={cn(
+											"w-10 h-10 rounded-xl flex items-center justify-center",
+											browserStatus.ready
+												? "bg-emerald-500/10 text-emerald-500"
+												: "bg-muted text-muted-foreground",
+										)}
+									>
+										<Globe className="w-5 h-5" />
+									</div>
+									<div>
+										<div className="text-[14px] font-semibold text-foreground">
+											Browser
+										</div>
+										<div className="flex items-center gap-1.5 mt-0.5">
+											<span
+												className={cn(
+													"w-2 h-2 rounded-full",
+													browserStatus.ready
+														? "bg-emerald-500"
+														: "bg-amber-500",
+												)}
+											/>
+											<span className="text-[12px] text-muted-foreground">
+												{browserStatus.ready
+													? "Ready"
+													: browserStatus.binary_installed
+														? "Not responding"
+														: "Not installed"}
+											</span>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+								<StatCard
+									label="Backend"
+									value={browserStatus.backend}
+									icon={
+										browserStatus.setup_complete ? (
+											<CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+										) : (
+											<XCircle className="w-3.5 h-3.5 text-destructive" />
+										)
+									}
+								/>
+								<StatCard
+									label="Browser"
+									value={browserStatus.browser}
+									icon={
+										browserStatus.binary_installed ? (
+											<CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+										) : (
+											<XCircle className="w-3.5 h-3.5 text-destructive" />
+										)
+									}
+								/>
+								<StatCard
+									label="Compatible"
+									value={browserStatus.compatible ? "Yes" : "No"}
+									icon={
+										browserStatus.compatible ? (
+											<CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+										) : (
+											<XCircle className="w-3.5 h-3.5 text-destructive" />
+										)
+									}
+								/>
+							</div>
+
+							{browserStatus.missing_actions.length > 0 && (
+								<div className="rounded-lg bg-muted/50 border border-border p-3">
+									<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+										Missing Actions
+									</div>
+									<ul className="space-y-1">
+										{browserStatus.missing_actions.map((action, i) => (
+											<li
+												key={i}
+												className="text-[12px] text-muted-foreground flex items-start gap-2"
+											>
+												<span className="mt-1.5 w-1 h-1 rounded-full bg-muted-foreground shrink-0" />
+												{action}
+											</li>
+											))}
+									</ul>
+								</div>
+							)}
+						</div>
+					)}
 
 					{/* Scheduled items */}
 					{status && status.scheduled_items.length > 0 && (
