@@ -453,7 +453,7 @@ export function ChatArea({
 												/>
 											</button>
 											{isOpen && session && (
-												<div className="absolute top-full right-0 mt-2 w-[240px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50">
+												<div className="absolute top-full -right-10 mt-2 w-[240px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50">
 													<div className="px-4 py-3 border-b border-border flex items-center gap-3">
 														<AgentAvatar name={name} size="md" />
 														<div className="min-w-0">
