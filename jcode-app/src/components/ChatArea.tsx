@@ -261,7 +261,10 @@ export function ChatArea({
 	useEffect(() => {
 		if (!agentPopoverSessionId) return;
 		const onClick = (e: MouseEvent) => {
-			if (agentPopoverRef.current && !agentPopoverRef.current.contains(e.target as Node)) {
+			if (
+				agentPopoverRef.current &&
+				!agentPopoverRef.current.contains(e.target as Node)
+			) {
 				setAgentPopoverSessionId(null);
 			}
 		};
@@ -437,7 +440,9 @@ export function ChatArea({
 											onClick={() => {
 												const sid = session?.sessionId;
 												if (!sid) return;
-												setAgentPopoverSessionId((prev) => (prev === sid ? null : sid));
+												setAgentPopoverSessionId((prev) =>
+													prev === sid ? null : sid,
+												);
 											}}
 											className="relative cursor-pointer hover:scale-110 transition-transform"
 											title={`${name}: ${session?.model || session?.providerModel || "unknown"}`}
@@ -459,64 +464,81 @@ export function ChatArea({
 								)}
 							</div>
 						)}
-					{/* Agent config popover */}
-					{agentPopoverSessionId && (() => {
-						const agentSession = workspaceSessions.find((s) => s.sessionId === agentPopoverSessionId);
-						if (!agentSession || !agentSession.roleName) return null;
-						return (
-							<div ref={agentPopoverRef} className="absolute top-full left-0 mt-2 w-[260px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50">
-								<div className="px-4 py-3 border-b border-border flex items-center gap-3">
-									<AgentAvatar name={agentSession.roleName} size="md" />
-									<div className="min-w-0">
-										<div className="text-[13px] font-semibold text-foreground truncate">
-											{agentSession.roleName}
-										</div>
-										<div className="flex items-center gap-1.5 mt-0.5">
-											<span className={cn("w-1.5 h-1.5 rounded-full", agentSession.liveProcessing ? "bg-primary animate-pulse" : "bg-emerald-500")} />
-											<span className="text-[11px] text-muted-foreground">
-												{agentSession.liveProcessing ? "Thinking…" : "Online"}
-											</span>
-										</div>
-									</div>
-								</div>
-								<div className="px-4 py-3 border-b border-border">
-									<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-										Model
-									</div>
-									<div className="flex items-center justify-between gap-2">
-										<span className="text-[12px] text-foreground truncate">
-											{agentSession.model || agentSession.providerModel || "default"}
-										</span>
-										<button
-											type="button"
-											onClick={() => {
-												setModelPickerAgentSessionId(agentPopoverSessionId);
-												setAgentPopoverSessionId(null);
-												setModelPickerOpen(true);
-											}}
-											className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-										>
-											Change
-										</button>
-									</div>
-								</div>
-								<div className="px-4 py-2 flex justify-end">
-									<button
-										type="button"
-										onClick={() => setAgentPopoverSessionId(null)}
-										className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+						{/* Agent config popover */}
+						{agentPopoverSessionId &&
+							(() => {
+								const agentSession = workspaceSessions.find(
+									(s) => s.sessionId === agentPopoverSessionId,
+								);
+								if (!agentSession || !agentSession.roleName) return null;
+								return (
+									<div
+										ref={agentPopoverRef}
+										className="absolute top-full left-0 mt-2 w-[260px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50"
 									>
-										Close
-									</button>
-								</div>
-							</div>
-						);
-					})()}
-					{/* Search */}
-					<button
-						type="button"
-						onClick={() => setSearchOpen((o) => !o)}
-						title="Search (Cmd+F)"
+										<div className="px-4 py-3 border-b border-border flex items-center gap-3">
+											<AgentAvatar name={agentSession.roleName} size="md" />
+											<div className="min-w-0">
+												<div className="text-[13px] font-semibold text-foreground truncate">
+													{agentSession.roleName}
+												</div>
+												<div className="flex items-center gap-1.5 mt-0.5">
+													<span
+														className={cn(
+															"w-1.5 h-1.5 rounded-full",
+															agentSession.liveProcessing
+																? "bg-primary animate-pulse"
+																: "bg-emerald-500",
+														)}
+													/>
+													<span className="text-[11px] text-muted-foreground">
+														{agentSession.liveProcessing
+															? "Thinking…"
+															: "Online"}
+													</span>
+												</div>
+											</div>
+										</div>
+										<div className="px-4 py-3 border-b border-border">
+											<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+												Model
+											</div>
+											<div className="flex items-center justify-between gap-2">
+												<span className="text-[12px] text-foreground truncate">
+													{agentSession.model ||
+														agentSession.providerModel ||
+														"default"}
+												</span>
+												<button
+													type="button"
+													onClick={() => {
+														setModelPickerAgentSessionId(agentPopoverSessionId);
+														setAgentPopoverSessionId(null);
+														setModelPickerOpen(true);
+													}}
+													className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+												>
+													Change
+												</button>
+											</div>
+										</div>
+										<div className="px-4 py-2 flex justify-end">
+											<button
+												type="button"
+												onClick={() => setAgentPopoverSessionId(null)}
+												className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+											>
+												Close
+											</button>
+										</div>
+									</div>
+								);
+							})()}
+						{/* Search */}
+						<button
+							type="button"
+							onClick={() => setSearchOpen((o) => !o)}
+							title="Search (Cmd+F)"
 							className={cn(
 								"w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150",
 								searchOpen
@@ -1101,14 +1123,14 @@ export function ChatArea({
 				availableModels={availableModels}
 				currentModel={currentModel}
 				currentProfileId={currentProfileId}
-					onSelectModel={(m, pid) => {
-						if (modelPickerAgentSessionId && onSetAgentModel) {
-							onSetAgentModel(modelPickerAgentSessionId, m, pid);
-							setModelPickerAgentSessionId(null);
-						} else {
-							onSetModel?.(m, pid);
-						}
-					}}
+				onSelectModel={(m, pid) => {
+					if (modelPickerAgentSessionId && onSetAgentModel) {
+						onSetAgentModel(modelPickerAgentSessionId, m, pid);
+						setModelPickerAgentSessionId(null);
+					} else {
+						onSetModel?.(m, pid);
+					}
+				}}
 			/>
 		</>
 	);

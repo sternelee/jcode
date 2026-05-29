@@ -119,7 +119,12 @@ function buildNormalItems(
 	sessionPreviewMap: Record<string, SessionPreview>,
 ): ConversationItemData[] {
 	return sessions
-		.filter((s) => workspaceIdFromDir(s.workingDir) === workspaceId)
+		.filter(
+			(s) =>
+				workspaceIdFromDir(s.workingDir) === workspaceId &&
+				!s.roleName &&
+				s.swarmRole !== "coordinator",
+		)
 		.map((session) => {
 			const preview = sessionPreviewMap[session.sessionId];
 			return {
@@ -156,11 +161,12 @@ export function ConversationsList({
 	const workspaceItems = useMemo(() => {
 		const map = new Map<string, ConversationItemData[]>();
 		for (const wsId of workspaces) {
-			const isSwarm = isSwarmWorkspace(sessions, wsId);
-			const items = isSwarm
+			const hasSwarm = isSwarmWorkspace(sessions, wsId);
+			const normalItems = buildNormalItems(sessions, wsId, sessionPreviewMap);
+			const swarmItems = hasSwarm
 				? buildSwarmItems(sessions, wsId, sessionPreviewMap)
-				: buildNormalItems(sessions, wsId, sessionPreviewMap);
-			map.set(wsId, items);
+				: [];
+			map.set(wsId, [...normalItems, ...swarmItems]);
 		}
 		return map;
 	}, [workspaces, sessions, sessionPreviewMap]);
@@ -230,7 +236,6 @@ export function ConversationsList({
 				{filteredWorkspaces.map((wsId) => {
 					const isExpanded = expandedWorkspaces.has(wsId);
 					const isActive = wsId === activeWorkspaceId;
-					const isSwarm = isSwarmWorkspace(sessions, wsId);
 					const items = workspaceItems.get(wsId) || [];
 					const label = workspaceLabel(wsId);
 
@@ -269,29 +274,16 @@ export function ConversationsList({
 									onClick={() => onSelectWorkspace(wsId)}
 									className="flex-1 text-left min-w-0"
 								>
-									<div className="flex items-center gap-2">
-										{isSwarm ? (
-											<span className="text-[13px] font-medium text-sidebar-primary truncate">
-												#{label}
-											</span>
-										) : (
-											<span
-												className={cn(
-													"text-[13px] font-medium truncate",
-													isActive
-														? "text-sidebar-primary"
-														: "text-sidebar-foreground",
-												)}
-											>
-												{label}
-											</span>
+									<span
+										className={cn(
+											"text-[13px] font-medium truncate",
+											isActive
+												? "text-sidebar-primary"
+												: "text-sidebar-foreground",
 										)}
-										{isSwarm && (
-											<span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full bg-sidebar-primary/10 text-sidebar-primary text-[9px] font-medium leading-none">
-												swarm
-											</span>
-										)}
-									</div>
+									>
+										{label}
+									</span>
 								</button>
 
 								<span className="text-[11px] text-sidebar-foreground/40 mr-1">

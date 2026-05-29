@@ -348,27 +348,14 @@ export default function App() {
 	const resolveTargetSessionId = () => {
 		if (selectedConvId?.startsWith("workspace:")) {
 			const workspaceId = selectedConvId.slice("workspace:".length);
-			return findWorkspaceTargetSession(
-				workspaceId,
-				state.workspaceModes[workspaceId] === "swarm",
-			)?.sessionId;
+			return findWorkspaceTargetSession(workspaceId)?.sessionId;
 		}
 		if (selectedConvId) {
-			const session = state.sessions.find(
-				(s) => s.sessionId === selectedConvId,
-			);
-			const wsId = workspaceIdFromDir(session?.workingDir);
-			if (state.workspaceModes[wsId] === "swarm") {
-				return findWorkspaceTargetSession(wsId, true)?.sessionId;
-			}
 			return selectedConvId;
 		}
 		return (
 			state.sessionId ||
-			findWorkspaceTargetSession(
-				currentWorkspaceId,
-				state.workspaceModes[currentWorkspaceId] === "swarm",
-			)?.sessionId
+			findWorkspaceTargetSession(currentWorkspaceId)?.sessionId
 		);
 	};
 
@@ -447,17 +434,15 @@ export default function App() {
 		}
 		// ── End slash command interceptor ─────────────────────────────────────
 
-		// @AgentName routing: in swarm-mode workspace, @mention is preserved
-		// and sent through the coordinator so it stays aware of all delegations.
-		// The coordinator decides whether to use swarm tools (assign_task / dm)
-		// to forward the request. Direct DM bypass is blocked.
-		const currentWsId = currentWorkspaceId;
-		if (targetSessionId && state.workspaceModes[currentWsId] === "swarm") {
+		// @AgentName routing: only when viewing the swarm thread.
+		// In that case @mention is sent through the coordinator so it stays
+		// aware of all delegations. Normal sessions send directly.
+		if (targetSessionId && selectedConvId?.startsWith("workspace:")) {
 			// Allow hyphens, underscores and alphanumerics in role names
 			const mentionMatch = content.match(/^@([a-zA-Z0-9_-]+)(?:\s|$)/);
 			if (mentionMatch) {
 				const mentionedName = mentionMatch[1].toLowerCase();
-				const wsSessions = getWorkspaceSessions(currentWsId);
+				const wsSessions = getWorkspaceSessions(currentWorkspaceId);
 				const agentSession = wsSessions.find(
 					(s) => s.roleName?.toLowerCase() === mentionedName,
 				);
