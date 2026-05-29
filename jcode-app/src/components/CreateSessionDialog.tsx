@@ -134,7 +134,7 @@ export function CreateSessionDialog({
 		<>
 			<div className="fixed inset-0 z-50 flex items-center justify-center">
 				<div className="absolute inset-0 bg-black/30" onClick={() => onOpenChange(false)} />
-				<div className="relative w-[480px] bg-white rounded-2xl shadow-xl border border-[#E5E7EB] overflow-hidden">
+				<div className="relative w-[480px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden">
 					{/* Header */}
 					<div className="px-6 pt-5 pb-3 border-b border-[#F3F4F6]">
 						<div className="flex items-center justify-between">
@@ -142,7 +142,7 @@ export function CreateSessionDialog({
 							<button
 								type="button"
 								onClick={() => onOpenChange(false)}
-								className="w-7 h-7 rounded-lg flex items-center justify-center text-[#9CA3AF] hover:text-[#6B7280] hover:bg-[#F3F4F6]"
+								className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-muted-foreground hover:bg-[#F3F4F6]"
 							>
 								<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
 									<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -160,8 +160,8 @@ export function CreateSessionDialog({
 								className={cn(
 									"flex-1 px-4 py-2 rounded-[10px] text-[13px] font-medium transition-all",
 									mode === "normal"
-										? "bg-white text-[#111827] shadow-sm"
-										: "text-[#6B7280] hover:text-[#374151]",
+										? "bg-card text-[#111827] shadow-sm"
+										: "text-muted-foreground hover:text-foreground",
 								)}
 							>
 								<div className="flex items-center justify-center gap-2">
@@ -177,8 +177,8 @@ export function CreateSessionDialog({
 								className={cn(
 									"flex-1 px-4 py-2 rounded-[10px] text-[13px] font-medium transition-all",
 									mode === "swarm"
-										? "bg-white text-[#111827] shadow-sm"
-										: "text-[#6B7280] hover:text-[#374151]",
+										? "bg-card text-[#111827] shadow-sm"
+										: "text-muted-foreground hover:text-foreground",
 								)}
 							>
 								<div className="flex items-center justify-center gap-2">
@@ -192,22 +192,22 @@ export function CreateSessionDialog({
 
 						{/* Workspace selection */}
 						<div>
-							<label className="block text-[12px] font-semibold text-[#374151] mb-1.5">
+							<label className="block text-[12px] font-semibold text-foreground mb-1.5">
 								Workspace
 							</label>
 							<div className="flex gap-2 flex-wrap">
 								{(workspaces.length === 0 || useCustomWorkspace) && (
-									<div className="flex-1 flex items-center gap-2 h-9 px-3 rounded-xl border border-[#E5E7EB] bg-white"
+									<div className="flex-1 flex items-center gap-2 h-9 px-3 rounded-xl border border-border bg-card"
 										title={selectedWorkspace || "No directory selected"}
 									>
-										<span className="flex-1 text-[13px] text-[#374151] truncate">
+										<span className="flex-1 text-[13px] text-foreground truncate">
 											{selectedWorkspace || "No directory selected"}
 										</span>
 										{selectedWorkspace && (
 											<button
 												type="button"
 												onClick={() => setSelectedWorkspace("")}
-												className="text-[#9CA3AF] hover:text-[#EF4444]"
+												className="text-muted-foreground hover:text-[#EF4444]"
 											>
 												<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
 													<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -228,8 +228,8 @@ export function CreateSessionDialog({
 										className={cn(
 											"px-3 py-1.5 rounded-xl text-[12px] font-medium border transition-all",
 											selectedWorkspace === ws
-												? "bg-[#EFF6FF] border-[#3B82F6] text-[#2563EB]"
-												: "bg-white border-[#E5E7EB] text-[#6B7280] hover:border-[#D1D5DB]",
+												? "bg-primary/10 border-primary/50 text-primary"
+												: "bg-card border-border text-muted-foreground hover:border-muted-foreground/30",
 										)}
 									>
 										{ws === "default"
@@ -256,8 +256,8 @@ export function CreateSessionDialog({
 									className={cn(
 										"px-3 py-1.5 rounded-xl text-[12px] font-medium border transition-all",
 										useCustomWorkspace
-											? "bg-[#EFF6FF] border-[#3B82F6] text-[#2563EB]"
-											: "bg-white border-[#E5E7EB] text-[#6B7280] hover:border-[#D1D5DB]",
+											? "bg-primary/10 border-primary/50 text-primary"
+											: "bg-card border-border text-muted-foreground hover:border-muted-foreground/30",
 									)}
 								>
 									Browse...
@@ -268,16 +268,16 @@ export function CreateSessionDialog({
 						{mode === "normal" ? (
 							/* ── Normal mode: pick model ── */
 							<div>
-								<label className="block text-[12px] font-semibold text-[#374151] mb-1.5">
+								<label className="block text-[12px] font-semibold text-foreground mb-1.5">
 									Model
 								</label>
 								<button
 									type="button"
 									onClick={() => openModelPicker("normal")}
-									className="w-full text-left px-3 py-2 rounded-xl text-[13px] font-medium border transition-all flex items-center justify-between bg-white border-[#E5E7EB] hover:border-[#D1D5DB]"
+									className="w-full text-left px-3 py-2 rounded-xl text-[13px] font-medium border transition-all flex items-center justify-between bg-card border-border hover:border-muted-foreground/30"
 								>
 									<span className="truncate">{customModel || selectedModel}</span>
-									<span className="text-[11px] text-[#9CA3AF] shrink-0 ml-2">Change</span>
+									<span className="text-[11px] text-muted-foreground shrink-0 ml-2">Change</span>
 								</button>
 								<div className="pt-1">
 									<input
@@ -288,7 +288,7 @@ export function CreateSessionDialog({
 											setSelectedProfileId(null);
 										}}
 										placeholder="Or enter custom model ID..."
-										className="w-full h-9 px-3 rounded-xl border border-[#E5E7EB] text-[13px] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/20"
+										className="w-full h-9 px-3 rounded-xl border border-border text-[13px] outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
 									/>
 								</div>
 							</div>
@@ -296,26 +296,26 @@ export function CreateSessionDialog({
 							/* ── Swarm mode: default model + add roles ── */
 							<>
 								<div>
-									<label className="block text-[12px] font-semibold text-[#374151] mb-1.5">
+									<label className="block text-[12px] font-semibold text-foreground mb-1.5">
 										Orchestrator Model
 									</label>
 									<button
 										type="button"
 										onClick={() => openModelPicker("swarm")}
-										className="w-full text-left px-3 py-2 rounded-xl text-[13px] font-medium border transition-all flex items-center justify-between bg-white border-[#E5E7EB] hover:border-[#D1D5DB]"
+										className="w-full text-left px-3 py-2 rounded-xl text-[13px] font-medium border transition-all flex items-center justify-between bg-card border-border hover:border-muted-foreground/30"
 									>
 										<span className="truncate">{swarmModel}</span>
-										<span className="text-[11px] text-[#9CA3AF] shrink-0 ml-2">Change</span>
+										<span className="text-[11px] text-muted-foreground shrink-0 ml-2">Change</span>
 									</button>
 								</div>
 
 								{/* Role presets / current members */}
 								<div>
 									<div className="flex items-center justify-between mb-1.5">
-										<label className="text-[12px] font-semibold text-[#374151]">
+										<label className="text-[12px] font-semibold text-foreground">
 											Team Members
 										</label>
-										<span className="text-[11px] text-[#6B7280]">
+										<span className="text-[11px] text-muted-foreground">
 											{swarmMembers.length} added
 										</span>
 									</div>
@@ -326,7 +326,7 @@ export function CreateSessionDialog({
 											{swarmMembers.map((name) => (
 												<span
 													key={name}
-													className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#EFF6FF] text-[#3B82F6] text-[12px] font-medium"
+													className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-primary/10 text-primary text-[12px] font-medium"
 												>
 													{name}
 													<button
@@ -356,12 +356,12 @@ export function CreateSessionDialog({
 													className={cn(
 														"text-left px-3 py-2 rounded-xl border text-[12px] transition-all",
 														alreadyAdded
-															? "bg-[#F3F4F6] border-[#E5E7EB] text-[#9CA3AF] cursor-not-allowed"
-															: "bg-white border-[#E5E7EB] hover:border-[#3B82F6] hover:bg-[#FAFBFC] text-[#374151]",
+															? "bg-[#F3F4F6] border-border text-muted-foreground cursor-not-allowed"
+															: "bg-card border-border hover:border-primary/50 hover:bg-muted/80 text-foreground",
 													)}
 												>
 													<div className="font-semibold">{role.name}</div>
-													<div className="text-[10px] text-[#9CA3AF] mt-0.5">{role.detail}</div>
+													<div className="text-[10px] text-muted-foreground mt-0.5">{role.detail}</div>
 												</button>
 											);
 										})}
@@ -374,7 +374,7 @@ export function CreateSessionDialog({
 											value={newRoleName}
 											onChange={(e) => setNewRoleName(e.target.value)}
 											placeholder="Custom role name..."
-											className="flex-1 h-9 px-3 rounded-xl border border-[#E5E7EB] text-[13px] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/20"
+											className="flex-1 h-9 px-3 rounded-xl border border-border text-[13px] outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
 											onKeyDown={(e) => {
 												if (e.key === "Enter") handleAddRole();
 											}}
@@ -382,7 +382,7 @@ export function CreateSessionDialog({
 										<button
 											type="button"
 											onClick={() => openModelPicker("role")}
-											className="px-3 py-1.5 rounded-xl text-[12px] font-medium border bg-white border-[#E5E7EB] hover:border-[#D1D5DB] truncate max-w-[120px]"
+											className="px-3 py-1.5 rounded-xl text-[12px] font-medium border bg-card border-border hover:border-muted-foreground/30 truncate max-w-[120px]"
 										>
 											{newRoleModel}
 										</button>
@@ -393,8 +393,8 @@ export function CreateSessionDialog({
 											className={cn(
 												"px-3 py-1.5 rounded-xl text-[12px] font-medium transition-all",
 												newRoleName.trim()
-													? "bg-[#3B82F6] text-white hover:bg-[#2563EB]"
-													: "bg-[#F3F4F6] text-[#9CA3AF] cursor-not-allowed",
+													? "bg-primary text-white hover:bg-primary"
+													: "bg-[#F3F4F6] text-muted-foreground cursor-not-allowed",
 											)}
 										>
 											Add
@@ -410,7 +410,7 @@ export function CreateSessionDialog({
 						<button
 							type="button"
 							onClick={() => onOpenChange(false)}
-							className="px-4 py-2 rounded-xl text-[13px] font-medium text-[#6B7280] hover:text-[#374151] hover:bg-[#F3F4F6] transition-all"
+							className="px-4 py-2 rounded-xl text-[13px] font-medium text-muted-foreground hover:text-foreground hover:bg-[#F3F4F6] transition-all"
 						>
 							Cancel
 						</button>
@@ -420,8 +420,8 @@ export function CreateSessionDialog({
 							className={cn(
 								"px-5 py-2 rounded-xl text-[13px] font-medium transition-all",
 								mode === "normal"
-									? "bg-[#3B82F6] text-white hover:bg-[#2563EB]"
-									: "bg-[#8B5CF6] text-white hover:bg-[#7C3AED]",
+									? "bg-primary text-primary-foreground hover:bg-primary/90"
+									: "bg-primary text-primary-foreground hover:bg-primary/90",
 							)}
 						>
 							{mode === "normal" ? "Start Session" : "Launch Agent Team"}

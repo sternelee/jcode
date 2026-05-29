@@ -11,7 +11,6 @@ export interface SessionPreview {
 
 export interface ConversationItemData {
 	id: string;
-	/** user-facing display name */
 	name: string;
 	avatarType: "single" | "group";
 	members: string[];
@@ -21,30 +20,21 @@ export interface ConversationItemData {
 	typingRole?: string;
 	unread?: number;
 	muted?: boolean;
-	/** Whether any member is currently processing */
 	isActive?: boolean;
 }
 
 interface ConversationsListProps {
-	/** All workspace ids */
 	workspaces: string[];
-	/** All sessions across all workspaces */
 	sessions: SessionInfo[];
-	/** Currently active workspace */
 	activeWorkspaceId: string;
-	/** Which workspaces are expanded */
 	expandedWorkspaces: Set<string>;
-	/** Parent-controlled selection */
 	selectedConvId?: string;
-	/** Last-message preview per sessionId (including workspace virtual ids) */
 	sessionPreviewMap?: Record<string, SessionPreview>;
 	onToggleWorkspace: (workspaceId: string) => void;
 	onSelectWorkspace: (workspaceId: string) => void;
 	onSelectConversation: (id: string) => void;
-	/** callback for selecting individual agent (DM) sessions */
 	onSelectSession?: (session: SessionInfo) => void;
 	onCreateSession: () => void;
-	/** Remove an individual agent session (DM) from the workspace */
 	onRemoveSession?: (sessionId: string) => void;
 }
 
@@ -72,18 +62,13 @@ function formatPreviewTime(ts?: number): string {
 	return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-/** Check if a workspace is in swarm mode */
-function isSwarmWorkspace(
-	sessions: SessionInfo[],
-	workspaceId: string,
-): boolean {
+function isSwarmWorkspace(sessions: SessionInfo[], workspaceId: string): boolean {
 	const wsSessions = sessions.filter(
 		(s) => workspaceIdFromDir(s.workingDir) === workspaceId,
 	);
 	return wsSessions.filter((s) => s.roleName).length >= 2;
 }
 
-/** Build conversation items for a swarm workspace */
 function buildSwarmItems(
 	sessions: SessionInfo[],
 	workspaceId: string,
@@ -94,11 +79,10 @@ function buildSwarmItems(
 		(s) => workspaceIdFromDir(s.workingDir) === workspaceId,
 	);
 	const swarmSessions = wsSessions.filter((s) => s.roleName);
-
-	// 1. Workspace Thread (pinned group chat)
 	const virtualId = `workspace:${workspaceId}`;
 	const preview = sessionPreviewMap[virtualId];
 	const anyResponding = swarmSessions.some((s) => s.liveProcessing);
+
 	items.push({
 		id: virtualId,
 		name: `${workspaceLabel(workspaceId)} Thread`,
@@ -106,9 +90,7 @@ function buildSwarmItems(
 		members: swarmSessions.map((s) => s.roleName!),
 		time: preview
 			? formatPreviewTime(preview.timestamp)
-			: anyResponding
-				? "now"
-				: "",
+			: anyResponding ? "now" : "",
 		preview: anyResponding
 			? swarmSessions
 					.filter((s) => s.liveProcessing)
@@ -123,7 +105,6 @@ function buildSwarmItems(
 		isActive: anyResponding,
 	});
 
-	// 2. Agent DM items
 	for (const session of wsSessions) {
 		if (!session.roleName) continue;
 		const preview = sessionPreviewMap[session.sessionId];
@@ -136,19 +117,14 @@ function buildSwarmItems(
 			time: isProcessing ? "now" : formatPreviewTime(preview?.timestamp) || "—",
 			preview: isProcessing
 				? session.liveStatusDetail || "thinking…"
-				: (preview?.text ??
-						session.detail ??
-						`${session.model || "assistant"} ready`),
+				: (preview?.text ?? session.detail ?? `${session.model || "assistant"} ready`),
 			previewType: isProcessing ? "typing" : "text",
 			typingRole: isProcessing ? session.roleName : undefined,
 			isActive: isProcessing,
 		});
 	}
 
-	// 3. Coordinator (non-role session that orchestrates the swarm)
-	const coordinator = wsSessions.find(
-		(s) => !s.roleName && s.swarmRole === "coordinator",
-	);
+	const coordinator = wsSessions.find((s) => !s.roleName && s.swarmRole === "coordinator");
 	if (coordinator) {
 		const preview = sessionPreviewMap[coordinator.sessionId];
 		const isProcessing = coordinator.liveProcessing;
@@ -170,36 +146,26 @@ function buildSwarmItems(
 	return items;
 }
 
-/** Build conversation items for a normal workspace */
 function buildNormalItems(
 	sessions: SessionInfo[],
 	workspaceId: string,
 	sessionPreviewMap: Record<string, SessionPreview>,
 ): ConversationItemData[] {
-	const items: ConversationItemData[] = [];
-	const wsSessions = sessions.filter(
-		(s) => workspaceIdFromDir(s.workingDir) === workspaceId,
-	);
-
-	for (const session of wsSessions) {
-		const preview = sessionPreviewMap[session.sessionId];
-		items.push({
-			id: session.sessionId,
-			name: session.title || session.model || "Session",
-			avatarType: "single",
-			members: [],
-			time: formatPreviewTime(preview?.timestamp) || "—",
-			preview:
-				preview?.text ??
-				session.detail ??
-				session.model ??
-				"ready",
-			previewType: session.liveProcessing ? "typing" : "text",
-			isActive: session.liveProcessing,
+	return sessions
+		.filter((s) => workspaceIdFromDir(s.workingDir) === workspaceId)
+		.map((session) => {
+			const preview = sessionPreviewMap[session.sessionId];
+			return {
+				id: session.sessionId,
+				name: session.title || session.model || "Session",
+				avatarType: "single" as const,
+				members: [],
+				time: formatPreviewTime(preview?.timestamp) || "—",
+				preview: preview?.text ?? session.detail ?? session.model ?? "ready",
+				previewType: session.liveProcessing ? ("typing" as const) : ("text" as const),
+				isActive: session.liveProcessing,
+			};
 		});
-	}
-
-	return items;
 }
 
 export function ConversationsList({
@@ -218,7 +184,6 @@ export function ConversationsList({
 }: ConversationsListProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 
-	// Group items by workspace
 	const workspaceItems = useMemo(() => {
 		const map = new Map<string, ConversationItemData[]>();
 		for (const wsId of workspaces) {
@@ -231,7 +196,6 @@ export function ConversationsList({
 		return map;
 	}, [workspaces, sessions, sessionPreviewMap]);
 
-	// Filter by search
 	const filteredWorkspaces = useMemo(() => {
 		if (!searchQuery.trim()) return workspaces;
 		const q = searchQuery.toLowerCase();
@@ -240,60 +204,52 @@ export function ConversationsList({
 			const items = workspaceItems.get(wsId) || [];
 			return (
 				label.includes(q) ||
-				items.some(
-					(i) =>
-						i.name.toLowerCase().includes(q) ||
-						i.preview.toLowerCase().includes(q),
-				)
+				items.some((i) => i.name.toLowerCase().includes(q) || i.preview.toLowerCase().includes(q))
 			);
 		});
 	}, [workspaces, workspaceItems, searchQuery]);
 
 	return (
-		<div className="w-[300px] min-w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col overflow-hidden">
+		<div className="w-[280px] min-w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col overflow-hidden">
 			{/* Header */}
-			<div className="px-4 pt-4 pb-3">
-				<div className="flex items-center justify-between mb-3">
-					<h1 className="text-[15px] font-bold text-foreground tracking-tight">
+			<div className="px-4 pt-4 pb-3 space-y-3">
+				<div className="flex items-center justify-between">
+					<h1 className="text-[15px] font-semibold text-sidebar-foreground tracking-tight">
 						Workspaces
 					</h1>
 					<button
 						type="button"
 						onClick={onCreateSession}
-						className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors"
+						className="w-7 h-7 rounded-lg flex items-center justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-all duration-150"
 						title="New conversation"
 					>
-						<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-							<path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+						<svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+							<path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z" />
 						</svg>
 					</button>
 				</div>
 
-				{/* Search bar */}
+				{/* Search */}
 				<div className="relative">
 					<svg
-						viewBox="0 0 20 20"
+						viewBox="0 0 16 16"
 						fill="currentColor"
-						className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"
+						className="w-3.5 h-3.5 text-sidebar-foreground/40 absolute left-2.5 top-1/2 -translate-y-1/2"
 					>
-						<path
-							fillRule="evenodd"
-							d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
-							clipRule="evenodd"
-						/>
+						<path fillRule="evenodd" d="M11.5 7.5a4 4 0 11-8 0 4 4 0 018 0zm-.82 4.74a5.5 5.5 0 111.06-1.06l2.79 2.79a.75.75 0 11-1.06 1.06l-2.79-2.79z" clipRule="evenodd" />
 					</svg>
 					<input
 						type="text"
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
-						placeholder="Search workspaces..."
-						className="w-full h-9 pl-9 pr-3 rounded-xl bg-background border border-border text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+						placeholder="Search..."
+						className="w-full h-8 pl-8 pr-3 rounded-lg bg-sidebar-accent/50 border-0 text-[13px] text-sidebar-foreground placeholder-sidebar-foreground/40 outline-none focus:ring-1 focus:ring-sidebar-ring/30 transition-all"
 					/>
 				</div>
 			</div>
 
 			{/* Workspace list */}
-			<div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
+			<div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
 				{filteredWorkspaces.map((wsId) => {
 					const isExpanded = expandedWorkspaces.has(wsId);
 					const isActive = wsId === activeWorkspaceId;
@@ -302,39 +258,30 @@ export function ConversationsList({
 					const label = workspaceLabel(wsId);
 
 					return (
-						<div key={wsId} className="rounded-xl overflow-hidden">
-							{/* Workspace header — clickable to switch workspace */}
+						<div key={wsId}>
+							{/* Workspace header */}
 							<div
 								className={cn(
-									"flex items-center gap-1 px-2 py-2 rounded-xl transition-colors",
+									"flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all duration-150 group/ws",
 									isActive
-										? "bg-primary/10"
-										: "hover:bg-muted",
+										? "bg-sidebar-accent"
+										: "hover:bg-sidebar-accent/50",
 								)}
 							>
-								{/* Expand/collapse toggle */}
 								<button
 									type="button"
 									onClick={() => onToggleWorkspace(wsId)}
-									className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-muted-foreground hover:bg-border/50 transition-colors shrink-0"
+									className="w-5 h-5 rounded flex items-center justify-center text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors shrink-0"
 								>
 									<svg
-										viewBox="0 0 20 20"
+										viewBox="0 0 16 16"
 										fill="currentColor"
-										className={cn(
-											"w-4 h-4 transition-transform",
-											isExpanded && "rotate-90",
-										)}
+										className={cn("w-3.5 h-3.5 transition-transform duration-150", isExpanded && "rotate-90")}
 									>
-										<path
-											fillRule="evenodd"
-											d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
-											clipRule="evenodd"
-										/>
+										<path fillRule="evenodd" d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z" clipRule="evenodd" />
 									</svg>
 								</button>
 
-								{/* Workspace name — click to switch */}
 								<button
 									type="button"
 									onClick={() => onSelectWorkspace(wsId)}
@@ -342,70 +289,48 @@ export function ConversationsList({
 								>
 									<div className="flex items-center gap-2">
 										{isSwarm ? (
-											<span className="text-[13px] font-semibold text-primary truncate">
-												#{label}
-											</span>
+											<span className="text-[13px] font-medium text-sidebar-primary truncate">#{label}</span>
 										) : (
-											<span
-												className={cn(
-													"text-[13px] font-semibold truncate",
-													isActive
-														? "text-primary"
-														: "text-foreground",
-												)}
-											>
+											<span className={cn("text-[13px] font-medium truncate", isActive ? "text-sidebar-primary" : "text-sidebar-foreground")}>
 												{label}
 											</span>
 										)}
 										{isSwarm && (
-											<span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium">
+											<span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full bg-sidebar-primary/10 text-sidebar-primary text-[9px] font-medium leading-none">
 												swarm
 											</span>
 										)}
 									</div>
 								</button>
 
-								{/* Session count */}
-								<span className="text-[11px] text-muted-foreground shrink-0">
-									{items.length}
-								</span>
+								<span className="text-[11px] text-sidebar-foreground/40 mr-1">{items.length}</span>
 							</div>
 
 							{/* Expanded items */}
 							{isExpanded && (
-								<div className="pl-4 pr-1 pb-1 space-y-0.5">
+								<div className="pl-3 pr-1 mt-0.5 space-y-0.5">
 									{isSwarm && (
-										<div className="px-2 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+										<div className="px-2 py-1 text-[10px] font-medium text-sidebar-foreground/40 uppercase tracking-wider">
 											Agents
 										</div>
 									)}
 									{items.map((item) => (
-										<ConversationItem
+										<ConvItem
 											key={item.id}
 											item={item}
 											isSelected={selectedConvId === item.id}
-											onRemove={
-												onRemoveSession && item.avatarType === "single"
-													? () => onRemoveSession(item.id)
-													: undefined
-											}
+											onRemove={onRemoveSession && item.avatarType === "single" ? () => onRemoveSession(item.id) : undefined}
 											onSelect={() => {
 												onSelectConversation(item.id);
 												if (onSelectSession) {
-													const session = sessions.find(
-														(s) => s.sessionId === item.id,
-													);
-													if (session) {
-														onSelectSession(session);
-													}
+													const session = sessions.find((s) => s.sessionId === item.id);
+													if (session) onSelectSession(session);
 												}
 											}}
 										/>
 									))}
 									{items.length === 0 && (
-										<div className="px-3 py-2 text-[12px] text-muted-foreground">
-											No sessions
-										</div>
+										<div className="px-3 py-3 text-[12px] text-sidebar-foreground/40 text-center">No sessions</div>
 									)}
 								</div>
 							)}
@@ -414,10 +339,8 @@ export function ConversationsList({
 				})}
 
 				{filteredWorkspaces.length === 0 && (
-					<div className="text-center text-[12px] text-muted-foreground py-8">
-						{searchQuery
-							? "No matching workspaces"
-							: "No workspaces — create one to get started"}
+					<div className="text-center text-[12px] text-sidebar-foreground/40 py-8">
+						{searchQuery ? "No matching workspaces" : "No workspaces yet"}
 					</div>
 				)}
 			</div>
@@ -425,7 +348,7 @@ export function ConversationsList({
 	);
 }
 
-function ConversationItem({
+function ConvItem({
 	item,
 	isSelected,
 	onSelect,
@@ -442,48 +365,39 @@ function ConversationItem({
 				type="button"
 				onClick={onSelect}
 				className={cn(
-					"w-full text-left px-3 py-2 rounded-xl transition-all flex items-start gap-3",
+					"w-full text-left px-2.5 py-2 rounded-lg transition-all duration-150 flex items-start gap-2.5",
 					isSelected
-						? "bg-primary/10"
-						: "hover:bg-muted",
+						? "bg-sidebar-accent/80"
+						: "hover:bg-sidebar-accent/40",
 				)}
 			>
 				{/* Avatar */}
 				<div className="mt-0.5 shrink-0">
 					{item.avatarType === "group" ? (
-						<AgentAvatarStack members={item.members} size="md" />
+						<AgentAvatarStack members={item.members} size="sm" />
 					) : (
-						<AgentAvatar name={item.name} size="md" />
+						<AgentAvatar name={item.name} size="sm" />
 					)}
 				</div>
 
 				{/* Content */}
-				<div className="flex-1 min-w-0 pr-6">
+				<div className="flex-1 min-w-0">
 					<div className="flex items-center justify-between gap-2">
-						<span
-							className={cn(
-								"text-[13px] font-semibold truncate",
-								isSelected ? "text-primary" : "text-foreground",
-							)}
-						>
+						<span className={cn("text-[13px] font-medium truncate", isSelected ? "text-sidebar-primary" : "text-sidebar-foreground")}>
 							{item.name}
 						</span>
-						<span className="text-[11px] text-muted-foreground shrink-0">
-							{item.time}
-						</span>
+						<span className="text-[11px] text-sidebar-foreground/40 shrink-0">{item.time}</span>
 					</div>
 					<div className="mt-0.5 flex items-center gap-2">
 						{item.previewType === "typing" ? (
-							<span className="text-[12px] text-transparent bg-clip-text bg-gradient-to-r from-primary to-primary/60 truncate font-medium">
+							<span className="text-[12px] text-sidebar-primary truncate font-medium">
 								{item.preview}
 							</span>
 						) : (
-							<span className="text-[12px] text-muted-foreground truncate">
-								{item.preview}
-							</span>
+							<span className="text-[12px] text-sidebar-foreground/50 truncate">{item.preview}</span>
 						)}
 						{item.unread && item.unread > 0 ? (
-							<span className="ml-auto w-5 h-5 bg-primary text-white text-[9px] font-bold rounded-full flex items-center justify-center shrink-0">
+							<span className="ml-auto min-w-[18px] h-[18px] bg-sidebar-primary text-sidebar-primary-fg text-[9px] font-bold rounded-full flex items-center justify-center px-1 shrink-0">
 								{item.unread > 99 ? "99+" : item.unread}
 							</span>
 						) : null}
@@ -491,19 +405,16 @@ function ConversationItem({
 				</div>
 			</button>
 
-			{/* Remove button — only for DMs, visible on hover */}
-			{onRemove && item.avatarType === "single" && (
+			{/* X button */}
+			{onRemove && (
 				<button
 					type="button"
-					onClick={(e) => {
-						e.stopPropagation();
-						onRemove();
-					}}
-					className="absolute right-1 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive transition-colors opacity-0 group-hover/item:opacity-100 shadow-sm"
-					title={`Remove ${item.name}`}
+					onClick={(e) => { e.stopPropagation(); onRemove(); }}
+					className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-sidebar border border-sidebar-border flex items-center justify-center text-sidebar-foreground/30 hover:text-destructive hover:border-destructive/50 transition-all duration-150 opacity-0 group-hover/item:opacity-100"
+					title="Remove"
 				>
-					<svg viewBox="0 0 12 12" fill="currentColor" className="w-2.5 h-2.5">
-						<path d="M2.22 2.22a.75.75 0 011.06 0L6 4.94l2.72-2.72a.75.75 0 111.06 1.06L7.06 6l2.72 2.72a.75.75 0 11-1.06 1.06L6 7.06l-2.72 2.72a.75.75 0 01-1.06-1.06L4.94 6 2.22 3.28a.75.75 0 010-1.06z" />
+					<svg viewBox="0 0 10 10" fill="currentColor" className="w-2.5 h-2.5">
+						<path d="M2.22 2.22a.75.75 0 011.06 0L5 3.94l1.72-1.72a.75.75 0 111.06 1.06L6.06 5l1.72 1.72a.75.75 0 11-1.06 1.06L5 6.06l-1.72 1.72a.75.75 0 01-1.06-1.06L3.94 5 2.22 3.28a.75.75 0 010-1.06z" />
 					</svg>
 				</button>
 			)}

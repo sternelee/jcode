@@ -99,8 +99,8 @@ export function SlashCommandPalette({
 	if (matches.length === 0) return null;
 
 	return (
-		<div className="absolute bottom-full left-0 right-0 mb-1.5 bg-white border border-[#E5E7EB] rounded-xl shadow-xl overflow-hidden z-50 max-h-[320px] overflow-y-auto">
-			<div className="px-3 py-1.5 border-b border-[#F3F4F6] text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider">
+		<div className="absolute bottom-full left-0 right-0 mb-1.5 bg-card border border-border rounded-xl shadow-xl overflow-hidden z-50 max-h-[320px] overflow-y-auto">
+			<div className="px-3 py-1.5 border-b border-[#F3F4F6] text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
 				Commands — ↑↓ navigate · Enter run · Esc close
 			</div>
 			{matches.map((cmd, i) => (
@@ -114,7 +114,7 @@ export function SlashCommandPalette({
 					onMouseEnter={() => onIndexChange(i)}
 					className={cn(
 						"w-full text-left px-3 py-2.5 flex items-center gap-3 text-[13px] transition-colors",
-						i === selectedIndex ? "bg-[#EFF6FF]" : "hover:bg-[#F9FAFB]",
+						i === selectedIndex ? "bg-primary/10" : "hover:bg-muted/50",
 					)}
 				>
 					<div className="flex-1 min-w-0">
@@ -122,25 +122,25 @@ export function SlashCommandPalette({
 							<span
 								className={cn(
 									"font-mono font-semibold text-[12px]",
-									i === selectedIndex ? "text-[#2563EB]" : "text-[#374151]",
+									i === selectedIndex ? "text-primary" : "text-foreground",
 								)}
 							>
 								{cmd.name}
 								{cmd.args && (
-									<span className="text-[#9CA3AF] font-normal ml-1">{cmd.args}</span>
+									<span className="text-muted-foreground font-normal ml-1">{cmd.args}</span>
 								)}
 							</span>
 							{cmd.frontend && (
-								<span className="text-[9px] font-bold px-1 py-0.5 rounded bg-[#EFF6FF] text-[#3B82F6]">
+								<span className="text-[9px] font-bold px-1 py-0.5 rounded bg-primary/10 text-primary">
 									UI
 								</span>
 							)}
 						</div>
-						<div className="text-[11px] text-[#6B7280] mt-0.5 truncate">
+						<div className="text-[11px] text-muted-foreground mt-0.5 truncate">
 							{cmd.description}
 						</div>
 					</div>
-					<svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-[#D1D5DB] shrink-0">
+					<svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-muted-foreground/30 shrink-0">
 						<path fillRule="evenodd" d="M2 8a.75.75 0 01.75-.75h8.69L8.22 4.03a.75.75 0 011.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 01-1.06-1.06l3.22-3.22H2.75A.75.75 0 012 8z" clipRule="evenodd" />
 					</svg>
 				</button>
@@ -1120,12 +1120,12 @@ export function AgentSettingsPopover({
 	return (
 		<div
 			ref={ref}
-			className="absolute top-full right-0 mt-1 w-[300px] bg-white rounded-2xl shadow-xl border border-[#E5E7EB] overflow-hidden z-50"
+			className="absolute top-full right-0 mt-1 w-[300px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50"
 		>
 			{/* Rename session / role */}
 			{onRenameSession && currentSessionId && (
 				<div className="px-4 py-3 border-b border-[#F3F4F6]">
-					<div className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">
+					<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
 						{isSwarmRole ? "Role Name" : "Session Title"}
 					</div>
 					<div className="flex gap-2">
@@ -1134,7 +1134,7 @@ export function AgentSettingsPopover({
 							value={renameDraft}
 							onChange={(e) => setRenameDraft(e.target.value)}
 							placeholder={isSwarmRole ? "Role name" : "Session title"}
-							className="flex-1 h-8 px-3 rounded-xl bg-[#F9FAFB] border border-[#E5E7EB] text-[12px] text-[#374151] placeholder-[#9CA3AF] outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6]/20 transition-all"
+							className="flex-1 h-8 px-3 rounded-xl bg-muted/50 border border-border text-[12px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
 						/>
 						<button
 							type="button"
@@ -1145,7 +1145,7 @@ export function AgentSettingsPopover({
 									onRenameSession(currentSessionId, trimmed);
 								}
 							}}
-							className="h-8 px-3 rounded-xl text-[12px] font-medium bg-[#3B82F6] text-white hover:bg-[#2563EB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+							className="h-8 px-3 rounded-xl text-[12px] font-medium bg-primary text-white hover:bg-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
 						>
 							Save
 						</button>
@@ -1154,18 +1154,18 @@ export function AgentSettingsPopover({
 			)}
 			{/* Model row */}
 			<div className="px-4 py-3 border-b border-[#F3F4F6]">
-				<div className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">
+				<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
 					Model
 				</div>
 				<button
 					type="button"
 					onClick={() => { onClose(); onOpenModelPicker(); }}
-					className="w-full text-left px-3 py-2 rounded-xl bg-[#F9FAFB] border border-[#E5E7EB] hover:border-[#3B82F6] hover:bg-[#EFF6FF] transition-all flex items-center gap-2 group"
+					className="w-full text-left px-3 py-2 rounded-xl bg-muted/50 border border-border hover:border-primary/50 hover:bg-primary/10 transition-all flex items-center gap-2 group"
 				>
-					<span className="flex-1 font-mono text-[12px] text-[#374151] truncate">
+					<span className="flex-1 font-mono text-[12px] text-foreground truncate">
 						{currentModel || "default"}
 					</span>
-					<svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-[#9CA3AF] group-hover:text-[#3B82F6] shrink-0">
+					<svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary shrink-0">
 						<path fillRule="evenodd" d="M6.22 4.22a.75.75 0 011.06 0l3.25 3.25a.75.75 0 010 1.06l-3.25 3.25a.75.75 0 01-1.06-1.06L9 8 6.22 5.28a.75.75 0 010-1.06z" clipRule="evenodd" />
 					</svg>
 				</button>
@@ -1173,7 +1173,7 @@ export function AgentSettingsPopover({
 
 			{/* Reasoning effort */}
 			<div className="px-4 py-3 border-b border-[#F3F4F6]">
-				<div className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-2">
+				<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
 					Reasoning Effort
 				</div>
 				<div className="flex gap-1.5">
@@ -1185,8 +1185,8 @@ export function AgentSettingsPopover({
 							className={cn(
 								"flex-1 py-2 rounded-xl text-[12px] font-medium transition-all border flex flex-col items-center gap-1",
 								(reasoningEffort ?? "medium") === value
-									? "bg-[#EFF6FF] border-[#3B82F6] text-[#2563EB]"
-									: "bg-white border-[#E5E7EB] text-[#6B7280] hover:border-[#D1D5DB]",
+									? "bg-primary/10 border-primary/50 text-primary"
+									: "bg-card border-border text-muted-foreground hover:border-muted-foreground/30",
 							)}
 						>
 							<span className="text-base">{icon}</span>
@@ -1200,20 +1200,20 @@ export function AgentSettingsPopover({
 			<div className="px-4 py-3 border-b border-[#F3F4F6]">
 				<div className="flex items-center justify-between">
 					<div>
-						<div className="text-[13px] font-semibold text-[#374151]">Memory</div>
-						<div className="text-[11px] text-[#9CA3AF]">Project-scoped long-term memory</div>
+						<div className="text-[13px] font-semibold text-foreground">Memory</div>
+						<div className="text-[11px] text-muted-foreground">Project-scoped long-term memory</div>
 					</div>
 					<button
 						type="button"
 						onClick={onToggleMemory}
 						className={cn(
 							"w-10 h-6 rounded-full transition-all relative",
-							memoryEnabled ? "bg-[#3B82F6]" : "bg-[#D1D5DB]",
+							memoryEnabled ? "bg-primary" : "bg-muted-foreground/30",
 						)}
 					>
 						<span
 							className={cn(
-								"absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-all",
+								"absolute top-0.5 w-5 h-5 bg-card rounded-full shadow-sm transition-all",
 								memoryEnabled ? "right-0.5" : "left-0.5",
 							)}
 						/>
@@ -1223,19 +1223,19 @@ export function AgentSettingsPopover({
 
 			{/* Actions */}
 			<div className="px-4 py-3 flex flex-col gap-1.5">
-				<div className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mb-1">
+				<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
 					Session Actions
 				</div>
 				<button
 					type="button"
 					onClick={() => { onClose(); onCompact(); }}
-					className="w-full text-left px-3 py-2 rounded-xl text-[13px] text-[#374151] hover:bg-[#F3F4F6] transition-colors flex items-center gap-2"
+					className="w-full text-left px-3 py-2 rounded-xl text-[13px] text-foreground hover:bg-[#F3F4F6] transition-colors flex items-center gap-2"
 				>
-					<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-[#9CA3AF]">
+					<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-muted-foreground">
 						<path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
 					</svg>
 					Compact context
-					<span className="ml-auto text-[11px] font-mono text-[#9CA3AF]">/compact</span>
+					<span className="ml-auto text-[11px] font-mono text-muted-foreground">/compact</span>
 				</button>
 				<button
 					type="button"
@@ -1247,7 +1247,7 @@ export function AgentSettingsPopover({
 						<path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
 					</svg>
 					Clear chat
-					<span className="ml-auto text-[11px] font-mono text-[#9CA3AF]">/clear</span>
+					<span className="ml-auto text-[11px] font-mono text-muted-foreground">/clear</span>
 				</button>
 			</div>
 		</div>

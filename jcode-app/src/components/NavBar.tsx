@@ -1,5 +1,4 @@
 import { cn } from "@/lib/utils";
-import { AgentAvatar } from "./AgentAvatar";
 
 interface NavBarProps {
 	activeTab: string;
@@ -9,13 +8,12 @@ interface NavBarProps {
 }
 
 const navItems = [
-	{ id: "chat", icon: ChatIcon },
-	{ id: "network", icon: NetworkIcon },
-	{ id: "media", icon: MediaIcon },
-	{ id: "tasks", icon: TasksIcon },
-	{ id: "monitor", icon: MonitorIcon },
-	{ id: "team", icon: TeamIcon },
-	{ id: "settings", icon: SettingsIcon },
+	{ id: "chat", icon: MessageIcon, label: "Chat" },
+	{ id: "network", icon: NetworkIcon, label: "Network" },
+	{ id: "media", icon: ImageIcon, label: "Media" },
+	{ id: "tasks", icon: CheckIcon, label: "Tasks" },
+	{ id: "monitor", icon: EyeIcon, label: "Monitor" },
+	{ id: "team", icon: UsersIcon, label: "Swarm" },
 ];
 
 export function NavBar({
@@ -25,188 +23,163 @@ export function NavBar({
 	onLogout,
 }: NavBarProps) {
 	return (
-		<nav className="w-[60px] min-w-[60px] bg-sidebar border-r border-sidebar-border flex flex-col items-center py-3 select-none">
-			{/* User avatar */}
-			<div className="relative mb-6">
-				<AgentAvatar name="You" size="lg" />
-				<span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full" />
+		<nav className="w-[56px] min-w-[56px] bg-sidebar border-r border-sidebar-border flex flex-col items-center py-3 select-none gap-1">
+			{/* Logo / avatar */}
+			<div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center mb-3 shadow-sm">
+				<span className="text-white text-[15px] font-bold">J</span>
 			</div>
 
-			{/* Navigation icons */}
-			<div className="flex flex-col items-center gap-1 flex-1">
-				{navItems.map((item) => (
-					<button
-						key={item.id}
-						type="button"
-						onClick={() => onTabChange(item.id)}
-						className={cn(
-							"relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors",
-							activeTab === item.id
-								? "bg-sidebar-accent text-sidebar-primary"
-								: "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-						)}
-						title={item.id}
-					>
-						<item.icon className="w-5 h-5" />
-						{item.id === "chat" && unreadCount > 0 && (
-							<span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
-								{unreadCount > 9 ? "9+" : unreadCount}
-							</span>
-						)}
-					</button>
-				))}
+			{/* Nav items */}
+			<div className="flex flex-col items-center gap-0.5 flex-1">
+				{navItems.map((item) => {
+					const isActive = activeTab === item.id;
+					return (
+						<button
+							key={item.id}
+							type="button"
+							onClick={() => onTabChange(item.id)}
+							className={cn(
+								"relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-150",
+								isActive
+									? "bg-sidebar-accent text-sidebar-primary shadow-sm"
+									: "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+							)}
+							title={item.label}
+						>
+							<item.icon className="w-[20px] h-[20px]" />
+							{item.id === "chat" && unreadCount > 0 && (
+								<span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm">
+									{unreadCount > 9 ? "9+" : unreadCount}
+								</span>
+							)}
+						</button>
+					);
+				})}
 			</div>
 
-			{/* Logout */}
+			{/* Settings */}
 			<button
 				type="button"
-				onClick={onLogout}
-				className="w-10 h-10 rounded-xl flex items-center justify-center text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
-				title="Logout / Collapse"
+				onClick={() => onTabChange("settings")}
+				className={cn(
+					"w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-150",
+					activeTab === "settings"
+						? "bg-sidebar-accent text-sidebar-primary shadow-sm"
+						: "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+				)}
+				title="Settings"
 			>
-				<LogoutIcon className="w-5 h-5" />
+				<SettingsIcon className="w-[20px] h-[20px]" />
 			</button>
+
+			{/* Logout / collapse — bottom */}
+			{onLogout && (
+				<button
+					type="button"
+					onClick={onLogout}
+					className="w-10 h-10 rounded-xl flex items-center justify-center text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-all duration-150"
+					title="Logout"
+				>
+					<LogoutIcon className="w-[18px] h-[18px]" />
+				</button>
+			)}
 		</nav>
 	);
 }
 
-// Inline SVG icon components
-function ChatIcon({ className }: { className?: string }) {
+/* ── Icons ─────────────────────────────────────────────────────────────── */
+
+function MessageIcon({ className }: { className?: string }) {
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={className}
-		>
-			<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+		<svg viewBox="0 0 22 22" fill="none" className={className}>
+			<path
+				d="M2 4a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2H7.5l-3.75 3V4z"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinejoin="round"
+			/>
 		</svg>
 	);
 }
 
 function NetworkIcon({ className }: { className?: string }) {
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={className}
-		>
-			<circle cx="12" cy="12" r="10" />
-			<circle cx="12" cy="12" r="4" />
-			<circle cx="12" cy="12" r="1" fill="currentColor" />
-			<path d="M12 2v4M22 12h-4M12 18v4M4 12H2" />
-			<path d="M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M19.07 4.93l-2.83 2.83M7.76 16.24l-2.83 2.83" />
+		<svg viewBox="0 0 22 22" fill="none" className={className}>
+			<circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.6" />
+			<circle cx="11" cy="11" r="3" stroke="currentColor" strokeWidth="1.6" />
+			<path d="M11 3v3M19 11h-3M11 16v3M6 11H3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
 		</svg>
 	);
 }
 
-function MediaIcon({ className }: { className?: string }) {
+function ImageIcon({ className }: { className?: string }) {
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={className}
-		>
-			<polygon points="5 3 19 12 5 21 5 3" />
+		<svg viewBox="0 0 22 22" fill="none" className={className}>
+			<rect x="2" y="3" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" />
+			<circle cx="7.5" cy="8.5" r="1.5" fill="currentColor" />
+			<path d="M2 16l4-4 3 3 3-4 5 5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
 		</svg>
 	);
 }
 
-function TasksIcon({ className }: { className?: string }) {
+function CheckIcon({ className }: { className?: string }) {
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={className}
-		>
-			<rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-			<path d="M9 12l2 2 4-4" />
+		<svg viewBox="0 0 22 22" fill="none" className={className}>
+			<rect x="3" y="3" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="1.6" />
+			<path d="M7 11l3 3 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
 		</svg>
 	);
 }
 
-function MonitorIcon({ className }: { className?: string }) {
+function EyeIcon({ className }: { className?: string }) {
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={className}
-		>
-			<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-			<circle cx="12" cy="12" r="3" />
+		<svg viewBox="0 0 22 22" fill="none" className={className}>
+			<path
+				d="M2.5 11s3.5-6 8.5-6 8.5 6 8.5 6-3.5 6-8.5 6-8.5-6-8.5-6z"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinejoin="round"
+			/>
+			<circle cx="11" cy="11" r="2.5" stroke="currentColor" strokeWidth="1.6" />
 		</svg>
 	);
 }
 
-function TeamIcon({ className }: { className?: string }) {
+function UsersIcon({ className }: { className?: string }) {
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={className}
-		>
-			<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-			<circle cx="9" cy="7" r="4" />
-			<path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-			<path d="M16 3.13a4 4 0 0 1 0 7.75" />
+		<svg viewBox="0 0 22 22" fill="none" className={className}>
+			<circle cx="8" cy="7" r="3" stroke="currentColor" strokeWidth="1.6" />
+			<path d="M3 18v-1a4 4 0 014-4h2a4 4 0 014 4v1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+			<circle cx="15" cy="8" r="2" stroke="currentColor" strokeWidth="1.6" />
+			<path d="M15 14a4 4 0 014 3v1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
 		</svg>
 	);
 }
 
 function SettingsIcon({ className }: { className?: string }) {
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={className}
-		>
-			<circle cx="12" cy="12" r="3" />
-			<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+		<svg viewBox="0 0 22 22" fill="none" className={className}>
+			<circle cx="11" cy="11" r="2" stroke="currentColor" strokeWidth="1.6" />
+			<path
+				d="M11 3c.5 0 .94.33 1.05.81l.5 2.19a.9.9 0 00.58.65l2.14.75a.9.9 0 00.98-.27l1.3-1.6a1.1 1.1 0 011.68 1.43l-1.33 1.96a.9.9 0 00-.08.86l1 2.02a.9.9 0 00-.44 1.2l-.75 2.14a.9.9 0 00-.65.58l-.5 2.19a1.1 1.1 0 01-2.1.24l-1-1.83a.9.9 0 00-.78-.46h-2.12a.9.9 0 00-.78.46l-1 1.83a1.1 1.1 0 01-2.1-.24l-.5-2.19a.9.9 0 00-.58-.65l-2.14-.75a.9.9 0 01-.44-1.2l1-2.02a.9.9 0 00-.08-.86L3.74 8.4a1.1 1.1 0 011.68-1.43l1.3 1.6a.9.9 0 00.98.27l2.14-.75a.9.9 0 00.58-.65l.5-2.19A1.1 1.1 0 0111 3z"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinejoin="round"
+			/>
 		</svg>
 	);
 }
 
 function LogoutIcon({ className }: { className?: string }) {
 	return (
-		<svg
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-			className={className}
-		>
-			<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-			<polyline points="16 17 21 12 16 7" />
-			<line x1="21" y1="12" x2="9" y2="12" />
+		<svg viewBox="0 0 20 20" fill="none" className={className}>
+			<path
+				d="M7 17H5a2 2 0 01-2-2V5a2 2 0 012-2h2M14 14l4-4-4-4M18 10H8"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
 		</svg>
 	);
 }

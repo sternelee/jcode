@@ -4,407 +4,250 @@
 @import "@fontsource-variable/geist";
 
 /* ============================================================================
-   Smooth loading animation for the entire app
+   Theme tokens — LobeHub-inspired palette
    ============================================================================ */
-@keyframes fadeIn {
-	from { opacity: 0; }
-	to { opacity: 1; }
-} 
-
 @theme inline {
-	--color-background: var(--background);
-	--color-foreground: var(--foreground);
-	--color-card: var(--card);
-	--color-card-foreground: var(--card-foreground);
-	--color-primary: var(--primary);
-	--color-primary-foreground: var(--primary-foreground);
-	--color-secondary: var(--secondary);
-	--color-secondary-foreground: var(--secondary-foreground);
-	--color-muted: var(--muted);
-	--color-muted-foreground: var(--muted-foreground);
-	--color-accent: var(--accent);
-	--color-accent-foreground: var(--accent-foreground);
-	--color-destructive: var(--destructive);
-	--color-destructive-foreground: var(--destructive-foreground);
-	--color-border: var(--border);
-	--color-input: var(--input);
-	--color-ring: var(--ring);
-	--radius-sm: calc(var(--radius) - 4px);
-	--radius-md: calc(var(--radius) - 2px);
-	--radius-lg: var(--radius);
-	--radius-xl: calc(var(--radius) + 4px);
-	--shadow-2xl: var(--shadow-2xl);
-	--shadow-xl: var(--shadow-xl);
-	--shadow-lg: var(--shadow-lg);
-	--shadow-md: var(--shadow-md);
-	--shadow: var(--shadow);
-	--shadow-sm: var(--shadow-sm);
-	--shadow-xs: var(--shadow-xs);
-	--shadow-2xs: var(--shadow-2xs);
-	--spacing: var(--spacing);
-	--tracking-normal: var(--tracking-normal);
-	--color-shadow-color: var(--shadow-color);
-	--shadow-opacity: var(--shadow-opacity);
-	--shadow-spread: var(--shadow-spread);
-	--shadow-blur: var(--shadow-blur);
-	--shadow-y: var(--shadow-y);
-	--shadow-x: var(--shadow-x);
-	--font-serif: var(--font-serif);
-	--font-mono: var(--font-mono);
-	--font-sans: var(--font-sans);
-	--letter-spacing: var(--letter-spacing);
-	--color-chart-5: var(--chart-5);
-	--color-chart-4: var(--chart-4);
-	--color-chart-3: var(--chart-3);
-	--color-chart-2: var(--chart-2);
-	--color-chart-1: var(--chart-1);
-	--color-selection-foreground: var(--selection-foreground);
-	--color-selection: var(--selection);
-	--color-code-number: var(--code-number);
-	--color-code-highlight: var(--code-highlight);
-	--color-code-foreground: var(--code-foreground);
-	--color-code: var(--code);
-	--color-surface-foreground: var(--surface-foreground);
-	--color-surface: var(--surface);
-	--color-sidebar-ring: var(--sidebar-ring);
-	--color-sidebar-border: var(--sidebar-border);
-	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-	--color-sidebar-accent: var(--sidebar-accent);
-	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-	--color-sidebar-primary: var(--sidebar-primary);
-	--color-sidebar-foreground: var(--sidebar-foreground);
-	--color-sidebar: var(--sidebar);
-	--color-destructive-foreground: var(--destructive-foreground);
-	--color-popover-foreground: var(--popover-foreground);
-	--color-popover: var(--popover);
-	--radius-2xl: calc(var(--radius) * 1.8);
-	--radius-3xl: calc(var(--radius) * 2.2);
-	--radius-4xl: calc(var(--radius) * 2.6);
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-fg);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-fg);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-fg);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-fg);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-fg);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-fg);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-fg);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-fg);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-fg);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-fg);
+  --color-chat-user: var(--chat-user);
+  --color-chat-user-foreground: var(--chat-user-fg);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable",
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji";
+  --font-mono: "SF Mono", SFMono-Regular, ui-monospace, "Cascadia Code",
+    "Source Code Pro", Menlo, Consolas, monospace;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
 }
 
 /* ============================================================================
-   Global native-feel resets
+   LobeHub-inspired Light Theme
    ============================================================================ */
-
-/* T3 — adopt the platform: native apps don't change cursor on hoverable rows */
-* {
-	cursor: default !important;
-}
-a[href],
-button,
-[role="button"] {
-	cursor: default !important;
-}
-
-/* T3 — native widgets don't allow selecting chrome text. Opt content back in. */
-* {
-	user-select: none;
-	-webkit-user-select: none;
-}
-input,
-textarea,
-[contenteditable="true"],
-.user-content,
-.prose,
-[data-streamdown] {
-	user-select: text;
-	-webkit-user-select: text;
-}
-
-/* T3 — system font stack; Geist is fine but system font reads as "native" */
-@theme inline {
-	--font-sans:
-		-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable",
-		"Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
-		"Segoe UI Emoji";
-	--font-mono:
-		"SF Mono", SFMono-Regular, ui-monospace, "Cascadia Code", "Source Code Pro",
-		Menlo, Consolas, monospace;
-}
-
-/* T3 — remove custom scrollbar; let WebKit use system overlay scrollbars */
-::-webkit-scrollbar {
-	display: none;
-}
-
-/* ============================================================================
-   Light Theme (Default)
-   ============================================================================ */
-
 :root {
-	--radius: 0.625rem;
+  --radius: 8px;
 
-	/* Backgrounds */
-	--background: #F5F5F5;
-	--foreground: #171717;
-	--card: #FFFFFF;
-	--card-foreground: #171717;
-	--popover: #FFFFFF;
-	--popover-foreground: #171717;
+  --bg: #f5f5f5;
+  --fg: #1a1a1a;
+  --card: #ffffff;
+  --card-fg: #1a1a1a;
+  --popover: #ffffff;
+  --popover-fg: #1a1a1a;
 
-	/* Primary — purple */
-	--primary: #7C3AED;
-	--primary-foreground: #FFFFFF;
+  --primary: #1677ff;
+  --primary-fg: #ffffff;
+  --primary-hover: #4096ff;
 
-	/* Secondary */
-	--secondary: #F3F0FF;
-	--secondary-foreground: #5B21B6;
+  --secondary: #f0f5ff;
+  --secondary-fg: #1677ff;
 
-	/* Muted */
-	--muted: #F3F4F6;
-	--muted-foreground: #6B7280;
+  --muted: #f0f0f0;
+  --muted-fg: #8c8c8c;
 
-	/* Accent */
-	--accent: #EDE9FE;
-	--accent-foreground: #5B21B6;
+  --accent: #f0f5ff;
+  --accent-fg: #1677ff;
 
-	/* Destructive */
-	--destructive: #ef4444;
-	--destructive-foreground: #ffffff;
+  --destructive: #ff4d4f;
+  --destructive-fg: #ffffff;
 
-	/* Structural */
-	--border: #E5E7EB;
-	--input: #E5E7EB;
-	--ring: #7C3AED;
+  --border: #e8e8e8;
+  --input: #d9d9d9;
+  --ring: #1677ff;
 
-	/* Sidebar */
-	--sidebar: #FAFAFA;
-	--sidebar-foreground: #171717;
-	--sidebar-primary: #7C3AED;
-	--sidebar-primary-foreground: #FFFFFF;
-	--sidebar-accent: #EDE9FE;
-	--sidebar-accent-foreground: #5B21B6;
-	--sidebar-border: #E5E7EB;
-	--sidebar-ring: #7C3AED;
+  --sidebar: #fafafa;
+  --sidebar-fg: #1a1a1a;
+  --sidebar-primary: #1677ff;
+  --sidebar-primary-fg: #ffffff;
+  --sidebar-accent: #f0f5ff;
+  --sidebar-accent-fg: #1677ff;
+  --sidebar-border: #e8e8e8;
+  --sidebar-ring: #1677ff;
 
-	/* Surface */
-	--surface: #FAFAFA;
-	--surface-foreground: #171717;
+  --surface: #fafafa;
+  --surface-fg: #1a1a1a;
 
-	/* Code */
-	--code: #1e1e1e;
-	--code-foreground: #e5e5e5;
-	--code-highlight: #2d2d2d;
-	--code-number: #a3a3a3;
+  --chat-user: #1677ff;
+  --chat-user-fg: #ffffff;
 
-	/* Selection */
-	--selection: #7C3AED;
-	--selection-foreground: #FFFFFF;
-
-	/* Charts — purple scale */
-	--chart-1: #7C3AED;
-	--chart-2: #8B5CF6;
-	--chart-3: #A78BFA;
-	--chart-4: #C4B5FD;
-	--chart-5: #E9D5FF;
-
-	/* Typography — platform-native stacks */
-	--font-sans:
-		-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable",
-		"Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
-		"Segoe UI Emoji";
-	--font-mono:
-		"SF Mono", SFMono-Regular, ui-monospace, "Cascadia Code", "Source Code Pro",
-		Menlo, Consolas, monospace;
-	--font-serif: Georgia, Cambria, "Times New Roman", serif;
-	--letter-spacing: 0em;
-	--tracking-normal: 0em;
-	--spacing: 0.25rem;
-
-	/* Shadows - very subtle, flat design */
-	--shadow-x: 0px;
-	--shadow-y: 1px;
-	--shadow-blur: 3px;
-	--shadow-spread: 0px;
-	--shadow-opacity: 0.05;
-	--shadow-color: #000000;
-	--shadow-2xs: 0px 1px 3px 0px rgba(0, 0, 0, 0.03);
-	--shadow-xs: 0px 1px 3px 0px rgba(0, 0, 0, 0.05);
-	--shadow-sm:
-		0px 1px 3px 0px rgba(0, 0, 0, 0.05), 0px 1px 2px -1px rgba(0, 0, 0, 0.05);
-	--shadow:
-		0px 1px 3px 0px rgba(0, 0, 0, 0.05), 0px 1px 2px -1px rgba(0, 0, 0, 0.05);
-	--shadow-md:
-		0px 4px 6px -1px rgba(0, 0, 0, 0.05), 0px 2px 4px -2px rgba(0, 0, 0, 0.05);
-	--shadow-lg:
-		0px 10px 15px -3px rgba(0, 0, 0, 0.05), 0px 4px 6px -4px rgba(0, 0, 0, 0.05);
-	--shadow-xl:
-		0px 20px 25px -5px rgba(0, 0, 0, 0.05), 0px 8px 10px -6px
-		rgba(0, 0, 0, 0.05);
-	--shadow-2xl: 0px 25px 50px -12px rgba(0, 0, 0, 0.1);
+  --selection: #1677ff;
+  --selection-fg: #ffffff;
 }
 
 /* ============================================================================
-   Dark Theme
+   LobeHub-inspired Dark Theme
    ============================================================================ */
-
 .dark {
-	/* Backgrounds */
-	--background: #0a0a0a;
-	--foreground: #fafafa;
-	--card: #171717;
-	--card-foreground: #fafafa;
-	--popover: #171717;
-	--popover-foreground: #fafafa;
+  --bg: #141414;
+  --fg: #e5e5e5;
+  --card: #1f1f1f;
+  --card-fg: #e5e5e5;
+  --popover: #1f1f1f;
+  --popover-fg: #e5e5e5;
 
-	/* Primary */
-	--primary: #ffffff;
-	--primary-foreground: #000000;
+  --primary: #1677ff;
+  --primary-fg: #ffffff;
+  --primary-hover: #4096ff;
 
-	/* Secondary */
-	--secondary: #262626;
-	--secondary-foreground: #fafafa;
+  --secondary: #111d2c;
+  --secondary-fg: #4096ff;
 
-	/* Muted */
-	--muted: #262626;
-	--muted-foreground: #a3a3a3;
+  --muted: #262626;
+  --muted-fg: #8c8c8c;
 
-	/* Accent */
-	--accent: #262626;
-	--accent-foreground: #fafafa;
+  --accent: #111d2c;
+  --accent-fg: #4096ff;
 
-	/* Destructive */
-	--destructive: #ef4444;
-	--destructive-foreground: #ffffff;
+  --destructive: #ff4d4f;
+  --destructive-fg: #ffffff;
 
-	/* Structural */
-	--border: #262626;
-	--input: #262626;
-	--ring: #ffffff;
+  --border: #303030;
+  --input: #434343;
+  --ring: #1677ff;
 
-	/* Sidebar */
-	--sidebar: #0a0a0a;
-	--sidebar-foreground: #fafafa;
-	--sidebar-primary: #ffffff;
-	--sidebar-primary-foreground: #000000;
-	--sidebar-accent: #171717;
-	--sidebar-accent-foreground: #fafafa;
-	--sidebar-border: #262626;
-	--sidebar-ring: #ffffff;
+  --sidebar: #1a1a1a;
+  --sidebar-fg: #e5e5e5;
+  --sidebar-primary: #1677ff;
+  --sidebar-primary-fg: #ffffff;
+  --sidebar-accent: #1f1f1f;
+  --sidebar-accent-fg: #e5e5e5;
+  --sidebar-border: #303030;
+  --sidebar-ring: #1677ff;
 
-	/* Surface */
-	--surface: #171717;
-	--surface-foreground: #fafafa;
+  --surface: #1f1f1f;
+  --surface-fg: #e5e5e5;
 
-	/* Code */
-	--code: #1e1e1e;
-	--code-foreground: #e5e5e5;
-	--code-highlight: #2d2d2d;
-	--code-number: #737373;
+  --chat-user: #1677ff;
+  --chat-user-fg: #ffffff;
 
-	/* Selection */
-	--selection: #ffffff;
-	--selection-foreground: #000000;
-
-	/* Charts */
-	--chart-1: #ffffff;
-	--chart-2: #d4d4d4;
-	--chart-3: #a3a3a3;
-	--chart-4: #525252;
-	--chart-5: #262626;
-
-	/* Shadows - even more subtle in dark */
-	--shadow-2xs: 0px 1px 3px 0px rgba(0, 0, 0, 0.15);
-	--shadow-xs: 0px 1px 3px 0px rgba(0, 0, 0, 0.2);
-	--shadow-sm:
-		0px 1px 3px 0px rgba(0, 0, 0, 0.2), 0px 1px 2px -1px rgba(0, 0, 0, 0.2);
-	--shadow:
-		0px 1px 3px 0px rgba(0, 0, 0, 0.2), 0px 1px 2px -1px rgba(0, 0, 0, 0.2);
-	--shadow-md:
-		0px 4px 6px -1px rgba(0, 0, 0, 0.2), 0px 2px 4px -2px rgba(0, 0, 0, 0.2);
-	--shadow-lg:
-		0px 10px 15px -3px rgba(0, 0, 0, 0.2), 0px 4px 6px -4px rgba(0, 0, 0, 0.2);
-	--shadow-xl:
-		0px 20px 25px -5px rgba(0, 0, 0, 0.2), 0px 8px 10px -6px rgba(0, 0, 0, 0.2);
-	--shadow-2xl: 0px 25px 50px -12px rgba(0, 0, 0, 0.3);
+  --selection: #1677ff;
+  --selection-fg: #ffffff;
 }
 
+/* ============================================================================
+   Global resets
+   ============================================================================ */
 * {
-	border-color: var(--border);
+  border-color: var(--border);
 }
 
-html,
-body,
-#root {
-	height: 100%;
-	overflow: hidden;
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
-	background: var(--background);
-	color: var(--foreground);
-	font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable",
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar */
+/* ============================================================================
+   Custom scrollbar
+   ============================================================================ */
 ::-webkit-scrollbar {
-	width: 6px;
+  width: 6px;
 }
 ::-webkit-scrollbar-track {
-	background: transparent;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-	background: var(--border);
-	border-radius: 3px;
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-fg);
 }
 
-/* Selection */
+/* ============================================================================
+   Selection
+   ============================================================================ */
 ::selection {
-	background: var(--selection);
-	color: var(--selection-foreground);
+  background: var(--selection);
+  color: var(--selection-fg);
 }
 
-/* Animations */
+/* ============================================================================
+   Animations
+   ============================================================================ */
 @keyframes blink {
-	50% {
-		opacity: 0;
-	}
+  50% { opacity: 0; }
 }
-.animate-blink {
-	animation: blink 1s step-end infinite;
+@keyframes pulse-dot {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
-/* Streamdown overrides for light theme */
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+.animate-slide-in {
+  animation: slideIn 0.2s ease-out;
+}
+
+/* ============================================================================
+   Code block dark backgrounds in light theme
+   ============================================================================ */
 :root:not(.dark) .prose pre,
 :root:not(.dark) [data-streamdown] pre {
-	background: #1e1e1e !important;
-	color: #e5e5e5 !important;
-	border-radius: 8px;
+  background: #1e1e1e !important;
+  color: #e5e5e5 !important;
+  border-radius: 8px;
+}
+[data-streamdown] pre {
+  background: #1e1e1e;
+  color: #e5e5e5;
 }
 
-/* Status badge colors - semantic */
-.badge-beta {
-	background: #fef3c7;
-	color: #92400e;
-	border-color: #f59e0b;
+/* ============================================================================
+   Shadcn dialog override — LobeHub style
+   ============================================================================ */
+[data-state="open"] {
+  animation: fadeIn 0.15s ease-out;
 }
 
-.dark .badge-beta {
-	background: #451a03;
-	color: #fbbf24;
-	border-color: #b45309;
-}
-
-.badge-available {
-	background: #d1fae5;
-	color: #065f46;
-	border-color: #10b981;
-}
-
-.dark .badge-available {
-	background: #064e3b;
-	color: #6ee7b7;
-	border-color: #059669;
-}
-
-.badge-soon {
-	background: #f3f4f6;
-	color: #374151;
-	border-color: #6b7280;
-}
-
-.dark .badge-soon {
-	background: #1f2937;
-	color: #d1d5db;
-	border-color: #4b5563;
+/* Message appear animation */
+.message-enter {
+  animation: fadeIn 0.2s ease-out;
 }
