@@ -1073,6 +1073,7 @@ interface AgentSettingsPopoverProps {
 	currentSessionId?: string | null;
 	sessionTitle?: string | null;
 	isSwarmRole?: boolean;
+	totalTokens?: [number, number] | null;
 }
 
 
@@ -1098,6 +1099,7 @@ export function AgentSettingsPopover({
 	currentSessionId,
 	sessionTitle,
 	isSwarmRole,
+	totalTokens,
 }: AgentSettingsPopoverProps) {
 	const ref = useRef<HTMLDivElement>(null);
 	const [renameDraft, setRenameDraft] = useState(sessionTitle || "");
@@ -1221,8 +1223,25 @@ export function AgentSettingsPopover({
 				</div>
 			</div>
 
-			{/* Actions */}
-			<div className="px-4 py-3 flex flex-col gap-1.5">
+					{totalTokens && (
+						<div className="px-4 py-3 border-b border-border">
+							<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+								Usage
+							</div>
+							<div className="flex items-center gap-3 text-[12px] text-foreground">
+								<span className="flex items-center gap-1">
+									<span className="w-1.5 h-1.5 rounded-full bg-primary/60" />
+									↑ {totalTokens[0].toLocaleString()}
+								</span>
+								<span className="flex items-center gap-1">
+									<span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+									↓ {totalTokens[1].toLocaleString()}
+								</span>
+							</div>
+						</div>
+					)}
+					{/* Actions */}
+					<div className="px-4 py-3 flex flex-col gap-1.5">
 				<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
 					Session Actions
 				</div>

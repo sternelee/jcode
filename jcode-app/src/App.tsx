@@ -13,6 +13,7 @@ import { TasksPage } from "@/components/TasksPage";
 import { MonitorPage } from "@/components/MonitorPage";
 import { TeamPage } from "@/components/TeamPage";
 import { MediaPage } from "@/components/MediaPage";
+import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
 import { parseSlashCommand } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
 import type { SessionInfo, PermissionRequest } from "@/types";
@@ -88,6 +89,7 @@ export default function App() {
 	const [permissionRequests, setPermissionRequests] = useState<
 		PermissionRequest[]
 	>([]);
+	const [helpOpen, setHelpOpen] = useState(false);
 
 	const currentWorkspaceId = state.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
 
@@ -258,6 +260,10 @@ export default function App() {
 				event.preventDefault();
 				listSessions();
 				setSessionSwitcherOpen(true);
+			}
+			if (event.key === "?" && !event.metaKey && !event.ctrlKey) {
+				event.preventDefault();
+				setHelpOpen(true);
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
@@ -670,6 +676,11 @@ export default function App() {
 							isProcessing={displayIsProcessing}
 							isLoading={displayIsLoading}
 							connected={state.connected}
+							totalTokens={
+								selectedConvId
+									? state.sessionData[selectedConvId]?.totalTokens ?? null
+									: null
+							}
 							onSend={handleSendMessage}
 							onCancel={() => cancel(resolveTargetSessionId() || undefined)}
 							channelName={channelName}
@@ -803,6 +814,7 @@ export default function App() {
 					}
 				}}
 			/>
+			<ShortcutsHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
 		</div>
 	);
 }

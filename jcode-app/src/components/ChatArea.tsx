@@ -41,6 +41,7 @@ interface ChatAreaProps {
 	isLoading?: boolean;
 	connected?: boolean;
 	currentModel?: string | null;
+	totalTokens?: [number, number] | null;
 	currentProfileId?: string | null;
 	reasoningEffort?: string | null;
 	memoryEnabled?: boolean;
@@ -115,6 +116,7 @@ export function ChatArea({
 	isLoading = false,
 	connected = true,
 	currentModel = null,
+	totalTokens = null,
 	currentProfileId = null,
 	reasoningEffort = null,
 	memoryEnabled = true,
@@ -646,6 +648,7 @@ export function ChatArea({
 							isSwarmRole={workspaceSessions.some(
 								(s) => s.sessionId === currentSessionId && !!s.roleName,
 							)}
+							totalTokens={totalTokens}
 						/>{" "}
 						{/* Convene */}
 						{workspaceSessions.some((s) => s.roleName) && onConvene && (
