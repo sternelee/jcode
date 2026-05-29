@@ -6,7 +6,6 @@ import type {
 	ProviderAuthPrompt,
 	AuthDoctorReport,
 } from "@/types";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -32,26 +31,32 @@ interface ProviderConfigPageProps {
 }
 
 /** Provider branding icons */
-function ProviderIcon({ providerKey, className }: { providerKey: string; className?: string }) {
+function ProviderIcon({
+	providerKey,
+	className,
+}: {
+	providerKey: string;
+	className?: string;
+}) {
 	const key = providerKey.toLowerCase();
 	if (key.includes("openai")) {
 		return (
 			<svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-				<path d="M22.281 9.821l-2.174-.905a6.515 6.515 0 00-.514-1.242l.667-2.132a.525.525 0 00-.23-.624l-2.011-1.21a.518.518 0 00-.652.134l-1.555 1.76a6.395 6.395 0 00-1.338-.18l-1.054-2.032a.5.5 0 00-.455-.286h-2.33a.5.5 0 00-.455.286l-1.054 2.032a6.395 6.395 0 00-1.338.18L7.44 3.75a.518.518 0 00-.652-.134L4.777 4.826a.525.525 0 00-.23.624l.667 2.132a6.515 6.515 0 00-.514 1.242l-2.174.905a.525.525 0 00-.34.528l.173 2.358a.518.518 0 00.426.47l2.249.375c.115.44.283.862.502 1.257l-1.11 1.973a.5.5 0 00.044.553l1.605 1.878a.5.5 0 00.572.158l2.068-.7a6.56 6.56 0 001.286.664l.508 2.116a.5.5 0 00.487.387h2.33a.5.5 0 00.487-.387l.508-2.116a6.56 6.56 0 001.286-.664l2.068.7a.5.5 0 00.572-.158l1.605-1.878a.5.5 0 00.044-.553l-1.11-1.973c.219-.395.387-.817.502-1.257l2.249-.375a.518.518 0 00.426-.47l.173-2.358a.525.525 0 00-.34-.528zM12 15.6a3.6 3.6 0 110-7.2 3.6 3.6 0 010 7.2z"/>
+				<path d="M22.281 9.821l-2.174-.905a6.515 6.515 0 00-.514-1.242l.667-2.132a.525.525 0 00-.23-.624l-2.011-1.21a.518.518 0 00-.652.134l-1.555 1.76a6.395 6.395 0 00-1.338-.18l-1.054-2.032a.5.5 0 00-.455-.286h-2.33a.5.5 0 00-.455.286l-1.054 2.032a6.395 6.395 0 00-1.338.18L7.44 3.75a.518.518 0 00-.652-.134L4.777 4.826a.525.525 0 00-.23.624l.667 2.132a6.515 6.515 0 00-.514 1.242l-2.174.905a.525.525 0 00-.34.528l.173 2.358a.518.518 0 00.426.47l2.249.375c.115.44.283.862.502 1.257l-1.11 1.973a.5.5 0 00.044.553l1.605 1.878a.5.5 0 00.572.158l2.068-.7a6.56 6.56 0 001.286.664l.508 2.116a.5.5 0 00.487.387h2.33a.5.5 0 00.487-.387l.508-2.116a6.56 6.56 0 001.286-.664l2.068.7a.5.5 0 00.572-.158l1.605-1.878a.5.5 0 00.044-.553l-1.11-1.973c.219-.395.387-.817.502-1.257l2.249-.375a.518.518 0 00.426-.47l.173-2.358a.525.525 0 00-.34-.528zM12 15.6a3.6 3.6 0 110-7.2 3.6 3.6 0 010 7.2z" />
 			</svg>
 		);
 	}
 	if (key.includes("anthropic") || key.includes("claude")) {
 		return (
 			<svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-				<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15l-4-4 1.41-1.41L11 14.17l5.59-5.59L18 10l-7 7z"/>
+				<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15l-4-4 1.41-1.41L11 14.17l5.59-5.59L18 10l-7 7z" />
 			</svg>
 		);
 	}
 	if (key.includes("gemini") || key.includes("google")) {
 		return (
 			<svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-				<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+				<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
 			</svg>
 		);
 	}
@@ -70,7 +75,7 @@ function ProviderIcon({ providerKey, className }: { providerKey: string; classNa
 	if (key.includes("copilot") || key.includes("github")) {
 		return (
 			<svg viewBox="0 0 24 24" fill="currentColor" className={className}>
-				<path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+				<path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
 			</svg>
 		);
 	}
@@ -292,8 +297,8 @@ export function ProviderConfigPage({
 				</div>
 			</div>
 
-			<ScrollArea className="flex-1">
-				<div className="p-6 max-w-3xl mx-auto space-y-5">
+			<div className="flex-1 overflow-y-auto min-h-0">
+									<div className="p-6 max-w-3xl mx-auto space-y-5">
 					{/* Message */}
 					{authMessage && (
 						<div
@@ -651,7 +656,10 @@ export function ProviderConfigPage({
 								>
 									<div className="flex items-center justify-between">
 										<div className="flex items-center gap-2">
-											<ProviderIcon providerKey={provider.provider_key} className="w-4 h-4 shrink-0" />
+											<ProviderIcon
+												providerKey={provider.provider_key}
+												className="w-4 h-4 shrink-0"
+											/>
 											<div>
 												<div className="text-[13px] font-medium text-foreground">
 													{provider.display_name}
@@ -798,9 +806,9 @@ export function ProviderConfigPage({
 						</div>
 					</div>
 
-					<div className="h-8" />
-				</div>
-			</ScrollArea>
+			<div className="h-8" />
+			</div>
 		</div>
+	</div>
 	);
 }

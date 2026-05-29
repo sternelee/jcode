@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import { Info, Trash2 } from "lucide-react";
 
 interface ConfirmDialogProps {
 	open: boolean;
@@ -65,25 +66,7 @@ export function ConfirmDialog({
 								: "bg-primary/10 text-primary",
 						)}
 					>
-						{variant === "destructive" ? (
-							<svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
-								<path d="M4.5 2.5a.5.5 0 01.5-.5h6a.5.5 0 01.5.5V4h-7V2.5z" />
-								<path d="M2 4a1 1 0 011-1h10a1 1 0 110 2H3a1 1 0 01-1-1z" />
-								<path
-									fillRule="evenodd"
-									d="M3.5 6l.58 7.56a1 1 0 001 .94h5.84a1 1 0 001-.94L12.5 6h-9zM8 7.5a.75.75 0 01.75.75v3a.75.75 0 01-1.5 0v-3A.75.75 0 018 7.5z"
-									clipRule="evenodd"
-								/>
-							</svg>
-						) : (
-							<svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
-								<path
-									fillRule="evenodd"
-									d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm8-1.5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0V7.25A.75.75 0 018 5.5zm0-2a.75.75 0 100 1.5.75.75 0 000-1.5z"
-									clipRule="evenodd"
-								/>
-							</svg>
-						)}
+						{variant === "destructive" ? <Trash2 className="w-4 h-4" /> : <Info className="w-4 h-4" />}
 					</div>
 					<div className="min-w-0 flex-1">
 						<h2 className="text-[15px] font-semibold text-foreground">

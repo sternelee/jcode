@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AuthStatus, VersionInfo } from "@/types";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Moon, Sun, Key, Cpu } from "lucide-react";
@@ -56,7 +55,7 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 				</div>
 			</div>
 
-			<ScrollArea className="flex-1">
+			<div className="flex-1 overflow-y-auto min-h-0">
 				<div className="p-6 max-w-xl mx-auto space-y-6">
 					{/* Theme */}
 					<SettingsCard
@@ -189,8 +188,8 @@ export function SettingsPage({ theme, onThemeChange }: SettingsPageProps) {
 
 					<div className="h-8" />
 				</div>
-			</ScrollArea>
-		</div>
+				</div>
+			</div>
 	);
 }
 

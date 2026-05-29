@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage, SessionInfo } from "@/types";
 import { MessageBubble } from "./MessageBubble";
 import { AgentAvatar } from "./AgentAvatar";
+import { Search, Settings, ChevronUp, ChevronDown, X, Plus, Play, UserPlus, Paperclip, AtSign, SendHorizonal } from "lucide-react";
 import {
 	SlashCommandPalette,
 	AgentSettingsPopover,
@@ -339,13 +340,7 @@ export function ChatArea({
 				<div className="px-5 py-3 border-b border-border flex items-center justify-between shrink-0 min-h-[56px]">
 					<div className="flex items-center gap-3 min-w-0">
 						<div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary shrink-0">
-							<svg
-								viewBox="0 0 18 18"
-								fill="currentColor"
-								className="w-[18px] h-[18px]"
-							>
-								<path d="M9 1.5a.75.75 0 01.75.75v5.25h5.25a.75.75 0 010 1.5h-5.25v5.25a.75.75 0 01-1.5 0V9H3.75a.75.75 0 010-1.5H9V2.25A.75.75 0 019 1.5z" />
-							</svg>
+							<Plus className="w-[18px] h-[18px]" />
 						</div>
 						<div className="min-w-0">
 							<h2 className="text-[15px] font-semibold text-foreground leading-tight">
@@ -393,13 +388,7 @@ export function ChatArea({
 									: "text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted",
 							)}
 						>
-							<svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
-								<path
-									fillRule="evenodd"
-									d="M11.5 7.5a4 4 0 11-8 0 4 4 0 018 0zm-.82 4.74a5.5 5.5 0 111.06-1.06l2.79 2.79a.75.75 0 11-1.06 1.06l-2.79-2.79z"
-									clipRule="evenodd"
-								/>
-							</svg>
+							<Search className="w-4 h-4" />
 						</button>
 						{/* Settings */}
 						<button
@@ -413,9 +402,7 @@ export function ChatArea({
 									: "text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted",
 							)}
 						>
-							<svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
-								<path d="M8 1.5c.35 0 .65.23.73.57l.5 2.19a.9.9 0 00.58.65l2.14.75c.42.15.6.62.44 1.05l-1 2.02a.9.9 0 00.08.86l1.33 1.96c.32.47.17 1.1-.33 1.37l-1.73 1a.9.9 0 01-.98-.27l-1.3-1.6a.9.9 0 00-.98-.27l-2.14.75a.9.9 0 01-1.05-.44l-1-2.02a.9.9 0 01.44-1.2l2.14-.75a.9.9 0 00.58-.65l.5-2.19A.75.75 0 018 1.5z" />
-							</svg>
+							<Settings className="w-4 h-4" />
 						</button>
 						<AgentSettingsPopover
 							open={settingsOpen}
@@ -447,13 +434,7 @@ export function ChatArea({
 								}}
 								className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:bg-primary/90 transition-all duration-150 shadow-sm ml-1"
 							>
-								<svg
-									viewBox="0 0 16 16"
-									fill="currentColor"
-									className="w-3.5 h-3.5"
-								>
-									<path d="M5.3 3.3A1.5 1.5 0 003 4.5v7a1.5 1.5 0 002.3 1.2l7-4.5a1.5 1.5 0 000-2.4l-7-4.5z" />
-								</svg>
+								<Play className="w-3.5 h-3.5" fill="currentColor" />
 								Convene
 							</button>
 						)}
@@ -488,13 +469,7 @@ export function ChatArea({
 								onClick={onAddAgent}
 								className="ml-auto flex items-center gap-1 text-[11px] text-primary/70 hover:text-primary font-medium transition-colors"
 							>
-								<svg
-									viewBox="0 0 14 14"
-									fill="currentColor"
-									className="w-3 h-3"
-								>
-									<path d="M7 0a.75.75 0 01.75.75v5.5h5.5a.75.75 0 010 1.5h-5.5v5.5a.75.75 0 01-1.5 0v-5.5h-5.5a.75.75 0 010-1.5h5.5V.75A.75.75 0 017 0z" />
-								</svg>
+							<UserPlus className="w-3 h-3" />
 								+ Add Agent
 							</button>
 						)}
@@ -504,17 +479,7 @@ export function ChatArea({
 				{/* ── Search bar ── */}
 				{searchOpen && (
 					<div className="flex items-center gap-2 px-5 py-2 border-b border-border bg-muted/30 shrink-0">
-						<svg
-							viewBox="0 0 16 16"
-							fill="currentColor"
-							className="w-3.5 h-3.5 text-muted-foreground shrink-0"
-						>
-							<path
-								fillRule="evenodd"
-								d="M11.5 7.5a4 4 0 11-8 0 4 4 0 018 0zm-.82 4.74a5.5 5.5 0 111.06-1.06l2.79 2.79a.75.75 0 11-1.06 1.06l-2.79-2.79z"
-								clipRule="evenodd"
-							/>
-						</svg>
+						<Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
 						<input
 							ref={searchInputRef}
 							type="text"
@@ -554,13 +519,8 @@ export function ChatArea({
 							className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted transition-colors"
 							title="Previous"
 						>
-							<svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
-								<path
-									fillRule="evenodd"
-									d="M6 10.5a.75.75 0 01-.75-.75V3.31L3.03 5.53a.75.75 0 01-1.06-1.06l3.75-3.75a.75.75 0 011.06 0l3.75 3.75a.75.75 0 01-1.06 1.06L6.75 3.31v6.44a.75.75 0 01-.75.75z"
-									clipRule="evenodd"
-								/>
-							</svg>
+							<ChevronUp className="w-3 h-3" />
+
 						</button>
 						<button
 							type="button"
@@ -572,13 +532,8 @@ export function ChatArea({
 							className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted transition-colors"
 							title="Next"
 						>
-							<svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
-								<path
-									fillRule="evenodd"
-									d="M6 1.5a.75.75 0 01.75.75v6.44l2.22-2.22a.75.75 0 111.06 1.06L6.28 11.3a.75.75 0 01-1.06 0L1.47 7.53a.75.75 0 111.06-1.06L5.25 8.69V2.25A.75.75 0 016 1.5z"
-									clipRule="evenodd"
-								/>
-							</svg>
+							<ChevronDown className="w-3 h-3" />
+
 						</button>
 						<button
 							type="button"
@@ -586,13 +541,7 @@ export function ChatArea({
 							className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors"
 							title="Close"
 						>
-							<svg
-								viewBox="0 0 10 10"
-								fill="currentColor"
-								className="w-2.5 h-2.5"
-							>
-								<path d="M2.22 2.22a.75.75 0 011.06 0L5 3.94l1.72-1.72a.75.75 0 111.06 1.06L6.06 5l1.72 1.72a.75.75 0 11-1.06 1.06L5 6.06l-1.72 1.72a.75.75 0 01-1.06-1.06L3.94 5 2.22 3.28a.75.75 0 010-1.06z" />
-							</svg>
+							<X className="w-2.5 h-2.5" />
 						</button>
 					</div>
 				)}
@@ -920,17 +869,7 @@ export function ChatArea({
 										className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted transition-all duration-150"
 										title="Attach"
 									>
-										<svg
-											viewBox="0 0 16 16"
-											fill="currentColor"
-											className="w-4 h-4"
-										>
-											<path
-												fillRule="evenodd"
-												d="M12.5 3.5a2 2 0 00-2.83 0l-5.5 5.5a2.5 2.5 0 003.54 3.54l4.5-4.5a.75.75 0 011.06 1.06l-4.5 4.5a4 4 0 01-5.66-5.66l5.5-5.5a3.5 3.5 0 014.95 4.95l-5.5 5.5A2.12 2.12 0 016.5 11.5a.75.75 0 010-1.5c.54 0 1.07-.22 1.47-.61l5.5-5.5a2 2 0 000-2.83z"
-												clipRule="evenodd"
-											/>
-										</svg>
+										<Paperclip className="w-4 h-4" />
 									</button>
 									{/* @mention */}
 									<button
@@ -951,17 +890,7 @@ export function ChatArea({
 										}}
 										className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted transition-all duration-150"
 									>
-										<svg
-											viewBox="0 0 16 16"
-											fill="currentColor"
-											className="w-4 h-4"
-										>
-											<path
-												fillRule="evenodd"
-												d="M8 1a7 7 0 107 7 1 1 0 00-2 0 5 5 0 11-1.5-3.53 1 1 0 001.5-1.33A7 7 0 108 1zm0 4a2 2 0 100 4 2 2 0 000-4z"
-												clipRule="evenodd"
-											/>
-										</svg>
+										<AtSign className="w-4 h-4" />
 									</button>
 								</div>
 
@@ -986,13 +915,7 @@ export function ChatArea({
 												: "bg-muted text-muted-foreground/50 cursor-not-allowed",
 										)}
 									>
-										<svg
-											viewBox="0 0 16 16"
-											fill="currentColor"
-											className="w-4 h-4"
-										>
-											<path d="M2.5 2.5a.5.5 0 01.68-.47l12 5a.5.5 0 010 .94l-12 5a.5.5 0 01-.68-.47V9.5a.5.5 0 01.4-.49L9 8 2.9 7a.5.5 0 01-.4-.5V2.5z" />
-										</svg>
+										<SendHorizonal className="w-4 h-4" />
 										Send
 									</button>
 								</div>
