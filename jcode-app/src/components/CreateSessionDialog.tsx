@@ -17,9 +17,21 @@ interface CreateSessionDialogProps {
 	/** Initial mode when opening the dialog */
 	initMode?: "normal" | "swarm";
 	/** Callbacks */
-	onCreateNormal: (workingDir: string | null, model: string, profileId?: string) => void;
-	onCreateSwarm: (workingDir: string | null, model: string, profileId?: string) => void;
-	onAddSwarmMember: (roleName: string, model: string, profileId?: string) => void;
+	onCreateNormal: (
+		workingDir: string | null,
+		model: string,
+		profileId?: string,
+	) => void;
+	onCreateSwarm: (
+		workingDir: string | null,
+		model: string,
+		profileId?: string,
+	) => void;
+	onAddSwarmMember: (
+		roleName: string,
+		model: string,
+		profileId?: string,
+	) => void;
 	onRemoveSwarmMember?: (roleName: string) => void;
 	/** Current swarm members (role names) */
 	swarmMembers?: string[];
@@ -47,7 +59,9 @@ export function CreateSessionDialog({
 			(currentWorkingDir ? !workspaces.includes(currentWorkingDir) : false),
 	);
 	const [selectedModel, setSelectedModel] = useState(DEFAULT_MODEL);
-	const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+	const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
+		null,
+	);
 	const [customModel, setCustomModel] = useState("");
 	const [swarmModel, setSwarmModel] = useState(DEFAULT_MODEL);
 	const [swarmProfileId, setSwarmProfileId] = useState<string | null>(null);
@@ -56,7 +70,9 @@ export function CreateSessionDialog({
 	const [newRoleProfileId, setNewRoleProfileId] = useState<string | null>(null);
 
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
-	const [modelPickerTarget, setModelPickerTarget] = useState<"normal" | "swarm" | "role" | null>(null);
+	const [modelPickerTarget, setModelPickerTarget] = useState<
+		"normal" | "swarm" | "role" | null
+	>(null);
 
 	useEffect(() => {
 		if (!open) return;
@@ -78,7 +94,11 @@ export function CreateSessionDialog({
 		: selectedWorkspace || null;
 
 	const handleStartNormal = () => {
-		onCreateNormal(resolvedWorkspace, effectiveModel, effectiveProfileId ?? undefined);
+		onCreateNormal(
+			resolvedWorkspace,
+			effectiveModel,
+			effectiveProfileId ?? undefined,
+		);
 		onOpenChange(false);
 	};
 
@@ -114,37 +134,48 @@ export function CreateSessionDialog({
 		setModelPickerOpen(false);
 	};
 
-	const pickerCurrentModel = modelPickerTarget === "normal"
-		? effectiveModel
-		: modelPickerTarget === "swarm"
-			? swarmModel
-			: modelPickerTarget === "role"
-				? newRoleModel
-				: null;
+	const pickerCurrentModel =
+		modelPickerTarget === "normal"
+			? effectiveModel
+			: modelPickerTarget === "swarm"
+				? swarmModel
+				: modelPickerTarget === "role"
+					? newRoleModel
+					: null;
 
-	const pickerCurrentProfileId = modelPickerTarget === "normal"
-		? selectedProfileId
-		: modelPickerTarget === "swarm"
-			? swarmProfileId
-			: modelPickerTarget === "role"
-				? newRoleProfileId
-				: null;
+	const pickerCurrentProfileId =
+		modelPickerTarget === "normal"
+			? selectedProfileId
+			: modelPickerTarget === "swarm"
+				? swarmProfileId
+				: modelPickerTarget === "role"
+					? newRoleProfileId
+					: null;
 
 	return (
 		<>
 			<div className="fixed inset-0 z-50 flex items-center justify-center">
-				<div className="absolute inset-0 bg-black/30" onClick={() => onOpenChange(false)} />
+				<div
+					className="absolute inset-0 bg-black/30"
+					onClick={() => onOpenChange(false)}
+				/>
 				<div className="relative w-[480px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden">
 					{/* Header */}
 					<div className="px-6 pt-5 pb-3 border-b border-[#F3F4F6]">
 						<div className="flex items-center justify-between">
-							<h2 className="text-[17px] font-bold text-[#111827]">New Session</h2>
+							<h2 className="text-[17px] font-bold text-[#111827]">
+								New Session
+							</h2>
 							<button
 								type="button"
 								onClick={() => onOpenChange(false)}
 								className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-muted-foreground hover:bg-[#F3F4F6]"
 							>
-								<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+								<svg
+									viewBox="0 0 20 20"
+									fill="currentColor"
+									className="w-4 h-4"
+								>
 									<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
 								</svg>
 							</button>
@@ -165,7 +196,11 @@ export function CreateSessionDialog({
 								)}
 							>
 								<div className="flex items-center justify-center gap-2">
-									<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+									<svg
+										viewBox="0 0 20 20"
+										fill="currentColor"
+										className="w-4 h-4"
+									>
 										<path d="M10 2a.75.75 0 01.75.75v6.5h6.5a.75.75 0 010 1.5h-6.5v6.5a.75.75 0 01-1.5 0v-6.5h-6.5a.75.75 0 010-1.5h6.5v-6.5A.75.75 0 0110 2z" />
 									</svg>
 									Single Agent
@@ -182,7 +217,11 @@ export function CreateSessionDialog({
 								)}
 							>
 								<div className="flex items-center justify-center gap-2">
-									<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+									<svg
+										viewBox="0 0 20 20"
+										fill="currentColor"
+										className="w-4 h-4"
+									>
 										<path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
 									</svg>
 									Agent Team
@@ -197,7 +236,8 @@ export function CreateSessionDialog({
 							</label>
 							<div className="flex gap-2 flex-wrap">
 								{(workspaces.length === 0 || useCustomWorkspace) && (
-									<div className="flex-1 flex items-center gap-2 h-9 px-3 rounded-xl border border-border bg-card"
+									<div
+										className="flex-1 flex items-center gap-2 h-9 px-3 rounded-xl border border-border bg-card"
 										title={selectedWorkspace || "No directory selected"}
 									>
 										<span className="flex-1 text-[13px] text-foreground truncate">
@@ -209,7 +249,11 @@ export function CreateSessionDialog({
 												onClick={() => setSelectedWorkspace("")}
 												className="text-muted-foreground hover:text-[#EF4444]"
 											>
-												<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+												<svg
+													viewBox="0 0 20 20"
+													fill="currentColor"
+													className="w-4 h-4"
+												>
 													<path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
 												</svg>
 											</button>
@@ -232,9 +276,7 @@ export function CreateSessionDialog({
 												: "bg-card border-border text-muted-foreground hover:border-muted-foreground/30",
 										)}
 									>
-										{ws === "default"
-											? "Default"
-											: ws.split("/").pop() || ws}
+										{ws === "default" ? "Default" : ws.split("/").pop() || ws}
 									</button>
 								))}
 								<button
@@ -276,8 +318,12 @@ export function CreateSessionDialog({
 									onClick={() => openModelPicker("normal")}
 									className="w-full text-left px-3 py-2 rounded-xl text-[13px] font-medium border transition-all flex items-center justify-between bg-card border-border hover:border-muted-foreground/30"
 								>
-									<span className="truncate">{customModel || selectedModel}</span>
-									<span className="text-[11px] text-muted-foreground shrink-0 ml-2">Change</span>
+									<span className="truncate">
+										{customModel || selectedModel}
+									</span>
+									<span className="text-[11px] text-muted-foreground shrink-0 ml-2">
+										Change
+									</span>
 								</button>
 								<div className="pt-1">
 									<input
@@ -305,7 +351,9 @@ export function CreateSessionDialog({
 										className="w-full text-left px-3 py-2 rounded-xl text-[13px] font-medium border transition-all flex items-center justify-between bg-card border-border hover:border-muted-foreground/30"
 									>
 										<span className="truncate">{swarmModel}</span>
-										<span className="text-[11px] text-muted-foreground shrink-0 ml-2">Change</span>
+										<span className="text-[11px] text-muted-foreground shrink-0 ml-2">
+											Change
+										</span>
 									</button>
 								</div>
 
@@ -334,7 +382,11 @@ export function CreateSessionDialog({
 														onClick={() => onRemoveSwarmMember?.(name)}
 														className="w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-[#DBEAFE]"
 													>
-														<svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
+														<svg
+															viewBox="0 0 12 12"
+															fill="currentColor"
+															className="w-3 h-3"
+														>
 															<path d="M2.22 2.22a.75.75 0 011.06 0L6 4.94l2.72-2.72a.75.75 0 111.06 1.06L7.06 6l2.72 2.72a.75.75 0 11-1.06 1.06L6 7.06l-2.72 2.72a.75.75 0 01-1.06-1.06L4.94 6 2.22 3.28a.75.75 0 010-1.06z" />
 														</svg>
 													</button>
@@ -352,7 +404,9 @@ export function CreateSessionDialog({
 													key={role.name}
 													type="button"
 													disabled={alreadyAdded}
-													onClick={() => onAddSwarmMember(role.name, role.model)}
+													onClick={() =>
+														onAddSwarmMember(role.name, role.model)
+													}
 													className={cn(
 														"text-left px-3 py-2 rounded-xl border text-[12px] transition-all",
 														alreadyAdded
@@ -361,7 +415,9 @@ export function CreateSessionDialog({
 													)}
 												>
 													<div className="font-semibold">{role.name}</div>
-													<div className="text-[10px] text-muted-foreground mt-0.5">{role.detail}</div>
+													<div className="text-[10px] text-muted-foreground mt-0.5">
+														{role.detail}
+													</div>
 												</button>
 											);
 										})}

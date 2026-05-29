@@ -7,223 +7,250 @@
    Theme tokens — LobeHub-inspired palette
    ============================================================================ */
 @theme inline {
-  --color-background: var(--bg);
-  --color-foreground: var(--fg);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-fg);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-fg);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-fg);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-fg);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-fg);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-fg);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-fg);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-fg);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-fg);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-surface: var(--surface);
-  --color-surface-foreground: var(--surface-fg);
-  --color-chat-user: var(--chat-user);
-  --color-chat-user-foreground: var(--chat-user-fg);
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable",
-    "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji";
-  --font-mono: "SF Mono", SFMono-Regular, ui-monospace, "Cascadia Code",
-    "Source Code Pro", Menlo, Consolas, monospace;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
+	--color-background: var(--bg);
+	--color-foreground: var(--fg);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-fg);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-fg);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-fg);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-fg);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-fg);
+	--color-destructive: var(--destructive);
+	--color-destructive-foreground: var(--destructive-fg);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+	--color-sidebar: var(--sidebar);
+	--color-sidebar-foreground: var(--sidebar-fg);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-fg);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-fg);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-ring: var(--sidebar-ring);
+	--color-surface: var(--surface);
+	--color-surface-foreground: var(--surface-fg);
+	--color-chat-user: var(--chat-user);
+	--color-chat-user-foreground: var(--chat-user-fg);
+	--font-sans:
+		-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable",
+		"Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
+		"Segoe UI Emoji";
+	--font-mono:
+		"SF Mono", SFMono-Regular, ui-monospace, "Cascadia Code", "Source Code Pro",
+		Menlo, Consolas, monospace;
+	--radius-sm: 6px;
+	--radius-md: 8px;
+	--radius-lg: 12px;
+	--radius-xl: 16px;
+	--radius-2xl: 20px;
 }
 
 /* ============================================================================
    LobeHub-inspired Light Theme
    ============================================================================ */
 :root {
-  --radius: 8px;
+	--radius: 8px;
 
-  --bg: #f5f5f5;
-  --fg: #1a1a1a;
-  --card: #ffffff;
-  --card-fg: #1a1a1a;
-  --popover: #ffffff;
-  --popover-fg: #1a1a1a;
+	--bg: #f5f5f5;
+	--fg: #1a1a1a;
+	--card: #ffffff;
+	--card-fg: #1a1a1a;
+	--popover: #ffffff;
+	--popover-fg: #1a1a1a;
 
-  --primary: #1677ff;
-  --primary-fg: #ffffff;
-  --primary-hover: #4096ff;
+	--primary: #1677ff;
+	--primary-fg: #ffffff;
+	--primary-hover: #4096ff;
 
-  --secondary: #f0f5ff;
-  --secondary-fg: #1677ff;
+	--secondary: #f0f5ff;
+	--secondary-fg: #1677ff;
 
-  --muted: #f0f0f0;
-  --muted-fg: #8c8c8c;
+	--muted: #f0f0f0;
+	--muted-fg: #8c8c8c;
 
-  --accent: #f0f5ff;
-  --accent-fg: #1677ff;
+	--accent: #f0f5ff;
+	--accent-fg: #1677ff;
 
-  --destructive: #ff4d4f;
-  --destructive-fg: #ffffff;
+	--destructive: #ff4d4f;
+	--destructive-fg: #ffffff;
 
-  --border: #e8e8e8;
-  --input: #d9d9d9;
-  --ring: #1677ff;
+	--border: #e8e8e8;
+	--input: #d9d9d9;
+	--ring: #1677ff;
 
-  --sidebar: #fafafa;
-  --sidebar-fg: #1a1a1a;
-  --sidebar-primary: #1677ff;
-  --sidebar-primary-fg: #ffffff;
-  --sidebar-accent: #f0f5ff;
-  --sidebar-accent-fg: #1677ff;
-  --sidebar-border: #e8e8e8;
-  --sidebar-ring: #1677ff;
+	--sidebar: #fafafa;
+	--sidebar-fg: #1a1a1a;
+	--sidebar-primary: #1677ff;
+	--sidebar-primary-fg: #ffffff;
+	--sidebar-accent: #f0f5ff;
+	--sidebar-accent-fg: #1677ff;
+	--sidebar-border: #e8e8e8;
+	--sidebar-ring: #1677ff;
 
-  --surface: #fafafa;
-  --surface-fg: #1a1a1a;
+	--surface: #fafafa;
+	--surface-fg: #1a1a1a;
 
-  --chat-user: #1677ff;
-  --chat-user-fg: #ffffff;
+	--chat-user: #1677ff;
+	--chat-user-fg: #ffffff;
 
-  --selection: #1677ff;
-  --selection-fg: #ffffff;
+	--selection: #1677ff;
+	--selection-fg: #ffffff;
 }
 
 /* ============================================================================
    LobeHub-inspired Dark Theme
    ============================================================================ */
 .dark {
-  --bg: #141414;
-  --fg: #e5e5e5;
-  --card: #1f1f1f;
-  --card-fg: #e5e5e5;
-  --popover: #1f1f1f;
-  --popover-fg: #e5e5e5;
+	--bg: #141414;
+	--fg: #e5e5e5;
+	--card: #1f1f1f;
+	--card-fg: #e5e5e5;
+	--popover: #1f1f1f;
+	--popover-fg: #e5e5e5;
 
-  --primary: #1677ff;
-  --primary-fg: #ffffff;
-  --primary-hover: #4096ff;
+	--primary: #1677ff;
+	--primary-fg: #ffffff;
+	--primary-hover: #4096ff;
 
-  --secondary: #111d2c;
-  --secondary-fg: #4096ff;
+	--secondary: #111d2c;
+	--secondary-fg: #4096ff;
 
-  --muted: #262626;
-  --muted-fg: #8c8c8c;
+	--muted: #262626;
+	--muted-fg: #8c8c8c;
 
-  --accent: #111d2c;
-  --accent-fg: #4096ff;
+	--accent: #111d2c;
+	--accent-fg: #4096ff;
 
-  --destructive: #ff4d4f;
-  --destructive-fg: #ffffff;
+	--destructive: #ff4d4f;
+	--destructive-fg: #ffffff;
 
-  --border: #303030;
-  --input: #434343;
-  --ring: #1677ff;
+	--border: #303030;
+	--input: #434343;
+	--ring: #1677ff;
 
-  --sidebar: #1a1a1a;
-  --sidebar-fg: #e5e5e5;
-  --sidebar-primary: #1677ff;
-  --sidebar-primary-fg: #ffffff;
-  --sidebar-accent: #1f1f1f;
-  --sidebar-accent-fg: #e5e5e5;
-  --sidebar-border: #303030;
-  --sidebar-ring: #1677ff;
+	--sidebar: #1a1a1a;
+	--sidebar-fg: #e5e5e5;
+	--sidebar-primary: #1677ff;
+	--sidebar-primary-fg: #ffffff;
+	--sidebar-accent: #1f1f1f;
+	--sidebar-accent-fg: #e5e5e5;
+	--sidebar-border: #303030;
+	--sidebar-ring: #1677ff;
 
-  --surface: #1f1f1f;
-  --surface-fg: #e5e5e5;
+	--surface: #1f1f1f;
+	--surface-fg: #e5e5e5;
 
-  --chat-user: #1677ff;
-  --chat-user-fg: #ffffff;
+	--chat-user: #1677ff;
+	--chat-user-fg: #ffffff;
 
-  --selection: #1677ff;
-  --selection-fg: #ffffff;
+	--selection: #1677ff;
+	--selection-fg: #ffffff;
 }
 
 /* ============================================================================
    Global resets
    ============================================================================ */
 * {
-  border-color: var(--border);
+	border-color: var(--border);
 }
 
-html, body, #root {
-  height: 100%;
-  overflow: hidden;
+html,
+body,
+#root {
+	height: 100%;
+	overflow: hidden;
 }
 
 body {
-  background: var(--bg);
-  color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable",
-    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 14px;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+	background: var(--bg);
+	color: var(--fg);
+	font-family:
+		-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable",
+		"Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	font-size: 14px;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
 }
 
 /* ============================================================================
    Custom scrollbar
    ============================================================================ */
 ::-webkit-scrollbar {
-  width: 6px;
+	width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: transparent;
+	background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+	background: var(--border);
+	border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-fg);
+	background: var(--muted-fg);
 }
 
 /* ============================================================================
    Selection
    ============================================================================ */
 ::selection {
-  background: var(--selection);
-  color: var(--selection-fg);
+	background: var(--selection);
+	color: var(--selection-fg);
 }
 
 /* ============================================================================
    Animations
    ============================================================================ */
 @keyframes blink {
-  50% { opacity: 0; }
+	50% {
+		opacity: 0;
+	}
 }
 @keyframes pulse-dot {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-  40% { transform: scale(1); opacity: 1; }
+	0%,
+	80%,
+	100% {
+		transform: scale(0.6);
+		opacity: 0.4;
+	}
+	40% {
+		transform: scale(1);
+		opacity: 1;
+	}
 }
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 @keyframes slideIn {
-  from { opacity: 0; transform: translateX(-8px); }
-  to { opacity: 1; transform: translateX(0); }
+	from {
+		opacity: 0;
+		transform: translateX(-8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateX(0);
+	}
 }
 
 .animate-blink {
-  animation: blink 1s step-end infinite;
+	animation: blink 1s step-end infinite;
 }
 .animate-fade-in {
-  animation: fadeIn 0.2s ease-out;
+	animation: fadeIn 0.2s ease-out;
 }
 .animate-slide-in {
-  animation: slideIn 0.2s ease-out;
+	animation: slideIn 0.2s ease-out;
 }
 
 /* ============================================================================
@@ -231,23 +258,23 @@ body {
    ============================================================================ */
 :root:not(.dark) .prose pre,
 :root:not(.dark) [data-streamdown] pre {
-  background: #1e1e1e !important;
-  color: #e5e5e5 !important;
-  border-radius: 8px;
+	background: #1e1e1e !important;
+	color: #e5e5e5 !important;
+	border-radius: 8px;
 }
 [data-streamdown] pre {
-  background: #1e1e1e;
-  color: #e5e5e5;
+	background: #1e1e1e;
+	color: #e5e5e5;
 }
 
 /* ============================================================================
    Shadcn dialog override — LobeHub style
    ============================================================================ */
 [data-state="open"] {
-  animation: fadeIn 0.15s ease-out;
+	animation: fadeIn 0.15s ease-out;
 }
 
 /* Message appear animation */
 .message-enter {
-  animation: fadeIn 0.2s ease-out;
+	animation: fadeIn 0.2s ease-out;
 }

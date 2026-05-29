@@ -107,7 +107,12 @@ function NetworkIcon({ className }: { className?: string }) {
 		<svg viewBox="0 0 22 22" fill="none" className={className}>
 			<circle cx="11" cy="11" r="8" stroke="currentColor" strokeWidth="1.6" />
 			<circle cx="11" cy="11" r="3" stroke="currentColor" strokeWidth="1.6" />
-			<path d="M11 3v3M19 11h-3M11 16v3M6 11H3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+			<path
+				d="M11 3v3M19 11h-3M11 16v3M6 11H3"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinecap="round"
+			/>
 		</svg>
 	);
 }
@@ -115,9 +120,22 @@ function NetworkIcon({ className }: { className?: string }) {
 function ImageIcon({ className }: { className?: string }) {
 	return (
 		<svg viewBox="0 0 22 22" fill="none" className={className}>
-			<rect x="2" y="3" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6" />
+			<rect
+				x="2"
+				y="3"
+				width="18"
+				height="16"
+				rx="2"
+				stroke="currentColor"
+				strokeWidth="1.6"
+			/>
 			<circle cx="7.5" cy="8.5" r="1.5" fill="currentColor" />
-			<path d="M2 16l4-4 3 3 3-4 5 5" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+			<path
+				d="M2 16l4-4 3 3 3-4 5 5"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinejoin="round"
+			/>
 		</svg>
 	);
 }
@@ -125,8 +143,22 @@ function ImageIcon({ className }: { className?: string }) {
 function CheckIcon({ className }: { className?: string }) {
 	return (
 		<svg viewBox="0 0 22 22" fill="none" className={className}>
-			<rect x="3" y="3" width="16" height="16" rx="3" stroke="currentColor" strokeWidth="1.6" />
-			<path d="M7 11l3 3 5-5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+			<rect
+				x="3"
+				y="3"
+				width="16"
+				height="16"
+				rx="3"
+				stroke="currentColor"
+				strokeWidth="1.6"
+			/>
+			<path
+				d="M7 11l3 3 5-5"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
 		</svg>
 	);
 }
@@ -149,9 +181,19 @@ function UsersIcon({ className }: { className?: string }) {
 	return (
 		<svg viewBox="0 0 22 22" fill="none" className={className}>
 			<circle cx="8" cy="7" r="3" stroke="currentColor" strokeWidth="1.6" />
-			<path d="M3 18v-1a4 4 0 014-4h2a4 4 0 014 4v1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+			<path
+				d="M3 18v-1a4 4 0 014-4h2a4 4 0 014 4v1"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinecap="round"
+			/>
 			<circle cx="15" cy="8" r="2" stroke="currentColor" strokeWidth="1.6" />
-			<path d="M15 14a4 4 0 014 3v1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+			<path
+				d="M15 14a4 4 0 014 3v1"
+				stroke="currentColor"
+				strokeWidth="1.6"
+				strokeLinecap="round"
+			/>
 		</svg>
 	);
 }

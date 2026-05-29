@@ -62,7 +62,10 @@ function formatPreviewTime(ts?: number): string {
 	return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function isSwarmWorkspace(sessions: SessionInfo[], workspaceId: string): boolean {
+function isSwarmWorkspace(
+	sessions: SessionInfo[],
+	workspaceId: string,
+): boolean {
 	const wsSessions = sessions.filter(
 		(s) => workspaceIdFromDir(s.workingDir) === workspaceId,
 	);
@@ -90,7 +93,9 @@ function buildSwarmItems(
 		members: swarmSessions.map((s) => s.roleName!),
 		time: preview
 			? formatPreviewTime(preview.timestamp)
-			: anyResponding ? "now" : "",
+			: anyResponding
+				? "now"
+				: "",
 		preview: anyResponding
 			? swarmSessions
 					.filter((s) => s.liveProcessing)
@@ -117,14 +122,18 @@ function buildSwarmItems(
 			time: isProcessing ? "now" : formatPreviewTime(preview?.timestamp) || "—",
 			preview: isProcessing
 				? session.liveStatusDetail || "thinking…"
-				: (preview?.text ?? session.detail ?? `${session.model || "assistant"} ready`),
+				: (preview?.text ??
+					session.detail ??
+					`${session.model || "assistant"} ready`),
 			previewType: isProcessing ? "typing" : "text",
 			typingRole: isProcessing ? session.roleName : undefined,
 			isActive: isProcessing,
 		});
 	}
 
-	const coordinator = wsSessions.find((s) => !s.roleName && s.swarmRole === "coordinator");
+	const coordinator = wsSessions.find(
+		(s) => !s.roleName && s.swarmRole === "coordinator",
+	);
 	if (coordinator) {
 		const preview = sessionPreviewMap[coordinator.sessionId];
 		const isProcessing = coordinator.liveProcessing;
@@ -162,7 +171,9 @@ function buildNormalItems(
 				members: [],
 				time: formatPreviewTime(preview?.timestamp) || "—",
 				preview: preview?.text ?? session.detail ?? session.model ?? "ready",
-				previewType: session.liveProcessing ? ("typing" as const) : ("text" as const),
+				previewType: session.liveProcessing
+					? ("typing" as const)
+					: ("text" as const),
 				isActive: session.liveProcessing,
 			};
 		});
@@ -204,7 +215,11 @@ export function ConversationsList({
 			const items = workspaceItems.get(wsId) || [];
 			return (
 				label.includes(q) ||
-				items.some((i) => i.name.toLowerCase().includes(q) || i.preview.toLowerCase().includes(q))
+				items.some(
+					(i) =>
+						i.name.toLowerCase().includes(q) ||
+						i.preview.toLowerCase().includes(q),
+				)
 			);
 		});
 	}, [workspaces, workspaceItems, searchQuery]);
@@ -236,7 +251,11 @@ export function ConversationsList({
 						fill="currentColor"
 						className="w-3.5 h-3.5 text-sidebar-foreground/40 absolute left-2.5 top-1/2 -translate-y-1/2"
 					>
-						<path fillRule="evenodd" d="M11.5 7.5a4 4 0 11-8 0 4 4 0 018 0zm-.82 4.74a5.5 5.5 0 111.06-1.06l2.79 2.79a.75.75 0 11-1.06 1.06l-2.79-2.79z" clipRule="evenodd" />
+						<path
+							fillRule="evenodd"
+							d="M11.5 7.5a4 4 0 11-8 0 4 4 0 018 0zm-.82 4.74a5.5 5.5 0 111.06-1.06l2.79 2.79a.75.75 0 11-1.06 1.06l-2.79-2.79z"
+							clipRule="evenodd"
+						/>
 					</svg>
 					<input
 						type="text"
@@ -263,9 +282,7 @@ export function ConversationsList({
 							<div
 								className={cn(
 									"flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all duration-150 group/ws",
-									isActive
-										? "bg-sidebar-accent"
-										: "hover:bg-sidebar-accent/50",
+									isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/50",
 								)}
 							>
 								<button
@@ -276,9 +293,16 @@ export function ConversationsList({
 									<svg
 										viewBox="0 0 16 16"
 										fill="currentColor"
-										className={cn("w-3.5 h-3.5 transition-transform duration-150", isExpanded && "rotate-90")}
+										className={cn(
+											"w-3.5 h-3.5 transition-transform duration-150",
+											isExpanded && "rotate-90",
+										)}
 									>
-										<path fillRule="evenodd" d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+										<path
+											fillRule="evenodd"
+											d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z"
+											clipRule="evenodd"
+										/>
 									</svg>
 								</button>
 
@@ -289,9 +313,18 @@ export function ConversationsList({
 								>
 									<div className="flex items-center gap-2">
 										{isSwarm ? (
-											<span className="text-[13px] font-medium text-sidebar-primary truncate">#{label}</span>
+											<span className="text-[13px] font-medium text-sidebar-primary truncate">
+												#{label}
+											</span>
 										) : (
-											<span className={cn("text-[13px] font-medium truncate", isActive ? "text-sidebar-primary" : "text-sidebar-foreground")}>
+											<span
+												className={cn(
+													"text-[13px] font-medium truncate",
+													isActive
+														? "text-sidebar-primary"
+														: "text-sidebar-foreground",
+												)}
+											>
 												{label}
 											</span>
 										)}
@@ -303,7 +336,9 @@ export function ConversationsList({
 									</div>
 								</button>
 
-								<span className="text-[11px] text-sidebar-foreground/40 mr-1">{items.length}</span>
+								<span className="text-[11px] text-sidebar-foreground/40 mr-1">
+									{items.length}
+								</span>
 							</div>
 
 							{/* Expanded items */}
@@ -319,18 +354,26 @@ export function ConversationsList({
 											key={item.id}
 											item={item}
 											isSelected={selectedConvId === item.id}
-											onRemove={onRemoveSession && item.avatarType === "single" ? () => onRemoveSession(item.id) : undefined}
+											onRemove={
+												onRemoveSession && item.avatarType === "single"
+													? () => onRemoveSession(item.id)
+													: undefined
+											}
 											onSelect={() => {
 												onSelectConversation(item.id);
 												if (onSelectSession) {
-													const session = sessions.find((s) => s.sessionId === item.id);
+													const session = sessions.find(
+														(s) => s.sessionId === item.id,
+													);
 													if (session) onSelectSession(session);
 												}
 											}}
 										/>
 									))}
 									{items.length === 0 && (
-										<div className="px-3 py-3 text-[12px] text-sidebar-foreground/40 text-center">No sessions</div>
+										<div className="px-3 py-3 text-[12px] text-sidebar-foreground/40 text-center">
+											No sessions
+										</div>
 									)}
 								</div>
 							)}
@@ -366,9 +409,7 @@ function ConvItem({
 				onClick={onSelect}
 				className={cn(
 					"w-full text-left px-2.5 py-2 rounded-lg transition-all duration-150 flex items-start gap-2.5",
-					isSelected
-						? "bg-sidebar-accent/80"
-						: "hover:bg-sidebar-accent/40",
+					isSelected ? "bg-sidebar-accent/80" : "hover:bg-sidebar-accent/40",
 				)}
 			>
 				{/* Avatar */}
@@ -383,10 +424,17 @@ function ConvItem({
 				{/* Content */}
 				<div className="flex-1 min-w-0">
 					<div className="flex items-center justify-between gap-2">
-						<span className={cn("text-[13px] font-medium truncate", isSelected ? "text-sidebar-primary" : "text-sidebar-foreground")}>
+						<span
+							className={cn(
+								"text-[13px] font-medium truncate",
+								isSelected ? "text-sidebar-primary" : "text-sidebar-foreground",
+							)}
+						>
 							{item.name}
 						</span>
-						<span className="text-[11px] text-sidebar-foreground/40 shrink-0">{item.time}</span>
+						<span className="text-[11px] text-sidebar-foreground/40 shrink-0">
+							{item.time}
+						</span>
 					</div>
 					<div className="mt-0.5 flex items-center gap-2">
 						{item.previewType === "typing" ? (
@@ -394,7 +442,9 @@ function ConvItem({
 								{item.preview}
 							</span>
 						) : (
-							<span className="text-[12px] text-sidebar-foreground/50 truncate">{item.preview}</span>
+							<span className="text-[12px] text-sidebar-foreground/50 truncate">
+								{item.preview}
+							</span>
 						)}
 						{item.unread && item.unread > 0 ? (
 							<span className="ml-auto min-w-[18px] h-[18px] bg-sidebar-primary text-sidebar-primary-fg text-[9px] font-bold rounded-full flex items-center justify-center px-1 shrink-0">
@@ -409,7 +459,10 @@ function ConvItem({
 			{onRemove && (
 				<button
 					type="button"
-					onClick={(e) => { e.stopPropagation(); onRemove(); }}
+					onClick={(e) => {
+						e.stopPropagation();
+						onRemove();
+					}}
 					className="absolute right-1.5 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-sidebar border border-sidebar-border flex items-center justify-center text-sidebar-foreground/30 hover:text-destructive hover:border-destructive/50 transition-all duration-150 opacity-0 group-hover/item:opacity-100"
 					title="Remove"
 				>
