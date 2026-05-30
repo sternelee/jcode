@@ -228,21 +228,24 @@ export default function App() {
 		}
 	}, [state.connected, listSessions]);
 
-	// Poll permission requests
+	// Poll permission requests — only on chat tab, adaptive interval
 	useEffect(() => {
-		if (!state.connected) return;
-		const interval = setInterval(async () => {
+		if (!state.connected || activeNavTab !== "chat") return;
+		const poll = async () => {
 			try {
 				const result = await invoke<{ requests: PermissionRequest[] }>(
 					"get_permission_requests",
 				);
 				setPermissionRequests(result.requests || []);
 			} catch {
-				// ignore
+				/* ignore */
 			}
-		}, 3000);
+		};
+		void poll();
+		const intervalMs = permissionRequests.length > 0 ? 3000 : 10000;
+		const interval = setInterval(poll, intervalMs);
 		return () => clearInterval(interval);
-	}, [state.connected]);
+	}, [state.connected, activeNavTab, permissionRequests.length]);
 
 	// Cmd+P keyboard shortcut
 	useEffect(() => {

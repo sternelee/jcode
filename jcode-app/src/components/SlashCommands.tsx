@@ -259,7 +259,9 @@ function profileIdFromRoute(route: ModelRoute): string {
 		const fromDisplay = profileIdFromDisplayName(route.provider);
 		if (fromDisplay) return fromDisplay;
 	}
-	return route.provider.toLowerCase();
+	const p = route.provider.toLowerCase();
+	if (p === "auto") return "openrouter";
+	return p;
 }
 
 /** Extract profile ID from a ProviderCatalogEntry. */
@@ -421,9 +423,11 @@ export function ModelPickerModal({
 					seen.add(r.model);
 					return true;
 				});
+				const rawLabel =
+					provider?.display_name || provider?.provider_key || pid;
 				return {
 					profileId: pid,
-					label: provider?.display_name || provider?.provider_key || pid,
+					label: rawLabel === "auto" ? "OpenRouter" : rawLabel,
 					provider,
 					models: deduped,
 					isCurrentProfile: pid === currentProfileId,
