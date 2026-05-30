@@ -255,6 +255,13 @@ export function processEvent(
 					proposal: desktopEvent.proposal,
 				});
 				break;
+			case "side-panel":
+				dispatch({
+					type: "SET_SIDE_PANEL",
+					snapshot: desktopEvent.snapshot,
+					sessionId: sid,
+				});
+				break;
 			default:
 				break;
 		}

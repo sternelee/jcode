@@ -137,7 +137,12 @@ export type Action =
 			mode: "normal" | "swarm";
 			initialMessages?: ChatMessage[];
 	  }
-	| { type: "CLEAR_WORKSPACE_MESSAGES"; workspaceId: string };
+	| { type: "CLEAR_WORKSPACE_MESSAGES"; workspaceId: string }
+	| {
+			type: "SET_SIDE_PANEL";
+			snapshot: import("@/types").SidePanelSnapshot;
+			sessionId?: string;
+	  };
 
 let messageCounter = 0;
 function nextMsgId(): string {
@@ -229,13 +234,13 @@ function applySwarmStatusToSessions(
 			liveProcessing: ["running", "running_stale"].includes(lowerStatus)
 				? true
 				: [
-						"ready",
-						"completed",
-						"done",
-						"failed",
-						"stopped",
-						"blocked",
-					].includes(lowerStatus)
+							"ready",
+							"completed",
+							"done",
+							"failed",
+							"stopped",
+							"blocked",
+						].includes(lowerStatus)
 					? false
 					: session.liveProcessing,
 			livePhase:
@@ -246,8 +251,8 @@ function applySwarmStatusToSessions(
 					: lowerStatus === "blocked"
 						? "waiting"
 						: ["ready", "completed", "done", "failed", "stopped"].includes(
-								lowerStatus,
-							)
+									lowerStatus,
+								)
 							? "idle"
 							: session.livePhase,
 			subtitle: session.model
@@ -342,6 +347,7 @@ function getOrCreateSessionData(
 		statusDetail: null,
 		queuedDrafts: [],
 		streamingIndexByRole: {},
+		sidePanel: null,
 	};
 }
 
@@ -377,6 +383,7 @@ function updateSessionData(
 					memoryEnabled: updated.memoryEnabled,
 					statusDetail: updated.statusDetail,
 					queuedDrafts: updated.queuedDrafts,
+					sidePanel: updated.sidePanel,
 				}
 			: {}),
 	};
@@ -398,7 +405,11 @@ function findStreamingMessageIndex(
 			return idx;
 		}
 	}
-	for (let i = data.messages.length - 1; i >= Math.max(0, data.messages.length - 5); i--) {
+	for (
+		let i = data.messages.length - 1;
+		i >= Math.max(0, data.messages.length - 5);
+		i--
+	) {
 		const m = data.messages[i];
 		if (m?.role === "assistant" && m?.isStreaming) {
 			if (!roleSessionId || m.roleSessionId === roleSessionId) {
@@ -409,7 +420,10 @@ function findStreamingMessageIndex(
 	return -1;
 }
 
-export function sessionReducer(state: SessionState, action: Action): SessionState {
+export function sessionReducer(
+	state: SessionState,
+	action: Action,
+): SessionState {
 	switch (action.type) {
 		case "SET_CONNECTING":
 			return updateSessionData(state, action.sessionId, (data) => ({
@@ -570,7 +584,10 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
 				const ms = [...data.messages];
 				const targetIdx = findStreamingMessageIndex(data, action.roleSessionId);
 				if (targetIdx !== -1) {
-					ms[targetIdx] = { ...ms[targetIdx], content: ms[targetIdx].content + action.text };
+					ms[targetIdx] = {
+						...ms[targetIdx],
+						content: ms[targetIdx].content + action.text,
+					};
 				} else {
 					const newMsg: ChatMessage = {
 						id: nextMsgId(),
@@ -878,7 +895,10 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
 			) {
 				const existing = getOrCreateSessionData(state, virtualSessionId);
 				const merged = new Map<string, ChatMessage>();
-				for (const message of [...existing.messages, ...action.initialMessages]) {
+				for (const message of [
+					...existing.messages,
+					...action.initialMessages,
+				]) {
 					const signature = [
 						message.role,
 						message.roleSessionId || "",
@@ -903,6 +923,11 @@ export function sessionReducer(state: SessionState, action: Action): SessionStat
 
 			return { ...state, workspaceModes: newModes };
 		}
+		case "SET_SIDE_PANEL":
+			return updateSessionData(state, action.sessionId, (data) => ({
+				...data,
+				sidePanel: action.snapshot,
+			}));
 		case "CLEAR_WORKSPACE_MESSAGES": {
 			const virtualSessionId = `workspace:${action.workspaceId}`;
 			const { [virtualSessionId]: _removed, ...restSessionData } =

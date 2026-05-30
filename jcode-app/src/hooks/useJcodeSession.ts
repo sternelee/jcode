@@ -46,7 +46,9 @@ export function useJcodeSession() {
 				const type = payload.type as string | undefined;
 				if (type === "user_message") {
 					const content = (payload.content as string) || "";
-					const images = payload.images as import("@/types").AttachedImage[] | undefined;
+					const images = payload.images as
+						| import("@/types").AttachedImage[]
+						| undefined;
 					dispatch({
 						type: "ADD_USER_MESSAGE",
 						content,
@@ -77,9 +79,10 @@ export function useJcodeSession() {
 		const unlisten = listen<Record<string, unknown>>(
 			"server-event",
 			(event) => {
-				const payload = event.payload as unknown as import("@/types").ServerEvent & {
-					session_id?: string;
-				};
+				const payload =
+					event.payload as unknown as import("@/types").ServerEvent & {
+						session_id?: string;
+					};
 				const sessionId = payload.session_id;
 				processEvent(payload, dispatch, sessionId);
 			},
@@ -465,28 +468,31 @@ export function useJcodeSession() {
 						role_session_id?: string | null;
 					}>
 				>("get_workspace_thread_history", { workingDir });
-				return data.map((message, index) => ({
-					id: message.id || `workspace-history-${index}`,
-					role:
-						message.role === "user" ||
-						message.role === "assistant" ||
-						message.role === "system"
-							? message.role
-							: "system",
-					content: message.content,
-					toolExecutions: message.tool_executions || [],
-					isStreaming: message.is_streaming ?? false,
-					images: message.images?.map((image, imageIndex) => ({
-						id: `${message.id}-img-${imageIndex}`,
-						mediaType: image.media_type,
-						base64Data: image.base64_data || image.data,
-						filePath: image.path,
-						label: image.label,
-					})),
-					timestamp: message.timestamp ?? undefined,
-					roleName: message.role_name ?? undefined,
-					roleSessionId: message.role_session_id ?? undefined,
-				} satisfies ChatMessage));
+				return data.map(
+					(message, index) =>
+						({
+							id: message.id || `workspace-history-${index}`,
+							role:
+								message.role === "user" ||
+								message.role === "assistant" ||
+								message.role === "system"
+									? message.role
+									: "system",
+							content: message.content,
+							toolExecutions: message.tool_executions || [],
+							isStreaming: message.is_streaming ?? false,
+							images: message.images?.map((image, imageIndex) => ({
+								id: `${message.id}-img-${imageIndex}`,
+								mediaType: image.media_type,
+								base64Data: image.base64_data || image.data,
+								filePath: image.path,
+								label: image.label,
+							})),
+							timestamp: message.timestamp ?? undefined,
+							roleName: message.role_name ?? undefined,
+							roleSessionId: message.role_session_id ?? undefined,
+						}) satisfies ChatMessage,
+				);
 			} catch (e) {
 				dispatch({ type: "SET_ERROR", message: String(e) });
 				return [] as ChatMessage[];
@@ -845,6 +851,98 @@ export function useJcodeSession() {
 		[],
 	);
 
+	const searchMemories = useCallback(
+		async (query: string, semantic = false) => {
+			try {
+				return (
+					(
+						await invoke<{
+							results: import("@/types").MemoryEntry[];
+						}>("search_memories", { query, semantic })
+					)?.results ?? []
+				);
+			} catch (e) {
+				dispatch({ type: "SET_ERROR", message: String(e) });
+				return [];
+			}
+		},
+		[],
+	);
+
+	const getMemoryList = useCallback(
+		async (scope: "all" | "project" | "global" = "all", tag?: string) => {
+			try {
+				return (
+					(
+						await invoke<{
+							memories: import("@/types").MemoryEntry[];
+						}>("get_memory_list", { scope, tag: tag || null })
+					)?.memories ?? []
+				);
+			} catch (e) {
+				dispatch({ type: "SET_ERROR", message: String(e) });
+				return [];
+			}
+		},
+		[],
+	);
+
+	const getMemoryStats = useCallback(async () => {
+		try {
+			return await invoke<import("@/types").MemoryStats>("get_memory_stats");
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return null;
+		}
+	}, []);
+
+	const getUsageInfo = useCallback(async () => {
+		try {
+			return (
+				(await invoke<import("@/types").UsageInfo>("get_usage_info")) ?? {
+					providers: [],
+				}
+			);
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return { providers: [] };
+		}
+	}, []);
+
+	const getVersionInfo = useCallback(async () => {
+		try {
+			return await invoke<import("@/types").VersionInfo>("get_version_info");
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return null;
+		}
+	}, []);
+
+	const getWorkspaceMemoryPreferences = useCallback(async () => {
+		try {
+			return await invoke<import("@/types").WorkspaceMemoryPreferences>(
+				"get_workspace_memory_preferences",
+			);
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return null;
+		}
+	}, []);
+
+	const setWorkspaceMemoryPreference = useCallback(
+		async (workingDir: string | null, enabled: boolean) => {
+			try {
+				await invoke("set_workspace_memory_preference", {
+					workingDir: workingDir ?? null,
+					enabled,
+				});
+			} catch (e) {
+				dispatch({ type: "SET_ERROR", message: String(e) });
+			}
+		},
+		[],
+	);
+
 	const getLastSessionState = useCallback(async () => {
 		try {
 			return await invoke<{
@@ -864,16 +962,15 @@ export function useJcodeSession() {
 		}
 	}, []);
 
-	const gitStatus = useCallback(
-		async (workingDir?: string | null) => {
-			try {
-				return await invoke<string>("git_status", { workingDir: workingDir ?? null });
-			} catch (e) {
-				return String(e);
-			}
-		},
-		[],
-	);
+	const gitStatus = useCallback(async (workingDir?: string | null) => {
+		try {
+			return await invoke<string>("git_status", {
+				workingDir: workingDir ?? null,
+			});
+		} catch (e) {
+			return String(e);
+		}
+	}, []);
 
 	return {
 		state,
@@ -923,6 +1020,13 @@ export function useJcodeSession() {
 		clearSessionState,
 		gitStatus,
 		setError,
+		searchMemories,
+		getMemoryList,
+		getMemoryStats,
+		getUsageInfo,
+		getVersionInfo,
+		getWorkspaceMemoryPreferences,
+		setWorkspaceMemoryPreference,
 	};
 }
 

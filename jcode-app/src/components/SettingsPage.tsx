@@ -1,6 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AuthStatus, VersionInfo } from "@/types";
+import type {
+	AuthStatus,
+	VersionInfo,
+	MemoryEntry,
+	MemoryStats,
+	WorkspaceMemoryPreferences,
+} from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
@@ -12,6 +18,14 @@ import {
 	Download,
 	Upload,
 	CheckCircle2,
+	Search,
+	X,
+	Tag,
+	Database,
+	BarChart3,
+	FolderOpen,
+	ToggleLeft,
+	ToggleRight,
 } from "lucide-react";
 
 interface SettingsPageProps {
@@ -21,6 +35,20 @@ interface SettingsPageProps {
 	onImportMemories?: (
 		path: string,
 	) => Promise<{ project_count: number; global_count: number } | null>;
+	onSearchMemories?: (
+		query: string,
+		semantic: boolean,
+	) => Promise<MemoryEntry[]>;
+	onGetMemoryList?: (
+		scope: "all" | "project" | "global",
+		tag?: string,
+	) => Promise<MemoryEntry[]>;
+	onGetMemoryStats?: () => Promise<MemoryStats | null>;
+	onGetWorkspaceMemoryPreferences?: () => Promise<WorkspaceMemoryPreferences | null>;
+	onSetWorkspaceMemoryPreference?: (
+		workingDir: string | null,
+		enabled: boolean,
+	) => Promise<void>;
 }
 
 export function SettingsPage({
@@ -28,6 +56,11 @@ export function SettingsPage({
 	onThemeChange,
 	onExportMemories,
 	onImportMemories,
+	onSearchMemories,
+	onGetMemoryList,
+	onGetMemoryStats,
+	onGetWorkspaceMemoryPreferences,
+	onSetWorkspaceMemoryPreference,
 }: SettingsPageProps) {
 	const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
 	const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -38,6 +71,64 @@ export function SettingsPage({
 		type: "export" | "import";
 		status: string;
 	} | null>(null);
+	const [memorySearchQuery, setMemorySearchQuery] = useState("");
+	const [memorySearchSemantic, setMemorySearchSemantic] = useState(false);
+	const [memoryResults, setMemoryResults] = useState<MemoryEntry[]>([]);
+	const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
+	const [memoryScope, setMemoryScope] = useState<"all" | "project" | "global">(
+		"all",
+	);
+	const [memoryTag, setMemoryTag] = useState("");
+	const [memoryLoading, setMemoryLoading] = useState(false);
+	const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
+	const [workspaceMemPrefs, setWorkspaceMemPrefs] =
+		useState<WorkspaceMemoryPreferences | null>(null);
+	const [workspaceMemLoading, setWorkspaceMemLoading] = useState(false);
+
+	useEffect(() => {
+		if (!onGetMemoryStats) return;
+		onGetMemoryStats()
+			.then(setMemoryStats)
+			.catch(() => {});
+	}, [onGetMemoryStats]);
+
+	useEffect(() => {
+		if (!onGetWorkspaceMemoryPreferences) return;
+		onGetWorkspaceMemoryPreferences()
+			.then(setWorkspaceMemPrefs)
+			.catch(() => {});
+	}, [onGetWorkspaceMemoryPreferences]);
+
+	const handleMemorySearch = useCallback(async () => {
+		if (!onSearchMemories) return;
+		setMemoryLoading(true);
+		const results = await onSearchMemories(
+			memorySearchQuery,
+			memorySearchSemantic,
+		);
+		setMemoryResults(results);
+		setMemoryLoading(false);
+	}, [onSearchMemories, memorySearchQuery, memorySearchSemantic]);
+
+	const handleMemoryList = useCallback(async () => {
+		if (!onGetMemoryList) return;
+		setMemoryLoading(true);
+		const results = await onGetMemoryList(memoryScope, memoryTag || undefined);
+		setMemoryResults(results);
+		setMemoryLoading(false);
+	}, [onGetMemoryList, memoryScope, memoryTag]);
+
+	useEffect(() => {
+		if (onGetMemoryList && !memorySearchQuery) {
+			handleMemoryList();
+		}
+	}, [
+		memoryScope,
+		memoryTag,
+		onGetMemoryList,
+		handleMemoryList,
+		memorySearchQuery,
+	]);
 
 	useEffect(() => {
 		void invoke<VersionInfo>("get_version_info")
@@ -265,6 +356,282 @@ export function SettingsPage({
 						</SettingsCard>
 					)}
 
+					{/* Memory Browser */}
+					{(onSearchMemories || onGetMemoryList) && (
+						<SettingsCard
+							icon={<Database className="w-4 h-4" />}
+							title="Memory Browser"
+							action={
+								memoryStats && (
+									<div className="flex items-center gap-2">
+										<Badge variant="secondary" className="text-[9px] h-[18px]">
+											{memoryStats.total} total
+										</Badge>
+										<Badge variant="outline" className="text-[9px] h-[18px]">
+											{memoryStats.unique_tags} tags
+										</Badge>
+									</div>
+								)
+							}
+						>
+							<div className="space-y-3">
+								{/* Search bar */}
+								<div className="flex items-center gap-2">
+									<div className="relative flex-1">
+										<Search className="w-3.5 h-3.5 text-muted-foreground/40 absolute left-2.5 top-1/2 -translate-y-1/2" />
+										<input
+											type="text"
+											value={memorySearchQuery}
+											onChange={(e) => setMemorySearchQuery(e.target.value)}
+											onKeyDown={(e) => {
+												if (e.key === "Enter") {
+													e.preventDefault();
+													handleMemorySearch();
+												}
+											}}
+											placeholder="Search memories…"
+											className="w-full h-8 pl-8 pr-3 rounded-lg bg-muted/30 border border-border text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
+										/>
+									</div>
+									<button
+										type="button"
+										onClick={() => setMemorySearchSemantic((s) => !s)}
+										className={cn(
+											"h-8 px-2.5 rounded-lg text-[11px] font-medium transition-all border",
+											memorySearchSemantic
+												? "bg-primary/10 text-primary border-primary/30"
+												: "bg-muted/30 text-muted-foreground border-border hover:text-foreground",
+										)}
+										title="Toggle semantic search"
+									>
+										Semantic
+									</button>
+									<button
+										type="button"
+										onClick={handleMemorySearch}
+										disabled={memoryLoading || !memorySearchQuery.trim()}
+										className="shrink-0 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:bg-primary/90 disabled:opacity-40 transition-all"
+									>
+										{memoryLoading ? "…" : "Search"}
+									</button>
+								</div>
+
+								{/* Scope filter */}
+								<div className="flex items-center gap-2">
+									{(["all", "project", "global"] as const).map((scope) => (
+										<button
+											key={scope}
+											type="button"
+											onClick={() => setMemoryScope(scope)}
+											className={cn(
+												"px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all capitalize",
+												memoryScope === scope
+													? "bg-primary/10 text-primary"
+													: "text-muted-foreground hover:text-foreground hover:bg-muted",
+											)}
+										>
+											{scope}
+										</button>
+									))}
+									<div className="relative flex-1">
+										<Tag className="w-3 h-3 text-muted-foreground/40 absolute left-2 top-1/2 -translate-y-1/2" />
+										<input
+											type="text"
+											value={memoryTag}
+											onChange={(e) => setMemoryTag(e.target.value)}
+											placeholder="Filter by tag"
+											className="w-full h-7 pl-6 pr-2 rounded-lg bg-muted/30 border border-border text-[12px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
+										/>
+									</div>
+								</div>
+
+								{/* Stats */}
+								{memoryStats && (
+									<div className="flex items-center gap-3 py-1">
+										<StatPill
+											label="Project"
+											value={memoryStats.project_count}
+										/>
+										<StatPill label="Global" value={memoryStats.global_count} />
+										{Object.entries(memoryStats.categories).map(
+											([cat, count]) => (
+												<StatPill key={cat} label={cat} value={count} />
+											),
+										)}
+									</div>
+								)}
+
+								{/* Results */}
+								<div className="max-h-[320px] overflow-y-auto space-y-1.5 pr-1">
+									{memoryLoading && memoryResults.length === 0 && (
+										<div className="flex items-center justify-center py-8 text-muted-foreground text-[13px]">
+											<BarChart3 className="w-4 h-4 animate-pulse mr-2" />
+											Loading…
+										</div>
+									)}
+									{!memoryLoading && memoryResults.length === 0 && (
+										<div className="text-center py-6 text-muted-foreground text-[13px]">
+											No memories found
+										</div>
+									)}
+									{memoryResults.map((m) => {
+										const isExpanded = expandedMemoryId === m.id;
+										return (
+											<div
+												key={m.id}
+												className="rounded-lg border border-border bg-muted/20 overflow-hidden"
+											>
+												<button
+													type="button"
+													onClick={() =>
+														setExpandedMemoryId((prev) =>
+															prev === m.id ? null : m.id,
+														)
+													}
+													className="w-full text-left px-3 py-2 flex items-start gap-2"
+												>
+													<div className="flex-1 min-w-0">
+														<div className="flex items-center gap-2 mb-0.5">
+															<span className="text-[12px] font-medium text-foreground truncate">
+																{m.content.slice(0, 80)}
+																{m.content.length > 80 && "…"}
+															</span>
+														</div>
+														<div className="flex items-center gap-1.5 flex-wrap">
+															<Badge
+																variant="outline"
+																className="text-[9px] h-[16px] capitalize"
+															>
+																{m.category}
+															</Badge>
+															{m.tags.slice(0, 3).map((tag) => (
+																<Badge
+																	key={tag}
+																	variant="secondary"
+																	className="text-[9px] h-[16px]"
+																>
+																	{tag}
+																</Badge>
+															))}
+															{m.score !== undefined && (
+																<span className="text-[10px] text-muted-foreground ml-auto">
+																	score: {m.score.toFixed(3)}
+																</span>
+															)}
+														</div>
+													</div>
+													{isExpanded ? (
+														<X className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+													) : (
+														<Search className="w-3.5 h-3.5 text-muted-foreground shrink-0 mt-0.5" />
+													)}
+												</button>
+												{isExpanded && (
+													<div className="px-3 pb-3 pt-1 border-t border-border/50">
+														<p className="text-[12px] text-foreground whitespace-pre-wrap leading-relaxed">
+															{m.content}
+														</p>
+														<div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
+															<span>
+																Trust: {m.trust} | Strength: {m.strength}
+															</span>
+															<span className="ml-auto">
+																{new Date(m.updated_at).toLocaleDateString()}
+															</span>
+														</div>
+													</div>
+												)}
+											</div>
+										);
+									})}
+								</div>
+							</div>
+						</SettingsCard>
+					)}
+
+					{/* Workspace Memory Preferences */}
+					{onGetWorkspaceMemoryPreferences && (
+						<SettingsCard
+							icon={<FolderOpen className="w-4 h-4" />}
+							title="Workspace Memory"
+						>
+							<div className="space-y-3">
+								<div className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2">
+									<span className="text-[13px] text-foreground">
+										Default enabled
+									</span>
+									<button
+										type="button"
+										onClick={async () => {
+											if (!workspaceMemPrefs || !onSetWorkspaceMemoryPreference)
+												return;
+											setWorkspaceMemLoading(true);
+											await onSetWorkspaceMemoryPreference(
+												null,
+												!workspaceMemPrefs.default_enabled,
+											);
+											const updated = await onGetWorkspaceMemoryPreferences();
+											if (updated) setWorkspaceMemPrefs(updated);
+											setWorkspaceMemLoading(false);
+										}}
+										disabled={workspaceMemLoading}
+										className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+									>
+										{workspaceMemPrefs?.default_enabled ? (
+											<ToggleRight className="w-5 h-5 text-primary" />
+										) : (
+											<ToggleLeft className="w-5 h-5" />
+										)}
+									</button>
+								</div>
+								{workspaceMemPrefs &&
+									Object.keys(workspaceMemPrefs.workspaces).length > 0 && (
+										<div className="space-y-1">
+											{Object.entries(workspaceMemPrefs.workspaces).map(
+												([wd, enabled]) => (
+													<div
+														key={wd}
+														className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2"
+													>
+														<span className="text-[12px] text-foreground truncate max-w-[200px]">
+															{wd.split("/").pop() || wd}
+														</span>
+														<button
+															type="button"
+															onClick={async () => {
+																if (
+																	!onSetWorkspaceMemoryPreference ||
+																	!onGetWorkspaceMemoryPreferences
+																)
+																	return;
+																setWorkspaceMemLoading(true);
+																await onSetWorkspaceMemoryPreference(
+																	wd,
+																	!enabled,
+																);
+																const updated =
+																	await onGetWorkspaceMemoryPreferences();
+																if (updated) setWorkspaceMemPrefs(updated);
+																setWorkspaceMemLoading(false);
+															}}
+															disabled={workspaceMemLoading}
+															className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+														>
+															{enabled ? (
+																<ToggleRight className="w-4 h-4 text-primary" />
+															) : (
+																<ToggleLeft className="w-4 h-4" />
+															)}
+														</button>
+													</div>
+												),
+											)}
+										</div>
+									)}
+							</div>
+						</SettingsCard>
+					)}
+
 					{/* Version */}
 					<SettingsCard icon={<Cpu className="w-4 h-4" />} title="Version">
 						{versionInfo ? (
@@ -339,6 +706,15 @@ function SettingsCard({
 				{action}
 			</div>
 			{children && <div className="px-4 py-3">{children}</div>}
+		</div>
+	);
+}
+
+function StatPill({ label, value }: { label: string; value: number }) {
+	return (
+		<div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-muted/50 text-[11px]">
+			<span className="text-muted-foreground capitalize">{label}</span>
+			<span className="font-semibold text-foreground">{value}</span>
 		</div>
 	);
 }

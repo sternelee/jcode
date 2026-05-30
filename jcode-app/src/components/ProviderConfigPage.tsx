@@ -24,10 +24,13 @@ import {
 	Wifi,
 	Bot,
 	Cloud,
+	BarChart3,
 } from "lucide-react";
+import type { UsageInfo } from "@/types";
 
 interface ProviderConfigPageProps {
 	onAuthStatusChange?: () => void;
+	onGetUsageInfo?: () => Promise<UsageInfo>;
 }
 
 /** Provider branding icons */
@@ -84,6 +87,7 @@ function ProviderIcon({
 
 export function ProviderConfigPage({
 	onAuthStatusChange,
+	onGetUsageInfo,
 }: ProviderConfigPageProps) {
 	const [providers, setProviders] = useState<ProviderCatalogEntry[]>([]);
 	const [modelRoutes, setModelRoutes] = useState<ModelRoute[]>([]);
@@ -108,6 +112,8 @@ export function ProviderConfigPage({
 		api_key: "",
 		auth: "bearer",
 	});
+	const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null);
+	const [usageLoading, setUsageLoading] = useState(false);
 
 	const refresh = useCallback(async () => {
 		try {
@@ -123,9 +129,18 @@ export function ProviderConfigPage({
 		}
 	}, []);
 
+	const loadUsage = useCallback(async () => {
+		if (!onGetUsageInfo) return;
+		setUsageLoading(true);
+		const info = await onGetUsageInfo();
+		setUsageInfo(info);
+		setUsageLoading(false);
+	}, [onGetUsageInfo]);
+
 	useEffect(() => {
 		void refresh();
-	}, [refresh]);
+		void loadUsage();
+	}, [refresh, loadUsage]);
 
 	const startAuthFlow = useCallback(async (providerId: string) => {
 		setAuthBusy(true);
@@ -746,6 +761,114 @@ export function ProviderConfigPage({
 							))}
 						</div>
 					</div>
+
+					{/* Usage */}
+					{onGetUsageInfo && (
+						<div className="rounded-xl border border-border bg-card overflow-hidden">
+							<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+								<div className="flex items-center gap-2">
+									<BarChart3 className="w-4 h-4 text-primary" />
+									<span className="text-[14px] font-semibold text-foreground">
+										Usage
+									</span>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="h-8 w-8 p-0"
+									onClick={loadUsage}
+									disabled={usageLoading}
+								>
+									{usageLoading ? (
+										<Loader2 className="w-3.5 h-3.5 animate-spin" />
+									) : (
+										<RefreshCw className="w-3.5 h-3.5" />
+									)}
+								</Button>
+							</div>
+							<div className="p-4">
+								{!usageInfo || usageInfo.providers.length === 0 ? (
+									<div className="text-[13px] text-muted-foreground text-center py-6">
+										No usage data available.
+									</div>
+								) : (
+									<div className="space-y-3">
+										{usageInfo.providers.map((provider) => (
+											<div
+												key={provider.provider_name}
+												className="rounded-lg border border-border p-3 space-y-2"
+											>
+												<div className="flex items-center justify-between">
+													<span className="text-[13px] font-medium text-foreground">
+														{provider.provider_name}
+													</span>
+													{provider.hard_limit_reached && (
+														<Badge variant="destructive" className="text-[9px]">
+															Limit reached
+														</Badge>
+													)}
+													{provider.error && (
+														<Badge
+															variant="outline"
+															className="text-[9px] text-amber-500 border-amber-500/30"
+														>
+															Error
+														</Badge>
+													)}
+												</div>
+												{provider.limits.map((limit) => (
+													<div key={limit.name} className="space-y-1">
+														<div className="flex items-center justify-between text-[11px]">
+															<span className="text-muted-foreground">
+																{limit.name}
+															</span>
+															<span className="text-foreground font-medium">
+																{limit.usage_percent.toFixed(1)}%
+															</span>
+														</div>
+														<div className="h-1.5 rounded-full bg-muted overflow-hidden">
+															<div
+																className={cn(
+																	"h-full rounded-full transition-all",
+																	limit.usage_percent >= 90
+																		? "bg-destructive"
+																		: limit.usage_percent >= 70
+																			? "bg-amber-500"
+																			: "bg-emerald-500",
+																)}
+																style={{
+																	width: `${Math.min(limit.usage_percent, 100)}%`,
+																}}
+															/>
+														</div>
+														{limit.resets_at && (
+															<span className="text-[10px] text-muted-foreground">
+																Resets{" "}
+																{new Date(limit.resets_at).toLocaleDateString()}
+															</span>
+														)}
+													</div>
+												))}
+												{provider.extra_info.length > 0 && (
+													<div className="flex flex-wrap gap-1.5 pt-1">
+														{provider.extra_info.map(([k, v], i) => (
+															<Badge
+																key={i}
+																variant="secondary"
+																className="text-[9px]"
+															>
+																{k}: {v}
+															</Badge>
+														))}
+													</div>
+												)}
+											</div>
+										))}
+									</div>
+								)}
+							</div>
+						</div>
+					)}
 
 					{/* Model Routes */}
 					<div className="rounded-xl border border-border bg-card overflow-hidden">

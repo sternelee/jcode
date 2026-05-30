@@ -31,6 +31,7 @@ interface ConversationsListProps {
 	selectedConvId?: string;
 	sessionPreviewMap?: Record<string, SessionPreview>;
 	sessionData?: Record<string, PerSessionData>;
+	gitBranches?: Record<string, string>;
 	onToggleWorkspace: (workspaceId: string) => void;
 	onSelectWorkspace: (workspaceId: string) => void;
 	onSelectConversation: (id: string) => void;
@@ -157,6 +158,7 @@ export function ConversationsList({
 	onRemoveSession,
 	sessionPreviewMap = {},
 	sessionData = {},
+	gitBranches = {},
 }: ConversationsListProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 
@@ -276,16 +278,23 @@ export function ConversationsList({
 									onClick={() => onSelectWorkspace(wsId)}
 									className="flex-1 text-left min-w-0"
 								>
-									<span
-										className={cn(
-											"text-[13px] font-medium truncate",
-											isActive
-												? "text-sidebar-primary"
-												: "text-sidebar-foreground",
+									<div className="flex items-center gap-1.5 min-w-0">
+										<span
+											className={cn(
+												"text-[13px] font-medium truncate",
+												isActive
+													? "text-sidebar-primary"
+													: "text-sidebar-foreground",
+											)}
+										>
+											{label}
+										</span>
+										{gitBranches[wsId] && (
+											<span className="shrink-0 text-[10px] font-mono text-sidebar-foreground/40 bg-sidebar-accent/50 px-1 py-0.5 rounded">
+												{gitBranches[wsId]}
+											</span>
 										)}
-									>
-										{label}
-									</span>
+									</div>
 								</button>
 
 								<span className="text-[11px] text-sidebar-foreground/40 mr-1">

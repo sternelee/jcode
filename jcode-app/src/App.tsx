@@ -14,6 +14,7 @@ import { MonitorPage } from "@/components/MonitorPage";
 import { TeamPage } from "@/components/TeamPage";
 import { MediaPage } from "@/components/MediaPage";
 import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
+import { SidePanel } from "@/components/SidePanel";
 import { parseSlashCommand } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
 import type { SessionInfo, PermissionRequest } from "@/types";
@@ -62,8 +63,15 @@ export default function App() {
 		toggleWorkspace,
 		renameSession,
 		runDictation,
+		sendSoftInterrupt,
 		exportMemories,
 		importMemories,
+		searchMemories,
+		getMemoryList,
+		getMemoryStats,
+		getUsageInfo,
+		getWorkspaceMemoryPreferences,
+		setWorkspaceMemoryPreference,
 	} = useJcodeSession();
 
 	const [activeNavTab, setActiveNavTab] = useState("chat");
@@ -90,6 +98,8 @@ export default function App() {
 		PermissionRequest[]
 	>([]);
 	const [helpOpen, setHelpOpen] = useState(false);
+	const [sidePanelOpen, setSidePanelOpen] = useState(false);
+	const [gitBranches, setGitBranches] = useState<Record<string, string>>({});
 
 	const currentWorkspaceId = state.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
 
@@ -264,6 +274,10 @@ export default function App() {
 			if (event.key === "?" && !event.metaKey && !event.ctrlKey) {
 				event.preventDefault();
 				setHelpOpen(true);
+			}
+			if (event.key.toLowerCase() === "o" && !event.metaKey && !event.ctrlKey) {
+				event.preventDefault();
+				setSidePanelOpen((o) => !o);
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
@@ -514,6 +528,49 @@ export default function App() {
 		await sendMessage(content, images, targetSessionId);
 	};
 
+	const handleRegenerateMessage = async (frontendIndex: number) => {
+		if (selectedConvId?.startsWith("workspace:")) {
+			// Workspace threads are merged from multiple sessions;
+			// regeneration is not supported yet.
+			return;
+		}
+		const targetSessionId = resolveTargetSessionId();
+		if (!targetSessionId) return;
+
+		const sessionMsgs = state.sessionData[targetSessionId]?.messages || [];
+		const assistantMsg = sessionMsgs[frontendIndex];
+		if (!assistantMsg || assistantMsg.role !== "assistant") return;
+
+		// Find the preceding user message
+		let userMsgIndex = -1;
+		for (let i = frontendIndex - 1; i >= 0; i--) {
+			if (sessionMsgs[i]?.role === "user") {
+				userMsgIndex = i;
+				break;
+			}
+		}
+		if (userMsgIndex === -1) return;
+
+		// Compute 1-based visible conversation count up to the user message
+		let visibleCount = 0;
+		for (let i = 0; i <= userMsgIndex; i++) {
+			const role = sessionMsgs[i]?.role;
+			if (role === "user" || role === "assistant") {
+				visibleCount += 1;
+			}
+		}
+
+		// Rewind to remove the user message and the assistant message
+		await rewindChat(visibleCount, targetSessionId);
+
+		// Re-send the user message content
+		const userMsg = sessionMsgs[userMsgIndex];
+		const images: [string, string][] | undefined = userMsg.images?.map(
+			(img) => [img.mediaType, img.base64Data || ""],
+		);
+		await sendMessage(userMsg.content, images, targetSessionId);
+	};
+
 	const handleResume = (session: SessionInfo) => {
 		setActiveWorkspace(workspaceIdFromDir(session.workingDir));
 		setWorkingDir(session.workingDir || null);
@@ -555,6 +612,27 @@ export default function App() {
 		() => getWorkspaceSessions(currentWorkspaceId),
 		[currentWorkspaceId, state.sessions],
 	);
+
+	// Poll git branch for each workspace
+	useEffect(() => {
+		const fetchBranches = async () => {
+			const branches: Record<string, string> = {};
+			for (const wsId of workspaces) {
+				if (wsId === DEFAULT_WORKSPACE_ID) continue;
+				const wd = workingDirFromWorkspaceId(wsId);
+				if (!wd) continue;
+				try {
+					const status = await gitStatus(wd);
+					const match = status.match(/On branch ([^\s]+)/);
+					if (match) branches[wsId] = match[1];
+				} catch {
+					// ignore
+				}
+			}
+			setGitBranches(branches);
+		};
+		fetchBranches();
+	}, [workspaces, gitStatus]);
 
 	const respondingRoles = workspaceSessions
 		.filter(
@@ -662,6 +740,7 @@ export default function App() {
 								selectedConvId={selectedConvId}
 								sessionPreviewMap={sessionPreviewMap}
 								sessionData={state.sessionData}
+								gitBranches={gitBranches}
 								onToggleWorkspace={toggleWorkspace}
 								onSelectWorkspace={handleWorkspaceChange}
 								onSelectConversation={handleSelectConversation}
@@ -678,7 +757,7 @@ export default function App() {
 							connected={state.connected}
 							totalTokens={
 								selectedConvId
-									? state.sessionData[selectedConvId]?.totalTokens ?? null
+									? (state.sessionData[selectedConvId]?.totalTokens ?? null)
 									: null
 							}
 							onSend={handleSendMessage}
@@ -728,6 +807,20 @@ export default function App() {
 								void clearChat(resolveTargetSessionId() || undefined)
 							}
 							onRunDictation={runDictation}
+							onSendSoftInterrupt={async (content) => {
+								const sid = resolveTargetSessionId();
+								if (sid) await sendSoftInterrupt(content, sid);
+							}}
+							onRegenerateMessage={handleRegenerateMessage}
+						/>
+						<SidePanel
+							snapshot={
+								selectedConvId
+									? (state.sessionData[selectedConvId]?.sidePanel ?? null)
+									: null
+							}
+							open={sidePanelOpen}
+							onToggle={() => setSidePanelOpen((o) => !o)}
 						/>
 					</>
 				) : (
@@ -738,9 +831,17 @@ export default function App() {
 								onThemeChange={setTheme}
 								onExportMemories={exportMemories}
 								onImportMemories={importMemories}
+								onSearchMemories={searchMemories}
+								onGetMemoryList={getMemoryList}
+								onGetMemoryStats={getMemoryStats}
+								onGetWorkspaceMemoryPreferences={getWorkspaceMemoryPreferences}
+								onSetWorkspaceMemoryPreference={setWorkspaceMemoryPreference}
 							/>
 						) : activeNavTab === "network" ? (
-							<ProviderConfigPage onAuthStatusChange={() => listSessions()} />
+							<ProviderConfigPage
+								onAuthStatusChange={() => listSessions()}
+								onGetUsageInfo={getUsageInfo}
+							/>
 						) : activeNavTab === "tasks" ? (
 							<TasksPage />
 						) : activeNavTab === "monitor" ? (

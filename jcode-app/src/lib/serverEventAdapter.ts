@@ -52,7 +52,8 @@ export type DesktopSemanticEvent =
 			members: import("@/types").SwarmMemberStatusSnapshot[];
 	  }
 	| { type: "swarm-plan"; plan: SwarmPlanSummary }
-	| { type: "swarm-plan-proposal"; proposal: SwarmPlanProposalSummary };
+	| { type: "swarm-plan-proposal"; proposal: SwarmPlanProposalSummary }
+	| { type: "side-panel"; snapshot: import("@/types").SidePanelSnapshot };
 
 function normalizeMessageRole(role: string): "user" | "assistant" | "system" {
 	if (role === "user") return "user";
@@ -383,6 +384,8 @@ export function rawServerEventToDesktopEvents(
 					content: event.success ? event.message : `⚠️ ${event.message}`,
 				},
 			];
+		case "side_panel_state":
+			return [{ type: "side-panel", snapshot: event.snapshot }];
 		case "history": {
 			const desktopEvents: DesktopSemanticEvent[] = [];
 			const historyMessages = event.messages.map(historyMessageToChatMessage);

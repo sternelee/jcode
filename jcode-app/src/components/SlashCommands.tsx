@@ -27,26 +27,69 @@ export interface SlashCommand {
 export const SLASH_COMMANDS: SlashCommand[] = [
 	// Model & settings — handled frontend
 
-	{ name: "/effort", description: "Set reasoning effort", frontend: true, args: "<low|medium|high|auto>" },
-	{ name: "/memory", description: "Toggle memory feature on/off", frontend: true },
+	{
+		name: "/effort",
+		description: "Set reasoning effort",
+		frontend: true,
+		args: "<low|medium|high|auto>",
+	},
+	{
+		name: "/memory",
+		description: "Toggle memory feature on/off",
+		frontend: true,
+	},
 	// Conversation control — handled frontend
 	{ name: "/clear", description: "Clear conversation history", frontend: true },
-	{ name: "/compact", description: "Compact context (background summarisation)", frontend: true },
-	{ name: "/rewind", description: "Rewind to a previous message", frontend: true, args: "<N|undo>" },
-	{ name: "/rename", description: "Rename the current session", args: "<title>" },
+	{
+		name: "/compact",
+		description: "Compact context (background summarisation)",
+		frontend: true,
+	},
+	{
+		name: "/rewind",
+		description: "Rewind to a previous message",
+		frontend: true,
+		args: "<N|undo>",
+	},
+	{
+		name: "/rename",
+		description: "Rename the current session",
+		args: "<title>",
+	},
 	{ name: "/stop", description: "Interrupt the running generation" },
 	{ name: "/cancel", description: "Alias for /stop" },
 	// Info — handled frontend
-	{ name: "/git", description: "Show git status for the working directory", frontend: true },
+	{
+		name: "/git",
+		description: "Show git status for the working directory",
+		frontend: true,
+	},
 	{ name: "/status", description: "Show session status and metadata" },
-	{ name: "/help", description: "Show help and available commands", frontend: true, args: "[command]" },
+	{
+		name: "/help",
+		description: "Show help and available commands",
+		frontend: true,
+		args: "[command]",
+	},
 	// Agent workflows — passed to backend
-	{ name: "/btw", description: "Ask a side question in the background", args: "<question>" },
+	{
+		name: "/btw",
+		description: "Ask a side question in the background",
+		args: "<question>",
+	},
 	{ name: "/review", description: "Launch a one-shot review session" },
 	{ name: "/judge", description: "Launch a one-shot judge session" },
-	{ name: "/poke", description: "Poke model to resume with incomplete todos", args: "[on|off|status]" },
+	{
+		name: "/poke",
+		description: "Poke model to resume with incomplete todos",
+		args: "[on|off|status]",
+	},
 	{ name: "/fix", description: "Recover when the model cannot continue" },
-	{ name: "/refactor", description: "Run a safe refactor loop", args: "[focus]" },
+	{
+		name: "/refactor",
+		description: "Run a safe refactor loop",
+		args: "[focus]",
+	},
 	{ name: "/improve", description: "Autonomously improve the repository" },
 	{ name: "/overnight", description: "Run a supervised overnight coordinator" },
 	{ name: "/context", description: "Show full session context snapshot" },
@@ -54,12 +97,23 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 	{ name: "/usage", description: "Show provider usage limits" },
 	{ name: "/version", description: "Show current version" },
 	{ name: "/dictate", description: "Run speech-to-text and inject transcript" },
-	{ name: "/subagent", description: "Launch a subagent manually", args: "<prompt>" },
-	{ name: "/observe", description: "Show latest tool context in the side panel", args: "[on|off|status]" },
+	{
+		name: "/subagent",
+		description: "Launch a subagent manually",
+		args: "<prompt>",
+	},
+	{
+		name: "/observe",
+		description: "Show latest tool context in the side panel",
+		args: "[on|off|status]",
+	},
 ];
 
 /** Parse the slash command from text at or before cursor. Returns null if not a slash prefix. */
-export function parseSlashQuery(text: string, cursorPos: number): string | null {
+export function parseSlashQuery(
+	text: string,
+	cursorPos: number,
+): string | null {
 	const before = text.slice(0, cursorPos);
 	const match = before.match(/(?:^|\s)(\/\w*)$/);
 	if (!match) return null;
@@ -67,7 +121,9 @@ export function parseSlashQuery(text: string, cursorPos: number): string | null 
 }
 
 /** Check if text is a complete slash command invocation (starts with / and is a known command) */
-export function parseSlashCommand(text: string): { cmd: string; args: string } | null {
+export function parseSlashCommand(
+	text: string,
+): { cmd: string; args: string } | null {
 	const trimmed = text.trim();
 	if (!trimmed.startsWith("/")) return null;
 	const spaceIdx = trimmed.indexOf(" ");
@@ -127,7 +183,9 @@ export function SlashCommandPalette({
 							>
 								{cmd.name}
 								{cmd.args && (
-									<span className="text-muted-foreground font-normal ml-1">{cmd.args}</span>
+									<span className="text-muted-foreground font-normal ml-1">
+										{cmd.args}
+									</span>
 								)}
 							</span>
 							{cmd.frontend && (
@@ -140,8 +198,16 @@ export function SlashCommandPalette({
 							{cmd.description}
 						</div>
 					</div>
-					<svg viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3 text-muted-foreground/30 shrink-0">
-						<path fillRule="evenodd" d="M2 8a.75.75 0 01.75-.75h8.69L8.22 4.03a.75.75 0 011.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 01-1.06-1.06l3.22-3.22H2.75A.75.75 0 012 8z" clipRule="evenodd" />
+					<svg
+						viewBox="0 0 16 16"
+						fill="currentColor"
+						className="w-3 h-3 text-muted-foreground/30 shrink-0"
+					>
+						<path
+							fillRule="evenodd"
+							d="M2 8a.75.75 0 01.75-.75h8.69L8.22 4.03a.75.75 0 011.06-1.06l4.5 4.5a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 01-1.06-1.06l3.22-3.22H2.75A.75.75 0 012 8z"
+							clipRule="evenodd"
+						/>
 					</svg>
 				</button>
 			))}
@@ -246,7 +312,6 @@ interface ModelPickerModalProps {
 	currentProfileId: string | null;
 
 	onSelectModel: (model: string, profileId?: string) => void;
-
 }
 
 export function ModelPickerModal({
@@ -365,7 +430,6 @@ export function ModelPickerModal({
 					configured: provider?.configured ?? true,
 					hasConfigSurface: provider?.has_config_surface ?? false,
 				};
-
 			})
 			.filter((g) => g.models.length > 0)
 			.sort((a, b) => {
@@ -589,7 +653,9 @@ export function ModelPickerModal({
 				{/* Header */}
 				<div className="px-5 pt-4 pb-3 border-b border-border shrink-0">
 					<div className="flex items-center justify-between mb-3">
-						<h2 className="text-[16px] font-bold text-foreground">Switch Model</h2>
+						<h2 className="text-[16px] font-bold text-foreground">
+							Switch Model
+						</h2>
 						<button
 							type="button"
 							onClick={onClose}
@@ -601,8 +667,16 @@ export function ModelPickerModal({
 						</button>
 					</div>
 					<div className="relative">
-						<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2">
-							<path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+						<svg
+							viewBox="0 0 20 20"
+							fill="currentColor"
+							className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2"
+						>
+							<path
+								fillRule="evenodd"
+								d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+								clipRule="evenodd"
+							/>
 						</svg>
 						<input
 							ref={inputRef}
@@ -636,8 +710,7 @@ export function ModelPickerModal({
 										key={m}
 										type="button"
 										onClick={() => {
-													onSelectModel(m, undefined);
-
+											onSelectModel(m, undefined);
 
 											onClose();
 										}}
@@ -650,13 +723,21 @@ export function ModelPickerModal({
 									>
 										<span className="font-mono flex-1 truncate">{m}</span>
 										{isCurrent && (
-											<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-primary shrink-0">
-												<path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+											<svg
+												viewBox="0 0 20 20"
+												fill="currentColor"
+												className="w-4 h-4 text-primary shrink-0"
+											>
+												<path
+													fillRule="evenodd"
+													d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+													clipRule="evenodd"
+												/>
 											</svg>
 										)}
 									</button>
 								);
-								})}
+							})}
 						</div>
 					)}
 
@@ -732,149 +813,141 @@ export function ModelPickerModal({
 													group.models.every(
 														(route) => route.available === false,
 													))) && (
-											<div className="px-3 py-3 border-b space-y-3 bg-muted/20 ml-3 border-l-2 border-muted pl-3">
-												<div className="flex items-start gap-2 text-xs text-muted-foreground">
-													<Link2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-													<div>
-														<div className="font-medium text-foreground">
-															{group.configured
-																? `${group.label} authentication expired`
-																: `${group.label} not configured`}
-														</div>
-														<div>{group.provider.method_detail}</div>
-														<div className="mt-1">
-															{group.configured
-																? "Credentials are no longer valid. Re-authenticate below."
-																: "Models stay hidden until credentials are available."}
-														</div>
-													</div>
-												</div>
-
-												{group.provider.options.length > 0 && (
-													<div className="flex gap-2 flex-wrap">
-														{group.provider.options.map((option) => {
-															const key = optionKey(
-																group.profileId,
-																option,
-															);
-															const active =
-																selectedOption &&
-																optionKey(
-																	group.profileId,
-																	selectedOption,
-																) === key;
-															return (
-																<Button
-																	key={key}
-																	type="button"
-																	size="sm"
-																	variant={active ? "secondary" : "outline"}
-																	className="h-7 text-[10px]"
-																	onClick={() =>
-																		selectProviderOption(
-																			group.profileId,
-																			option,
-																		)
-																	}
-																>
-																	{option.kind === "api_key" ? (
-																		<KeyRound className="w-3 h-3 mr-1" />
-																	) : (
-																		<Link2 className="w-3 h-3 mr-1" />
-																	)}
-																	{option.label}
-																</Button>
-															);
-														})}
-													</div>
-												)}
-
-												{selectedOption && (
-													<div className="space-y-2 rounded border bg-background px-3 py-3">
-														<div className="text-xs font-medium">
-															{selectedOption.label}
-														</div>
-														{selectedOption.detail && (
-															<div className="text-xs text-muted-foreground">
-																{selectedOption.detail}
+												<div className="px-3 py-3 border-b space-y-3 bg-muted/20 ml-3 border-l-2 border-muted pl-3">
+													<div className="flex items-start gap-2 text-xs text-muted-foreground">
+														<Link2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+														<div>
+															<div className="font-medium text-foreground">
+																{group.configured
+																	? `${group.label} authentication expired`
+																	: `${group.label} not configured`}
 															</div>
-														)}
+															<div>{group.provider.method_detail}</div>
+															<div className="mt-1">
+																{group.configured
+																	? "Credentials are no longer valid. Re-authenticate below."
+																	: "Models stay hidden until credentials are available."}
+															</div>
+														</div>
+													</div>
 
-														{selectedOption.kind === "api_key" ? (
-															<>
-																<Input
-																	type="password"
-																	placeholder={
-																		selectedOption.input_placeholder ||
-																		"Paste API key"
-																	}
-																	value={draft.apiKey || ""}
-																	onChange={(event) =>
-																		setDraftValue(
-																			group.profileId,
-																			"apiKey",
-																			event.target.value,
-																		)
-																	}
-																/>
-																{(selectedOption.extra_fields || []).map(
-																	(field) => (
-																		<Input
-																			key={`${group.profileId}-${field.key}`}
-																			placeholder={
-																				field.placeholder ||
-																				field.label
-																			}
-																			value={
-																				draft.extras?.[field.key] || ""
-																			}
-																			onChange={(event) =>
+													{group.provider.options.length > 0 && (
+														<div className="flex gap-2 flex-wrap">
+															{group.provider.options.map((option) => {
+																const key = optionKey(group.profileId, option);
+																const active =
+																	selectedOption &&
+																	optionKey(group.profileId, selectedOption) ===
+																		key;
+																return (
+																	<Button
+																		key={key}
+																		type="button"
+																		size="sm"
+																		variant={active ? "secondary" : "outline"}
+																		className="h-7 text-[10px]"
+																		onClick={() =>
+																			selectProviderOption(
+																				group.profileId,
+																				option,
+																			)
+																		}
+																	>
+																		{option.kind === "api_key" ? (
+																			<KeyRound className="w-3 h-3 mr-1" />
+																		) : (
+																			<Link2 className="w-3 h-3 mr-1" />
+																		)}
+																		{option.label}
+																	</Button>
+																);
+															})}
+														</div>
+													)}
+
+													{selectedOption && (
+														<div className="space-y-2 rounded border bg-background px-3 py-3">
+															<div className="text-xs font-medium">
+																{selectedOption.label}
+															</div>
+															{selectedOption.detail && (
+																<div className="text-xs text-muted-foreground">
+																	{selectedOption.detail}
+																</div>
+															)}
+
+															{selectedOption.kind === "api_key" ? (
+																<>
+																	<Input
+																		type="password"
+																		placeholder={
+																			selectedOption.input_placeholder ||
+																			"Paste API key"
+																		}
+																		value={draft.apiKey || ""}
+																		onChange={(event) =>
+																			setDraftValue(
+																				group.profileId,
+																				"apiKey",
+																				event.target.value,
+																			)
+																		}
+																	/>
+																	{(selectedOption.extra_fields || []).map(
+																		(field) => (
+																			<Input
+																				key={`${group.profileId}-${field.key}`}
+																				placeholder={
+																					field.placeholder || field.label
+																				}
+																				value={draft.extras?.[field.key] || ""}
+																				onChange={(event) =>
 																					setDraftExtraValue(
 																						group.profileId,
 																						field.key,
 																						event.target.value,
 																					)
-																			}
-																		/>
-																	),
-																)}
-																<div className="flex gap-2 flex-wrap">
-																	<Button
-																		size="sm"
-																		className="h-7 text-[10px]"
-																		disabled={busy}
-																		onClick={() =>
-																			void handleSaveApiKey(
-																				group.profileId,
-																				selectedOption,
-																			)
-																		}
-																	>
-																		{busy ? (
-																			<Loader2 className="w-3 h-3 mr-1 animate-spin" />
-																		) : null}
-																		Save credentials
-																	</Button>
-																	{selectedOption.setup_url && (
+																				}
+																			/>
+																		),
+																	)}
+																	<div className="flex gap-2 flex-wrap">
 																		<Button
 																			size="sm"
-																			variant="outline"
 																			className="h-7 text-[10px]"
+																			disabled={busy}
 																			onClick={() =>
-																				window.open(
-																					selectedOption.setup_url,
-																					"_blank",
-																					"noopener,noreferrer",
+																				void handleSaveApiKey(
+																					group.profileId,
+																					selectedOption,
 																				)
 																			}
 																		>
-																			<ExternalLink className="w-3 h-3 mr-1" />
-																			Open setup page
+																			{busy ? (
+																				<Loader2 className="w-3 h-3 mr-1 animate-spin" />
+																			) : null}
+																			Save credentials
 																		</Button>
-																	)}
-																</div>
-															</>
-														) : (
+																		{selectedOption.setup_url && (
+																			<Button
+																				size="sm"
+																				variant="outline"
+																				className="h-7 text-[10px]"
+																				onClick={() =>
+																					window.open(
+																						selectedOption.setup_url,
+																						"_blank",
+																						"noopener,noreferrer",
+																					)
+																				}
+																			>
+																				<ExternalLink className="w-3 h-3 mr-1" />
+																				Open setup page
+																			</Button>
+																		)}
+																	</div>
+																</>
+															) : (
 																<>
 																	{!authPrompt ? (
 																		<div className="flex gap-2 flex-wrap">
@@ -882,23 +955,25 @@ export function ModelPickerModal({
 																				size="sm"
 																				className="h-7 text-[10px]"
 																				disabled={busy}
-																					onClick={() =>
-																						void handleStartAuth(
-																							group.profileId,
-																							selectedOption,
-																						)
-																					}
-																				>
-																					{busy ? (
-																						<Loader2 className="w-3 h-3 mr-1 animate-spin" />
-																					) : null}
-																					Start sign-in
-																				</Button>
+																				onClick={() =>
+																					void handleStartAuth(
+																						group.profileId,
+																						selectedOption,
+																					)
+																				}
+																			>
+																				{busy ? (
+																					<Loader2 className="w-3 h-3 mr-1 animate-spin" />
+																				) : null}
+																				Start sign-in
+																			</Button>
 																		</div>
 																	) : (
 																		<div className="space-y-2 text-xs">
 																			<div className="rounded border bg-muted/30 px-2 py-2 space-y-1">
-																				<div className="font-medium">Auth URL</div>
+																				<div className="font-medium">
+																					Auth URL
+																				</div>
 																				<div className="break-all text-muted-foreground">
 																					{authPrompt.auth_url}
 																				</div>
@@ -916,33 +991,33 @@ export function ModelPickerModal({
 																					size="sm"
 																					variant="outline"
 																					className="h-7 text-[10px]"
-																						onClick={() =>
-																							window.open(
-																								authPrompt.auth_url,
+																					onClick={() =>
+																						window.open(
+																							authPrompt.auth_url,
 																							"_blank",
 																							"noopener,noreferrer",
 																						)
 																					}
-																					>
-																						<ExternalLink className="w-3 h-3 mr-1" />
-																						Open auth page
-																					</Button>
+																				>
+																					<ExternalLink className="w-3 h-3 mr-1" />
+																					Open auth page
+																				</Button>
 																			</div>
 																			{authNeedsInput && (
 																				<Input
 																					placeholder={
 																						authPrompt.input_kind ===
-																							"auth_code"
+																						"auth_code"
 																							? "Paste auth code"
 																							: "Paste callback URL or query string"
 																					}
 																					value={draft.authInput || ""}
-																						onChange={(event) =>
-																							setDraftValue(
-																								group.profileId,
-																								"authInput",
-																								event.target.value,
-																							)
+																					onChange={(event) =>
+																						setDraftValue(
+																							group.profileId,
+																							"authInput",
+																							event.target.value,
+																						)
 																					}
 																				/>
 																			)}
@@ -951,19 +1026,19 @@ export function ModelPickerModal({
 																					size="sm"
 																					className="h-7 text-[10px]"
 																					disabled={busy}
-																						onClick={() =>
-																							void handleCompleteAuth(
-																								group.profileId,
-																							)
-																						}
-																					>
-																						{busy ? (
-																							<Loader2 className="w-3 h-3 mr-1 animate-spin" />
-																						) : null}
-																						{authPrompt.input_kind === "complete"
-																							? "I completed sign-in"
-																							: "Complete sign-in"}
-																					</Button>
+																					onClick={() =>
+																						void handleCompleteAuth(
+																							group.profileId,
+																						)
+																					}
+																				>
+																					{busy ? (
+																						<Loader2 className="w-3 h-3 mr-1 animate-spin" />
+																					) : null}
+																					{authPrompt.input_kind === "complete"
+																						? "I completed sign-in"
+																						: "Complete sign-in"}
+																				</Button>
 																			</div>
 																		</div>
 																	)}
@@ -972,19 +1047,19 @@ export function ModelPickerModal({
 														</div>
 													)}
 
-												{providerErrors[group.profileId] && (
-													<div className="text-xs text-destructive">
-														{providerErrors[group.profileId]}
-													</div>
-												)}
-												{providerMessages[group.profileId] &&
-													!providerErrors[group.profileId] && (
-														<div className="text-xs text-muted-foreground">
-															{providerMessages[group.profileId]}
+													{providerErrors[group.profileId] && (
+														<div className="text-xs text-destructive">
+															{providerErrors[group.profileId]}
 														</div>
 													)}
-											</div>
-										)}
+													{providerMessages[group.profileId] &&
+														!providerErrors[group.profileId] && (
+															<div className="text-xs text-muted-foreground">
+																{providerMessages[group.profileId]}
+															</div>
+														)}
+												</div>
+											)}
 
 										{!collapsed && group.models.length > 0 && (
 											<div className="ml-3 border-l-2 border-muted pl-3 space-y-0.5">
@@ -997,10 +1072,7 @@ export function ModelPickerModal({
 															key={`${group.profileId}:${route.model}`}
 															type="button"
 															onClick={() => {
-																onSelectModel(
-																	route.model,
-																	group.profileId,
-																);
+																onSelectModel(route.model, group.profileId);
 																onClose();
 															}}
 															disabled={route.available === false}
@@ -1040,16 +1112,22 @@ export function ModelPickerModal({
 						);
 					})}
 
-					{!loading && fallbackFiltered.length === 0 && filteredGroups.length === 0 && (
-						<div className="text-center py-8 text-[12px] text-muted-foreground">
-							No models match "{search}"
-						</div>
-					)}
+					{!loading &&
+						fallbackFiltered.length === 0 &&
+						filteredGroups.length === 0 && (
+							<div className="text-center py-8 text-[12px] text-muted-foreground">
+								No models match "{search}"
+							</div>
+						)}
 				</div>
 
 				{/* Footer hint */}
 				<div className="px-5 py-3 border-t border-border text-[11px] text-muted-foreground shrink-0">
-					Use <kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono text-foreground">/model &lt;name&gt;</kbd> in the chat to switch directly
+					Use{" "}
+					<kbd className="px-1.5 py-0.5 rounded bg-muted text-[10px] font-mono text-foreground">
+						/model &lt;name&gt;
+					</kbd>{" "}
+					in the chat to switch directly
 				</div>
 			</div>
 		</div>
@@ -1075,7 +1153,6 @@ interface AgentSettingsPopoverProps {
 	isSwarmRole?: boolean;
 	totalTokens?: [number, number] | null;
 }
-
 
 const EFFORT_LEVELS = [
 	{ value: "low", label: "Low", icon: "⚡" },
@@ -1140,7 +1217,10 @@ export function AgentSettingsPopover({
 						/>
 						<button
 							type="button"
-							disabled={!renameDraft.trim() || renameDraft.trim() === (sessionTitle || "")}
+							disabled={
+								!renameDraft.trim() ||
+								renameDraft.trim() === (sessionTitle || "")
+							}
 							onClick={() => {
 								const trimmed = renameDraft.trim();
 								if (trimmed && trimmed !== (sessionTitle || "")) {
@@ -1161,14 +1241,25 @@ export function AgentSettingsPopover({
 				</div>
 				<button
 					type="button"
-					onClick={() => { onClose(); onOpenModelPicker(); }}
+					onClick={() => {
+						onClose();
+						onOpenModelPicker();
+					}}
 					className="w-full text-left px-3 py-2 rounded-xl bg-muted/50 border border-border hover:border-primary/50 hover:bg-primary/10 transition-all flex items-center gap-2 group"
 				>
 					<span className="flex-1 font-mono text-[12px] text-foreground truncate">
 						{currentModel || "default"}
 					</span>
-					<svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary shrink-0">
-						<path fillRule="evenodd" d="M6.22 4.22a.75.75 0 011.06 0l3.25 3.25a.75.75 0 010 1.06l-3.25 3.25a.75.75 0 01-1.06-1.06L9 8 6.22 5.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+					<svg
+						viewBox="0 0 16 16"
+						fill="currentColor"
+						className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary shrink-0"
+					>
+						<path
+							fillRule="evenodd"
+							d="M6.22 4.22a.75.75 0 011.06 0l3.25 3.25a.75.75 0 010 1.06l-3.25 3.25a.75.75 0 01-1.06-1.06L9 8 6.22 5.28a.75.75 0 010-1.06z"
+							clipRule="evenodd"
+						/>
 					</svg>
 				</button>
 			</div>
@@ -1202,8 +1293,12 @@ export function AgentSettingsPopover({
 			<div className="px-4 py-3 border-b border-border">
 				<div className="flex items-center justify-between">
 					<div>
-						<div className="text-[13px] font-semibold text-foreground">Memory</div>
-						<div className="text-[11px] text-muted-foreground">Project-scoped long-term memory</div>
+						<div className="text-[13px] font-semibold text-foreground">
+							Memory
+						</div>
+						<div className="text-[11px] text-muted-foreground">
+							Project-scoped long-term memory
+						</div>
 					</div>
 					<button
 						type="button"
@@ -1223,50 +1318,68 @@ export function AgentSettingsPopover({
 				</div>
 			</div>
 
-					{totalTokens && (
-						<div className="px-4 py-3 border-b border-border">
-							<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-								Usage
-							</div>
-							<div className="flex items-center gap-3 text-[12px] text-foreground">
-								<span className="flex items-center gap-1">
-									<span className="w-1.5 h-1.5 rounded-full bg-primary/60" />
-									↑ {totalTokens[0].toLocaleString()}
-								</span>
-								<span className="flex items-center gap-1">
-									<span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-									↓ {totalTokens[1].toLocaleString()}
-								</span>
-							</div>
-						</div>
-					)}
-					{/* Actions */}
-					<div className="px-4 py-3 flex flex-col gap-1.5">
+			{totalTokens && (
+				<div className="px-4 py-3 border-b border-border">
+					<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+						Usage
+					</div>
+					<div className="flex items-center gap-3 text-[12px] text-foreground">
+						<span className="flex items-center gap-1">
+							<span className="w-1.5 h-1.5 rounded-full bg-primary/60" />↑{" "}
+							{totalTokens[0].toLocaleString()}
+						</span>
+						<span className="flex items-center gap-1">
+							<span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />↓{" "}
+							{totalTokens[1].toLocaleString()}
+						</span>
+					</div>
+				</div>
+			)}
+			{/* Actions */}
+			<div className="px-4 py-3 flex flex-col gap-1.5">
 				<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
 					Session Actions
 				</div>
 				<button
 					type="button"
-					onClick={() => { onClose(); onCompact(); }}
+					onClick={() => {
+						onClose();
+						onCompact();
+					}}
 					className="w-full text-left px-3 py-2 rounded-xl text-[13px] text-foreground hover:bg-muted/50 transition-colors flex items-center gap-2"
 				>
-					<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-muted-foreground">
+					<svg
+						viewBox="0 0 20 20"
+						fill="currentColor"
+						className="w-4 h-4 text-muted-foreground"
+					>
 						<path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
 					</svg>
 					Compact context
-					<span className="ml-auto text-[11px] font-mono text-muted-foreground">/compact</span>
+					<span className="ml-auto text-[11px] font-mono text-muted-foreground">
+						/compact
+					</span>
 				</button>
 				<button
 					type="button"
-					onClick={() => { onClose(); onClearChat(); }}
+					onClick={() => {
+						onClose();
+						onClearChat();
+					}}
 					disabled={isProcessing}
 					className="w-full text-left px-3 py-2 rounded-xl text-[13px] text-destructive hover:bg-destructive/10 transition-colors flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
 				>
 					<svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-						<path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+						<path
+							fillRule="evenodd"
+							d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z"
+							clipRule="evenodd"
+						/>
 					</svg>
 					Clear chat
-					<span className="ml-auto text-[11px] font-mono text-muted-foreground">/clear</span>
+					<span className="ml-auto text-[11px] font-mono text-muted-foreground">
+						/clear
+					</span>
 				</button>
 			</div>
 		</div>

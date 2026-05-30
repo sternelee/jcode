@@ -59,6 +59,8 @@ interface ChatAreaProps {
 	onRenameSession?: (sessionId: string, newName: string) => void;
 	currentSessionId?: string | null;
 	onRunDictation?: () => Promise<{ text: string; mode: string } | null>;
+	onSendSoftInterrupt?: (content: string) => Promise<void>;
+	onRegenerateMessage?: (messageIndex: number) => void;
 }
 
 // ── Member role color map ────────────────────────────────────────────────
@@ -130,6 +132,8 @@ export function ChatArea({
 	onRenameSession,
 	currentSessionId,
 	onRunDictation,
+	onSendSoftInterrupt,
+	onRegenerateMessage,
 }: ChatAreaProps) {
 	const [text, setText] = useState("");
 	const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -152,6 +156,7 @@ export function ChatArea({
 		Array<{ id: string; mediaType: string; base64: string; name: string }>
 	>([]);
 	const [dictating, setDictating] = useState(false);
+	const [softInterruptMode, setSoftInterruptMode] = useState(false);
 
 	const feedRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -281,6 +286,13 @@ export function ChatArea({
 	const handleSend = () => {
 		const content = text.trim();
 		if (!content && attachedImages.length === 0) return;
+		if (softInterruptMode && onSendSoftInterrupt) {
+			onSendSoftInterrupt(content);
+			setText("");
+			setMentionQuery(null);
+			setAttachedImages([]);
+			return;
+		}
 		const images: [string, string][] = attachedImages.map((img) => [
 			img.mediaType,
 			img.base64,
@@ -921,6 +933,7 @@ export function ChatArea({
 													message={msg}
 													isStreaming={msg.isStreaming}
 													hideHeader
+													onRegenerate={() => onRegenerateMessage?.(idx)}
 												/>
 											</div>
 										</div>
@@ -959,6 +972,7 @@ export function ChatArea({
 												message={msg}
 												isStreaming={msg.isStreaming}
 												hideHeader
+												onRegenerate={() => onRegenerateMessage?.(idx)}
 											/>
 										</div>
 									</div>
@@ -1167,7 +1181,26 @@ export function ChatArea({
 								</div>
 
 								<div className="flex items-center gap-2">
-									{isProcessing && (
+									{isProcessing && onSendSoftInterrupt && (
+										<button
+											type="button"
+											onClick={() => setSoftInterruptMode((m) => !m)}
+											className={cn(
+												"px-2 py-1 rounded-lg text-[11px] font-medium transition-all border",
+												softInterruptMode
+													? "bg-amber-500/10 text-amber-600 border-amber-500/30"
+													: "text-muted-foreground border-border hover:text-foreground hover:bg-muted",
+											)}
+											title={
+												softInterruptMode
+													? "Soft interrupt mode"
+													: "Normal send mode"
+											}
+										>
+											{softInterruptMode ? "Interrupt" : "Send"}
+										</button>
+									)}
+									{isProcessing && !onSendSoftInterrupt && (
 										<button
 											type="button"
 											onClick={onCancel}
@@ -1183,12 +1216,14 @@ export function ChatArea({
 										className={cn(
 											"inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-150",
 											text.trim() || attachedImages.length > 0
-												? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+												? softInterruptMode
+													? "bg-amber-500 text-white hover:bg-amber-500/90 shadow-sm"
+													: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
 												: "bg-muted text-muted-foreground/50 cursor-not-allowed",
 										)}
 									>
 										<SendHorizonal className="w-4 h-4" />
-										Send
+										{softInterruptMode ? "Interrupt" : "Send"}
 									</button>
 								</div>
 							</div>

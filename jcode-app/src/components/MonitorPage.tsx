@@ -14,6 +14,8 @@ import {
 	Globe,
 	CheckCircle2,
 	XCircle,
+	MessageSquare,
+	BookOpen,
 } from "lucide-react";
 
 interface AmbientStatus {
@@ -42,11 +44,38 @@ interface BrowserStatus {
 	ready: boolean;
 }
 
+interface AmbientTranscript {
+	session_id: string;
+	started_at: string;
+	ended_at?: string;
+	status: string;
+	provider: string;
+	model: string;
+	actions: unknown[];
+	pending_permissions: number;
+	summary?: string;
+	compactions: number;
+	memories_modified: number;
+	conversation?: string;
+}
+
+interface AmbientTranscriptsResult {
+	transcripts: AmbientTranscript[];
+	visible_cycle?: {
+		system_prompt?: string;
+		initial_message?: string;
+	};
+}
+
 export function MonitorPage() {
 	const [status, setStatus] = useState<AmbientStatus | null>(null);
 	const [browserStatus, setBrowserStatus] = useState<BrowserStatus | null>(
 		null,
 	);
+	const [transcripts, setTranscripts] = useState<AmbientTranscript[]>([]);
+	const [visibleCycle, setVisibleCycle] = useState<
+		AmbientTranscriptsResult["visible_cycle"] | undefined
+	>(undefined);
 	const [loading, setLoading] = useState(false);
 
 	const fetchStatus = async () => {
@@ -67,12 +96,26 @@ export function MonitorPage() {
 		}
 	};
 
+	const fetchTranscripts = async () => {
+		try {
+			const result = await invoke<AmbientTranscriptsResult>(
+				"get_ambient_transcripts",
+			);
+			setTranscripts(result.transcripts || []);
+			setVisibleCycle(result.visible_cycle);
+		} catch (e) {
+			console.error("Failed to get ambient transcripts:", e);
+		}
+	};
+
 	useEffect(() => {
 		fetchStatus();
 		fetchBrowserStatus();
+		fetchTranscripts();
 		const interval = setInterval(() => {
 			fetchStatus();
 			fetchBrowserStatus();
+			fetchTranscripts();
 		}, 5000);
 		return () => clearInterval(interval);
 	}, []);
@@ -311,8 +354,99 @@ export function MonitorPage() {
 												<span className="mt-1.5 w-1 h-1 rounded-full bg-muted-foreground shrink-0" />
 												{action}
 											</li>
-											))}
+										))}
 									</ul>
+								</div>
+							)}
+						</div>
+					)}
+
+					{/* Transcripts */}
+					{transcripts.length > 0 && (
+						<div className="rounded-xl border border-border bg-card p-5 space-y-3">
+							<div className="flex items-center gap-2">
+								<MessageSquare className="w-4 h-4 text-primary" />
+								<div className="text-[13px] font-semibold text-foreground">
+									Recent Transcripts
+								</div>
+							</div>
+							<div className="space-y-2">
+								{transcripts.slice(0, 5).map((t, i) => (
+									<div
+										key={i}
+										className="rounded-lg bg-muted/30 border border-border p-3 space-y-1.5"
+									>
+										<div className="flex items-center justify-between">
+											<div className="flex items-center gap-2">
+												<span
+													className={cn(
+														"w-1.5 h-1.5 rounded-full",
+														t.status === "complete"
+															? "bg-emerald-500"
+															: t.status === "interrupted"
+																? "bg-amber-500"
+																: "bg-primary/60",
+													)}
+												/>
+												<span className="text-[12px] font-medium text-foreground">
+													{t.session_id.slice(-6)}
+												</span>
+												<span className="text-[11px] text-muted-foreground">
+													{t.provider} · {t.model}
+												</span>
+											</div>
+											<span className="text-[10px] text-muted-foreground">
+												{new Date(t.started_at).toLocaleString()}
+											</span>
+										</div>
+										{t.summary && (
+											<p className="text-[12px] text-muted-foreground leading-relaxed">
+												{t.summary}
+											</p>
+										)}
+										<div className="flex items-center gap-3 text-[10px] text-muted-foreground/70">
+											<span>{t.actions.length} actions</span>
+											<span>{t.compactions} compactions</span>
+											<span>{t.memories_modified} memories</span>
+											{t.pending_permissions > 0 && (
+												<span className="text-amber-500">
+													{t.pending_permissions} pending
+												</span>
+											)}
+										</div>
+									</div>
+								))}
+							</div>
+						</div>
+					)}
+
+					{/* Visible cycle */}
+					{visibleCycle?.system_prompt && (
+						<div className="rounded-xl border border-border bg-card p-5 space-y-3">
+							<div className="flex items-center gap-2">
+								<BookOpen className="w-4 h-4 text-primary" />
+								<div className="text-[13px] font-semibold text-foreground">
+									Visible Cycle
+								</div>
+							</div>
+							{visibleCycle.system_prompt && (
+								<div className="rounded-lg bg-muted/30 border border-border p-3">
+									<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+										System Prompt
+									</div>
+									<p className="text-[12px] text-foreground whitespace-pre-wrap leading-relaxed">
+										{visibleCycle.system_prompt}
+									</p>
+								</div>
+							)}
+							{visibleCycle.initial_message && (
+								<div className="rounded-lg bg-muted/30 border border-border p-3">
+									<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+										Initial Message
+									</div>
+									<p className="text-[12px] text-foreground whitespace-pre-wrap leading-relaxed">
+										{visibleCycle.initial_message}
+									</p>
 								</div>
 							)}
 						</div>

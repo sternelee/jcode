@@ -183,6 +183,7 @@ interface MessageBubbleProps {
 	isStreaming?: boolean;
 	isHighlighted?: boolean;
 	hideHeader?: boolean;
+	onRegenerate?: () => void;
 }
 
 export function MessageBubble({
@@ -190,6 +191,7 @@ export function MessageBubble({
 	isStreaming,
 	isHighlighted,
 	hideHeader = false,
+	onRegenerate,
 }: MessageBubbleProps) {
 	// ── System message ──
 	if (message.role === "system") {
@@ -276,6 +278,11 @@ export function MessageBubble({
 					</div>
 				)}
 				<MessageActions>
+					{onRegenerate && (
+						<MessageAction onClick={onRegenerate} label="Regenerate">
+							<RotateCcw className="size-3" />
+						</MessageAction>
+					)}
 					<MessageAction
 						onClick={() => navigator.clipboard.writeText(message.content)}
 						label="Copy"
@@ -364,6 +371,11 @@ export function MessageBubble({
 						</div>
 					)}
 					<MessageActions>
+						{onRegenerate && (
+							<MessageAction onClick={onRegenerate} label="Regenerate">
+								<RotateCcw className="size-3" />
+							</MessageAction>
+						)}
 						<MessageAction
 							onClick={() => navigator.clipboard.writeText(message.content)}
 							label="Copy"
@@ -456,6 +468,11 @@ export function MessageBubble({
 								</div>
 							)}
 							<MessageActions>
+								{onRegenerate && (
+									<MessageAction onClick={onRegenerate} label="Regenerate">
+										<RotateCcw className="size-3" />
+									</MessageAction>
+								)}
 								<MessageAction
 									onClick={() => navigator.clipboard.writeText(message.content)}
 									label="Copy"

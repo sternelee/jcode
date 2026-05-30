@@ -377,7 +377,8 @@ export type ServerEvent =
 	| RewindChatEvent
 	| ReasoningEffortChangedEvent
 	| CompactResultEvent
-	| MemoryFeatureChangedEvent;
+	| MemoryFeatureChangedEvent
+	| SidePanelStateEvent;
 
 // --- UI-internal types ---
 
@@ -541,6 +542,7 @@ export interface PerSessionData {
 	queuedDrafts: QueuedDraft[];
 	/** Index of the currently streaming assistant message per roleSessionId. */
 	streamingIndexByRole: Record<string, number>;
+	sidePanel: SidePanelSnapshot | null;
 }
 
 export interface SessionState {
@@ -795,6 +797,26 @@ export interface RolePreset {
 
 export type TranscriptMode = "send" | "insert" | "append" | "replace";
 
+export interface SidePanelPage {
+	id: string;
+	title: string;
+	file_path: string;
+	format?: string;
+	source?: string;
+	content: string;
+	updated_at_ms: number;
+}
+
+export interface SidePanelSnapshot {
+	focused_page_id?: string;
+	pages: SidePanelPage[];
+}
+
+export interface SidePanelStateEvent {
+	type: "side_panel_state";
+	snapshot: SidePanelSnapshot;
+}
+
 export interface BrowserStatus {
 	backend: string;
 	browser: string;
@@ -804,4 +826,9 @@ export interface BrowserStatus {
 	compatible: boolean;
 	missing_actions: string[];
 	ready: boolean;
+}
+
+export interface WorkspaceMemoryPreferences {
+	default_enabled: boolean;
+	workspaces: Record<string, boolean>;
 }
