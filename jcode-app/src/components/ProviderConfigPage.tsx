@@ -313,7 +313,7 @@ export function ProviderConfigPage({
 			</div>
 
 			<div className="flex-1 overflow-y-auto min-h-0">
-				<div className="p-6 max-w-3xl mx-auto space-y-5">
+				<div className="p-6 space-y-5">
 					{/* Message */}
 					{authMessage && (
 						<div
@@ -618,22 +618,22 @@ export function ProviderConfigPage({
 									No providers configured yet.
 								</div>
 							) : (
-								<div className="space-y-2">
+								<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 									{configuredProviders.map((p) => (
 										<div
 											key={p.provider_key}
 											className={cn(
-												"flex items-center justify-between rounded-lg border border-border px-3 py-2.5",
+												"flex flex-col gap-2 rounded-lg border border-border px-3 py-2.5",
 												p.is_current_provider && "ring-1 ring-primary/30",
 											)}
 										>
 											<div className="flex items-center gap-2.5">
-												<Key className="w-4 h-4 text-emerald-500" />
-												<div>
-													<div className="text-[13px] font-medium text-foreground">
+												<Key className="w-4 h-4 text-emerald-500 shrink-0" />
+												<div className="min-w-0">
+													<div className="text-[13px] font-medium text-foreground truncate">
 														{p.display_name}
 													</div>
-													<div className="text-[11px] text-muted-foreground">
+													<div className="text-[11px] text-muted-foreground truncate">
 														{p.method_detail}
 													</div>
 												</div>
@@ -663,7 +663,7 @@ export function ProviderConfigPage({
 								</span>
 							</div>
 						</div>
-						<div className="p-4 space-y-2">
+						<div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
 							{unconfiguredProviders.map((provider) => (
 								<div
 									key={provider.provider_key}

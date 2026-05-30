@@ -157,6 +157,10 @@ export function ChatArea({
 	>([]);
 	const [dictating, setDictating] = useState(false);
 	const [softInterruptMode, setSoftInterruptMode] = useState(false);
+	const [editingRoleName, setEditingRoleName] = useState<{
+		sessionId: string;
+		draft: string;
+	} | null>(null);
 
 	const feedRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -514,7 +518,7 @@ export function ChatArea({
 						</div>
 					</div>
 
-					<div className="flex items-center gap-1 shrink-0">
+					<div className="flex items-center gap-1 shrink-0 relative">
 						{/* Presence */}
 						{channelMembers.length > 0 && (
 							<div className="hidden md:flex items-center -space-x-1.5 mr-2">
@@ -544,7 +548,7 @@ export function ChatArea({
 												/>
 											</button>
 											{isOpen && session && (
-												<div className="absolute top-full -right-10 mt-2 w-[240px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50">
+												<div className="absolute top-full -right-10 mt-2 w-[320px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50">
 													<div className="px-4 py-3 border-b border-border flex items-center gap-3">
 														<AgentAvatar name={name} size="md" />
 														<div className="min-w-0">
@@ -566,6 +570,51 @@ export function ChatArea({
 																		: "Online"}
 																</span>
 															</div>
+														</div>
+													</div>
+													<div className="px-4 py-3 border-b border-border">
+														<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+															Role Name
+														</div>
+														<div className="flex items-center gap-2">
+															<input
+																type="text"
+																value={
+																	editingRoleName?.sessionId ===
+																	session.sessionId
+																		? editingRoleName.draft
+																		: name
+																}
+																onChange={(e) =>
+																	setEditingRoleName({
+																		sessionId: session.sessionId,
+																		draft: e.target.value,
+																	})
+																}
+																placeholder="Role name"
+																className="flex-1 h-7 px-2.5 rounded-lg bg-muted/50 border border-border text-[12px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
+															/>
+															<button
+																type="button"
+																disabled={
+																	!editingRoleName?.draft.trim() ||
+																	editingRoleName.draft.trim() === name
+																}
+																onClick={() => {
+																	const trimmed = editingRoleName?.draft.trim();
+																	if (trimmed && trimmed !== name) {
+																		onRenameSession?.(
+																			session.sessionId,
+																			trimmed,
+																		);
+																		setEditingRoleName(null);
+																		setAgentPopoverSessionId(null);
+																	}
+																}}
+																className="h-7 px-2.5 rounded-lg text-[11px] font-medium bg-primary text-white hover:bg-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+															>
+																Save
+															</button>
 														</div>
 													</div>
 													<div className="px-4 py-3 border-b border-border">

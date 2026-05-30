@@ -100,6 +100,7 @@ export default function App() {
 	const [helpOpen, setHelpOpen] = useState(false);
 	const [sidePanelOpen, setSidePanelOpen] = useState(false);
 	const [gitBranches, setGitBranches] = useState<Record<string, string>>({});
+	const [sidebarOpen, setSidebarOpen] = useState(false);
 
 	const currentWorkspaceId = state.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
 
@@ -726,11 +727,12 @@ export default function App() {
 						(sum, p) => sum + (p.unread > 0 ? 1 : 0),
 						0,
 					)}
-					onToggleSidebar={() => {}}
+					onToggleSidebar={() => setSidebarOpen((o) => !o)}
 				/>
 
 				{isChatTab ? (
 					<>
+						{/* Desktop sidebar */}
 						<div className="hidden lg:flex">
 							<ConversationsList
 								workspaces={workspaces}
@@ -743,12 +745,57 @@ export default function App() {
 								gitBranches={gitBranches}
 								onToggleWorkspace={toggleWorkspace}
 								onSelectWorkspace={handleWorkspaceChange}
-								onSelectConversation={handleSelectConversation}
-								onSelectSession={handleResume}
-								onCreateSession={handleNewSession}
+								onSelectConversation={(id) => {
+									setSidebarOpen(false);
+									handleSelectConversation(id);
+								}}
+								onSelectSession={(s) => {
+									setSidebarOpen(false);
+									handleResume(s);
+								}}
+								onCreateSession={() => {
+									setSidebarOpen(false);
+									handleNewSession();
+								}}
 								onRemoveSession={handleRemoveAgentSession}
 							/>
 						</div>
+						{/* Mobile sidebar overlay */}
+						{sidebarOpen && (
+							<>
+								<div
+									className="fixed inset-0 bg-black/30 z-40 lg:hidden"
+									onClick={() => setSidebarOpen(false)}
+								/>
+								<div className="fixed left-[56px] top-0 bottom-0 w-[280px] bg-background border-r border-border z-50 lg:hidden">
+									<ConversationsList
+										workspaces={workspaces}
+										sessions={state.sessions}
+										activeWorkspaceId={currentWorkspaceId}
+										expandedWorkspaces={state.expandedWorkspaces}
+										selectedConvId={selectedConvId}
+										sessionPreviewMap={sessionPreviewMap}
+										sessionData={state.sessionData}
+										gitBranches={gitBranches}
+										onToggleWorkspace={toggleWorkspace}
+										onSelectWorkspace={handleWorkspaceChange}
+										onSelectConversation={(id) => {
+											setSidebarOpen(false);
+											handleSelectConversation(id);
+										}}
+										onSelectSession={(s) => {
+											setSidebarOpen(false);
+											handleResume(s);
+										}}
+										onCreateSession={() => {
+											setSidebarOpen(false);
+											handleNewSession();
+										}}
+										onRemoveSession={handleRemoveAgentSession}
+									/>
+								</div>
+							</>
+						)}
 
 						<ChatArea
 							messages={displayMessages}
