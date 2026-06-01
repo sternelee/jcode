@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Makepad GUI framework
-makepad-widgets = { git = "https://github.com/makepad/makepad.git", branch = "rik" }
+makepad-widgets = { git = "https://github.com/makepad/makepad.git", branch = "dev" }
 
 # jcode domain crates — GUI only depends on data types, not TUI rendering
 jcode-swarm-core   = { path = "../jcode-swarm-core" }
