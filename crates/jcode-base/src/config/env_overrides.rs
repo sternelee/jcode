@@ -309,6 +309,11 @@ impl Config {
         {
             self.websearch.bing_market = v;
         }
+        if let Ok(v) = std::env::var("JCODE_SEARXNG_URL")
+            && !v.trim().is_empty()
+        {
+            self.websearch.searxng_url = Some(v);
+        }
 
         if let Ok(v) = std::env::var("JCODE_TRUSTED_EXTERNAL_AUTH_SOURCES") {
             let mut source_ids = Vec::new();
@@ -460,6 +465,17 @@ impl Config {
         if let Ok(v) = std::env::var("JCODE_JADE_RELAY_REPLY_ENABLED") {
             if let Some(parsed) = parse_env_bool(&v) {
                 self.safety.jade_relay_reply_enabled = parsed;
+            }
+        }
+        if let Ok(v) = std::env::var("JCODE_JADE_RELAY_LAUNCH_ENABLED") {
+            if let Some(parsed) = parse_env_bool(&v) {
+                self.safety.jade_relay_launch_enabled = parsed;
+            }
+        }
+        if let Ok(v) = std::env::var("JCODE_JADE_RELAY_LAUNCH_WORKING_DIR") {
+            let trimmed = v.trim();
+            if !trimmed.is_empty() {
+                self.safety.jade_relay_launch_working_dir = Some(trimmed.to_string());
             }
         }
         if let Ok(v) = std::env::var("JCODE_AMBIENT_VISIBLE") {

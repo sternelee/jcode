@@ -651,6 +651,10 @@ pub enum WebSearchEngine {
     Duckduckgo,
     /// Bing search. Uses the Bing API when configured, otherwise Bing HTML search.
     Bing,
+    /// SearXNG metasearch instance (JSON API). Requires `searxng_url` (or the
+    /// `JCODE_SEARXNG_URL` env var) to point at a SearXNG instance. Useful on
+    /// hosts where DuckDuckGo/Bing block the request via TLS fingerprinting.
+    Searxng,
 }
 
 impl WebSearchEngine {
@@ -658,6 +662,7 @@ impl WebSearchEngine {
         match self {
             Self::Duckduckgo => "duckduckgo",
             Self::Bing => "bing",
+            Self::Searxng => "searxng",
         }
     }
 
@@ -665,6 +670,7 @@ impl WebSearchEngine {
         match value.trim().to_ascii_lowercase().as_str() {
             "duckduckgo" | "ddg" => Some(Self::Duckduckgo),
             "bing" => Some(Self::Bing),
+            "searxng" | "searx" => Some(Self::Searxng),
             _ => None,
         }
     }
@@ -684,6 +690,12 @@ pub struct WebSearchConfig {
     pub bing_api_key_env: String,
     /// Bing market, e.g. "en-US" or "zh-CN".
     pub bing_market: String,
+    /// Base URL of a SearXNG instance (e.g. "https://searx.example.org"), used
+    /// by the `searxng` engine. When empty, the `searxng_url_env` variable is
+    /// consulted instead.
+    pub searxng_url: Option<String>,
+    /// Environment variable containing the SearXNG base URL.
+    pub searxng_url_env: String,
 }
 
 impl Default for WebSearchConfig {
@@ -694,6 +706,8 @@ impl Default for WebSearchConfig {
             bing_api_key: None,
             bing_api_key_env: "JCODE_BING_API_KEY".to_string(),
             bing_market: "en-US".to_string(),
+            searxng_url: None,
+            searxng_url_env: "JCODE_SEARXNG_URL".to_string(),
         }
     }
 }
@@ -860,6 +874,10 @@ pub struct SafetyConfig {
     pub jade_relay_session_id: Option<String>,
     /// Enable Jade relay prompt → agent directive feature (default: false)
     pub jade_relay_reply_enabled: bool,
+    /// Enable Jade relay device launch commands that open headed local sessions (default: false)
+    pub jade_relay_launch_enabled: bool,
+    /// Default working directory for remotely launched headed sessions
+    pub jade_relay_launch_working_dir: Option<String>,
 }
 
 impl Default for SafetyConfig {
@@ -893,6 +911,8 @@ impl Default for SafetyConfig {
             jade_relay_user_id: None,
             jade_relay_session_id: None,
             jade_relay_reply_enabled: false,
+            jade_relay_launch_enabled: false,
+            jade_relay_launch_working_dir: None,
         }
     }
 }
