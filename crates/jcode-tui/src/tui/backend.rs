@@ -525,6 +525,7 @@ impl RemoteConnection {
     pub async fn reload(&mut self) -> Result<()> {
         let request = Request::Reload {
             id: self.next_request_id,
+            force: true,
         };
         self.next_request_id += 1;
         self.send_request(request).await
@@ -607,6 +608,17 @@ impl RemoteConnection {
             id,
             model: model.to_string(),
         };
+        self.next_request_id += 1;
+        self.send_request(request).await?;
+        Ok(id)
+    }
+
+    pub async fn set_route_selection(
+        &mut self,
+        selection: crate::provider::RouteSelection,
+    ) -> Result<u64> {
+        let id = self.next_request_id;
+        let request = Request::SetRoute { id, selection };
         self.next_request_id += 1;
         self.send_request(request).await?;
         Ok(id)
@@ -993,6 +1005,11 @@ impl RemoteConnection {
             has_loaded_history: false,
             call_output_tokens_seen: 0,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_dummy_peer(&mut self) -> Option<Stream> {
+        self._dummy_peer.take()
     }
 
     /// Set session ID

@@ -19,7 +19,8 @@ mod preview_request;
 use helpers::{
     agent_model_default_summary, agent_model_target_label, catchup_candidates,
     catchup_queue_position, model_entry_base_name, model_entry_saved_spec,
-    openrouter_route_model_id, picker_route_model_spec, save_agent_model_override,
+    openrouter_route_model_id, picker_route_model_spec, picker_route_selection,
+    save_agent_model_override,
 };
 
 const REMOTE_MODEL_CATALOG_CACHE_FILE: &str = "remote_model_catalog_cache.json";
@@ -1926,7 +1927,10 @@ impl App {
                 }
             }
             OverlayAction::Selected(result)
-                if matches!(self.session_picker_mode, SessionPickerMode::Onboarding { .. }) =>
+                if matches!(
+                    self.session_picker_mode,
+                    SessionPickerMode::Onboarding { .. }
+                ) =>
             {
                 let cli = match self.session_picker_mode {
                     SessionPickerMode::Onboarding { cli } => cli,
@@ -2149,7 +2153,26 @@ impl App {
                     }
                 }
             }
-            KeyCode::Left | KeyCode::BackTab => {
+            KeyCode::BackTab => {
+                if self
+                    .inline_interactive_state
+                    .as_ref()
+                    .map(picker_is_runtime_model_picker)
+                    .unwrap_or(false)
+                {
+                    self.cycle_selected_model_favorite();
+                    return Ok(());
+                }
+                if let Some(ref mut picker) = self.inline_interactive_state {
+                    if picker.uses_compact_navigation() {
+                        return Ok(());
+                    }
+                    if picker.column > 0 {
+                        picker.column -= 1;
+                    }
+                }
+            }
+            KeyCode::Left => {
                 if let Some(ref mut picker) = self.inline_interactive_state {
                     if picker.uses_compact_navigation() {
                         return Ok(());
@@ -2293,6 +2316,10 @@ impl App {
                         self.inline_interactive_state = None;
                         self.start_logout_provider(provider);
                     }
+                    PickerAction::LogoutAll => {
+                        self.inline_interactive_state = None;
+                        self.start_logout_all();
+                    }
                     PickerAction::Usage {
                         title,
                         subtitle,
@@ -2373,12 +2400,16 @@ impl App {
                         } else {
                             picker_route_model_spec(&entry, route)
                         };
+                        let route_selection = picker_route_selection(&entry, route);
 
                         let effort = entry.effort.clone();
                         record_model_picker_selection(&bare_name, route, effort.as_deref());
+                        let method_label =
+                            crate::provider::ModelRouteApiMethod::parse(&route.api_method)
+                                .display_label();
                         let notice = format!(
                             "Model → {} via {} ({})",
-                            entry.name, route.provider, route.api_method
+                            entry.name, route.provider, method_label
                         );
                         let route_detail = route.detail.trim().to_string();
 
@@ -2386,9 +2417,10 @@ impl App {
                             self.inline_interactive_state = None;
                             self.upstream_provider = None;
                             self.status_detail = None;
+                            self.pending_route_selection = Some(route_selection);
                             self.pending_model_switch = Some(spec);
                         } else {
-                            match self.provider.set_model(&spec) {
+                            match self.provider.set_route_selection(&route_selection) {
                                 Ok(()) => {
                                     self.inline_interactive_state = None;
                                     self.provider_session_id = None;
@@ -2404,6 +2436,8 @@ impl App {
                                         self.session.provider_key.as_deref(),
                                     );
                                     self.session.model = Some(active_model);
+                                    self.session.route_api_method =
+                                        Some(route_selection.api_method.clone());
                                     let _ = self.session.save();
                                 }
                                 Err(error) => {

@@ -1,0 +1,11 @@
+{
+  "items": [
+    {
+      "type": "TODO",
+      "message": "implement with windows-sys crate",
+      "file": "crates/jcode-core/src/stdin_detect.rs",
+      "line": 291,
+      "column": 11
+    }
+  ]
+}

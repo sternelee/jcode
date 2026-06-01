@@ -173,11 +173,12 @@ impl App {
                     crate::tui::info_widget::AuthMethod::AnthropicApiKey
                 } else if matches!(runtime_provider.as_deref(), Some("claude" | "anthropic")) {
                     crate::tui::info_widget::AuthMethod::AnthropicOAuth
-                } else if auth_status.anthropic.has_api_key {
-                    // AnthropicProvider::Auto tries direct API keys before OAuth.
-                    crate::tui::info_widget::AuthMethod::AnthropicApiKey
                 } else if auth_status.anthropic.has_oauth {
+                    // Anthropic Auto prefers OAuth (Claude subscription) before
+                    // falling back to a direct API key.
                     crate::tui::info_widget::AuthMethod::AnthropicOAuth
+                } else if auth_status.anthropic.has_api_key {
+                    crate::tui::info_widget::AuthMethod::AnthropicApiKey
                 } else {
                     crate::tui::info_widget::AuthMethod::Unknown
                 }
@@ -1478,6 +1479,10 @@ impl crate::tui::TuiState for App {
 
     fn onboarding_welcome_active(&self) -> bool {
         App::onboarding_welcome_active(self)
+    }
+
+    fn onboarding_welcome_kind(&self) -> crate::tui::OnboardingWelcomeKind {
+        App::onboarding_welcome_kind(self)
     }
 
     fn suggestion_prompts(&self) -> Vec<(String, String)> {

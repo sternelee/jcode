@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "projectRoot": "/Users/sternelee/www/github/jcode",
+  "generatedAt": "2026-06-01T05:16:55.748Z",
+  "seq": 251,
+  "files": {},
+  "symbols": {},
+  "reverseDeps": {},
+  "cachedExports": [],
+  "projectRulesScan": {
+    "rules": [
+      {
+        "source": "root",
+        "name": "CLAUDE.md",
+        "filePath": "/Users/sternelee/www/github/jcode/CLAUDE.md",
+        "relativePath": "CLAUDE.md"
+      },
+      {
+        "source": "root",
+        "name": "AGENTS.md",
+        "filePath": "/Users/sternelee/www/github/jcode/AGENTS.md",
+        "relativePath": "AGENTS.md"
+      }
+    ],
+    "hasCustomRules": true
+  },
+  "startupScan": {
+    "cwd": "/Users/sternelee/www/github/jcode",
+    "scanRoot": "/Users/sternelee/www/github/jcode",
+    "projectRoot": "/Users/sternelee/www/github/jcode",
+    "canWarmCaches": true,
+    "sourceFileCount": 957
+  },
+  "languageProfile": {
+    "present": {
+      "jsts": true,
+      "python": true,
+      "go": false,
+      "rust": true,
+      "cxx": false,
+      "cmake": false,
+      "fish": false,
+      "shell": false,
+      "json": false,
+      "markdown": false,
+      "css": false,
+      "yaml": false,
+      "sql": false,
+      "ruby": false,
+      "html": false,
+      "docker": false,
+      "php": false,
+      "powershell": false,
+      "prisma": false,
+      "csharp": false,
+      "fsharp": false,
+      "java": false,
+      "kotlin": false,
+      "swift": false,
+      "dart": false,
+      "lua": false,
+      "zig": false,
+      "haskell": false,
+      "elixir": false,
+      "gleam": false,
+      "ocaml": false,
+      "clojure": false,
+      "terraform": false,
+      "nix": false,
+      "toml": true
+    },
+    "configured": {
+      "rust": true,
+      "toml": true
+    },
+    "counts": {
+      "python": 40,
+      "rust": 858,
+      "jsts": 57
+    },
+    "detectedKinds": [
+      "jsts",
+      "python",
+      "rust",
+      "toml"
+    ]
+  }
+}

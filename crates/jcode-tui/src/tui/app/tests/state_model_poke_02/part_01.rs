@@ -506,8 +506,8 @@ fn test_is_scroll_only_key_detects_navigation_inputs() {
 
     assert!(super::input::is_scroll_only_key(
         &app,
-        KeyCode::BackTab,
-        KeyModifiers::empty()
+        KeyCode::Char('g'),
+        KeyModifiers::ALT
     ));
 
     assert!(!super::input::is_scroll_only_key(
@@ -753,6 +753,7 @@ fn test_registered_command_suggestions_include_aliases_and_hide_secret_commands(
     assert!(commands.contains(&"/sessions"));
     assert!(commands.contains(&"/dictation"));
     assert!(commands.contains(&"/feedback"));
+    assert!(commands.contains(&"/plan"));
     assert!(!commands.contains(&"/z"));
     assert!(!commands.contains(&"/zz"));
     assert!(!commands.contains(&"/zzz"));

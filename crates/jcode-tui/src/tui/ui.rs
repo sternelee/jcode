@@ -1182,6 +1182,19 @@ pub(crate) fn clear_test_render_state_for_tests() {
     });
 }
 
+/// Test-only: render just the onboarding welcome screen into `area`, using the
+/// exact same code path the live UI uses. Lets onboarding golden/snapshot tests
+/// capture the rendered copy without reaching into the private `onboarding`
+/// submodule.
+#[cfg(test)]
+pub(crate) fn draw_onboarding_welcome_for_tests(
+    frame: &mut ratatui::Frame,
+    app: &dyn crate::tui::TuiState,
+    area: ratatui::layout::Rect,
+) {
+    onboarding::draw_onboarding_welcome(frame, app, area);
+}
+
 #[derive(Clone)]
 enum CopyViewportData {
     Dense {
@@ -1563,6 +1576,28 @@ pub(crate) fn copy_point_from_screen(
                     .and_then(|snapshot| copy_point_from_snapshot(snapshot, column, row))
             })
     }
+}
+
+pub(crate) fn copy_pane_vertical_edge_point(
+    pane: crate::tui::CopySelectionPane,
+    column: u16,
+    row: u16,
+) -> Option<(crate::tui::CopySelectionPoint, bool)> {
+    let snapshot = copy_snapshot_for_pane(pane)?;
+    let area = snapshot.content_area;
+    if column < area.x || column >= area.x.saturating_add(area.width) || area.height == 0 {
+        return None;
+    }
+
+    let (edge_row, upward) = if row < area.y {
+        (area.y, true)
+    } else if row >= area.y.saturating_add(area.height) {
+        (area.y.saturating_add(area.height).saturating_sub(1), false)
+    } else {
+        return None;
+    };
+
+    copy_point_from_snapshot(&snapshot, column, edge_row).map(|point| (point, upward))
 }
 
 #[cfg(test)]

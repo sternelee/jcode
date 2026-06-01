@@ -55,6 +55,7 @@ mod catchup;
 mod commands;
 mod commands_improve;
 mod commands_overnight;
+mod commands_plan;
 mod commands_review;
 mod conversation_state;
 mod copy_selection;
@@ -71,7 +72,7 @@ mod misc_ui;
 mod model_context;
 mod navigation;
 mod observe;
-mod onboarding_flow;
+pub(crate) mod onboarding_flow;
 mod onboarding_flow_control;
 mod remote;
 mod remote_notifications;
@@ -710,11 +711,21 @@ pub struct App {
     route_next_prompt_to_new_session: bool,
     // Restore-time flag: auto-submit restored input after startup.
     submit_input_on_startup: bool,
+    /// Debug guard: tracks the last reason the startup auto-submit was deferred
+    /// so `process_remote_followups` logs each distinct blocker exactly once
+    /// instead of spamming every tick. Used to debug headed-spawn prompts that
+    /// appear "seen but never sent".
+    startup_submit_deferred_reason: Option<&'static str>,
     /// One-shot/session-local preview of the first-run onboarding empty state.
     onboarding_preview_mode: bool,
     /// Active guided first-run onboarding flow (model select -> continue ->
     /// transcript pick -> suggestions). `None` when not onboarding.
     onboarding_flow: Option<onboarding_flow::OnboardingFlow>,
+    /// One-shot guard: have we evaluated whether to auto-start the onboarding
+    /// flow on startup yet? The fresh-install path logs in at the CLI before the
+    /// TUI launches, so no in-TUI login event fires; this lets us still begin the
+    /// flow once the TUI is ready and already authenticated.
+    onboarding_startup_checked: bool,
     // Inline UI state for copy badges ([Alt] [⇧] [S])
     copy_badge_ui: CopyBadgeUiState,
     // Modal in-app selection/copy state for the chat viewport.
@@ -754,6 +765,12 @@ pub struct App {
     remote_server_has_update: Option<bool>,
     // Auto-reload server when stale (set on first connect if server_has_update)
     pending_server_reload: bool,
+    // Defense-in-depth circuit breaker for issue #277: count how many times this
+    // client has auto-reloaded the server. A healthy reload happens at most once
+    // (afterwards the server is up to date), so repeated auto-reloads indicate a
+    // false-positive "update available" loop. Past a small threshold we stop
+    // auto-reloading and surface a message instead of flickering forever.
+    server_auto_reload_attempts: u32,
     // Remote server short name (e.g., "running", "blazing")
     remote_server_short_name: Option<String>,
     // Remote server icon (e.g., "🔥", "🌫️")
@@ -816,7 +833,7 @@ pub struct App {
     last_injected_memory_signature: Option<(String, Instant)>,
     // Swarm feature toggle for this session
     swarm_enabled: bool,
-    // Diff display mode (toggle with Shift+Tab)
+    // Diff display mode (toggle with Alt+G)
     diff_mode: crate::config::DiffDisplayMode,
     // Center all content (from config)
     pub(crate) centered: bool,
@@ -896,6 +913,7 @@ pub struct App {
     model_picker_load_request_id: u64,
     // Pending model switch from picker (for remote mode async processing)
     pending_model_switch: Option<String>,
+    pending_route_selection: Option<crate::provider::RouteSelection>,
     // Remote SetModel has been sent but ModelChanged has not arrived yet. User
     // prompts submitted in this window are held so the first request cannot race
     // the model switch and use stale provider/model state.
@@ -911,6 +929,8 @@ pub struct App {
     scroll_keys: ScrollKeys,
     // Keybinding for centered-mode toggle
     centered_toggle_keys: CenteredToggleKeys,
+    // Configurable pane / mode toggle keybindings
+    toggle_keys: super::keybind::ToggleKeys,
     // Keybindings for Niri-style workspace navigation
     workspace_navigation_keys: WorkspaceNavigationKeys,
     // Optional configured keybinding for external dictation

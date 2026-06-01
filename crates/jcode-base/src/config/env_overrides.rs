@@ -62,6 +62,24 @@ impl Config {
         if let Ok(v) = std::env::var("JCODE_WORKSPACE_RIGHT_KEY") {
             self.keybindings.workspace_right = v;
         }
+        if let Ok(v) = std::env::var("JCODE_SIDE_PANEL_TOGGLE_KEY") {
+            self.keybindings.side_panel_toggle = v;
+        }
+        if let Ok(v) = std::env::var("JCODE_COPY_SELECTION_TOGGLE_KEY") {
+            self.keybindings.copy_selection_toggle = v;
+        }
+        if let Ok(v) = std::env::var("JCODE_DIAGRAM_PANE_TOGGLE_KEY") {
+            self.keybindings.diagram_pane_toggle = v;
+        }
+        if let Ok(v) = std::env::var("JCODE_TYPING_SCROLL_LOCK_TOGGLE_KEY") {
+            self.keybindings.typing_scroll_lock_toggle = v;
+        }
+        if let Ok(v) = std::env::var("JCODE_DIFF_MODE_CYCLE_KEY") {
+            self.keybindings.diff_mode_cycle = v;
+        }
+        if let Ok(v) = std::env::var("JCODE_INFO_WIDGET_TOGGLE_KEY") {
+            self.keybindings.info_widget_toggle = v;
+        }
 
         // Dictation
         if let Ok(v) = std::env::var("JCODE_DICTATION_COMMAND") {
@@ -417,6 +435,33 @@ impl Config {
                 self.safety.discord_reply_enabled = parsed;
             }
         }
+        // Jade cloud relay channel
+        if let Ok(v) = std::env::var("JCODE_JADE_RELAY_API_BASE") {
+            self.safety.jade_relay_api_base = Some(v);
+        }
+        if let Ok(v) = std::env::var("JCODE_JADE_RELAY_TOKEN") {
+            self.safety.jade_relay_token = Some(v);
+            self.safety.jade_relay_enabled = true;
+        }
+        if let Ok(v) = std::env::var("JCODE_JADE_RELAY_TOKEN_ID") {
+            self.safety.jade_relay_token_id = Some(v);
+        }
+        if let Ok(v) = std::env::var("JCODE_JADE_RELAY_USER_ID") {
+            self.safety.jade_relay_user_id = Some(v);
+        }
+        if let Ok(v) = std::env::var("JCODE_JADE_RELAY_SESSION_ID") {
+            self.safety.jade_relay_session_id = Some(v);
+        }
+        if let Ok(v) = std::env::var("JCODE_JADE_RELAY_ENABLED") {
+            if let Some(parsed) = parse_env_bool(&v) {
+                self.safety.jade_relay_enabled = parsed;
+            }
+        }
+        if let Ok(v) = std::env::var("JCODE_JADE_RELAY_REPLY_ENABLED") {
+            if let Some(parsed) = parse_env_bool(&v) {
+                self.safety.jade_relay_reply_enabled = parsed;
+            }
+        }
         if let Ok(v) = std::env::var("JCODE_AMBIENT_VISIBLE") {
             if let Some(parsed) = parse_env_bool(&v) {
                 self.ambient.visible = parsed;
@@ -501,6 +546,13 @@ impl Config {
         if let Ok(v) = std::env::var("JCODE_SAME_PROVIDER_ACCOUNT_FAILOVER") {
             if let Some(enabled) = parse_env_bool(&v) {
                 self.provider.same_provider_account_failover = enabled;
+            }
+        }
+        if let Ok(v) = std::env::var("JCODE_STREAM_IDLE_TIMEOUT_SECS") {
+            if let Ok(parsed) = v.trim().parse::<u64>() {
+                if parsed > 0 {
+                    self.provider.stream_idle_timeout_secs = parsed;
+                }
             }
         }
 
