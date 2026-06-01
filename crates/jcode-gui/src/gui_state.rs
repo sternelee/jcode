@@ -16,8 +16,9 @@ pub static GUI_STATE: std::sync::RwLock<GuiState> =
         swarm_members: Vec::new(),
         plan_tasks: Vec::new(),
         composer_draft: String::new(),
-        is_processing: false,
-        current_tool: None,
+        processing_status: ProcessingStatus::Idle,
+        model_name: String::new(),
+        session_tokens: None,
     });
 
 // ── Session / conversation ────────────────────────────────────────────────────
@@ -253,6 +254,41 @@ impl PlanTaskCard {
     }
 }
 
+// ── Processing status ─────────────────────────────────────────────────────────
+
+/// Detailed processing state — mirrors `ProcessingStatus` in jcode-tui.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum ProcessingStatus {
+    /// Idle — no active inference or tool execution.
+    #[default]
+    Idle,
+    /// Waiting for the first token from the model.
+    Thinking { elapsed_secs: f32 },
+    /// Actively streaming tokens; carries running token counts.
+    Streaming { input_tokens: u64, output_tokens: u64 },
+    /// A named tool is executing (e.g. `read_file`, `bash`).
+    RunningTool(String),
+}
+
+impl ProcessingStatus {
+    /// Whether any kind of active processing is happening.
+    pub fn is_active(&self) -> bool {
+        !matches!(self, Self::Idle)
+    }
+
+    /// Short human-readable label for the status bar — mirrors TUI `format_status_for_debug`.
+    pub fn label(&self) -> String {
+        match self {
+            Self::Idle => "Ready".to_string(),
+            Self::Thinking { elapsed_secs } => format!("Thinking… ({:.1}s)", elapsed_secs),
+            Self::Streaming { input_tokens, output_tokens } => {
+                format!("Streaming (↑{} ↓{})", input_tokens, output_tokens)
+            }
+            Self::RunningTool(name) => format!("Running tool: {}", name),
+        }
+    }
+}
+
 // ── Overall GUI state ─────────────────────────────────────────────────────────
 
 /// Top-level state owned by the GUI application.
@@ -270,15 +306,43 @@ pub struct GuiState {
     pub plan_tasks: Vec<PlanTaskCard>,
     /// Current text in the composer input.
     pub composer_draft: String,
-    /// Whether the session is currently processing (agent is thinking).
-    pub is_processing: bool,
-    /// Current tool being used (if any).
-    pub current_tool: Option<String>,
+    /// Current processing status (replaces the old `is_processing` + `current_tool` pair).
+    pub processing_status: ProcessingStatus,
+    /// Name of the model driving the active session (e.g. `"claude-opus-4-5"`).
+    pub model_name: String,
+    /// Cumulative token counts for the active session `(input, output)`.
+    pub session_tokens: Option<(u64, u64)>,
 }
 
 impl GuiState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Formatted header status string — model name and processing status.
+    /// Mirrors the TUI header bar content.
+    pub fn header_status(&self) -> String {
+        let status = self.processing_status.label();
+        if self.model_name.is_empty() {
+            return status;
+        }
+        format!("{} · {}", self.model_name, status)
+    }
+
+    /// Formatted token usage string for optional display in the header.
+    pub fn token_usage_label(&self) -> Option<String> {
+        self.session_tokens.map(|(inp, out)| {
+            let fmt = |n: u64| -> String {
+                if n >= 1_000_000 {
+                    format!("{:.1}M", n as f64 / 1_000_000.0)
+                } else if n >= 1_000 {
+                    format!("{:.1}k", n as f64 / 1_000.0)
+                } else {
+                    n.to_string()
+                }
+            };
+            format!("↑{} ↓{}", fmt(inp), fmt(out))
+        })
     }
 
     /// Return plan tasks for a given column.

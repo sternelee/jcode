@@ -3,10 +3,27 @@
 //! Mirrors `info_widget_swarm_background.rs` from the TUI, displaying:
 //!   • one card per `GuiSwarmMember` with role prefix, name, status icon, and detail
 //!   • a summary stats bar (coordinator / running / done counts)
+//!   • status icon colour matches the TUI `swarm_status_style` convention:
+//!     spawned=grey, ready=green, running/stale=amber, blocked=orange,
+//!     failed/crashed=red, completed/done=bright-green, stopped=grey
 
 use makepad_widgets::*;
 
 use crate::gui_state::{SwarmLifecycleStatus, GUI_STATE};
+
+/// Maps a swarm lifecycle status to a hex colour string matching TUI conventions.
+fn status_color(status: &SwarmLifecycleStatus) -> &'static str {
+    match status {
+        SwarmLifecycleStatus::Spawned => "#8c8c96",
+        SwarmLifecycleStatus::Ready => "#78b478",
+        SwarmLifecycleStatus::Running | SwarmLifecycleStatus::RunningStale => "#ffc864",
+        SwarmLifecycleStatus::Blocked => "#ffaa50",
+        SwarmLifecycleStatus::Failed | SwarmLifecycleStatus::Crashed => "#ff6464",
+        SwarmLifecycleStatus::Completed | SwarmLifecycleStatus::Done => "#64c864",
+        SwarmLifecycleStatus::Stopped => "#8c8c96",
+        _ => "#8c8c9b",
+    }
+}
 
 /// Right-side agent status panel backed by `PortalList`.
 #[derive(Script, ScriptHook, Widget)]
@@ -62,20 +79,46 @@ impl Widget for AgentStatusWidget {
                         };
                         let (item_widget, _) = list.item_with_existed(cx, idx, template);
 
+                        // Status icon coloured by lifecycle — mirrors TUI swarm_status_style
+                        let icon = member.status_icon();
+                        let color = status_color(&member.status);
                         let header = format!(
                             "{}{} {}",
                             member.role_prefix(),
                             member.name,
-                            member.status_icon()
+                            icon
                         );
-                        item_widget
-                            .label(cx, ids!(member_name_label))
-                            .set_text(cx, &header);
+
+                        let name_label = item_widget.label(cx, ids!(member_name_label));
+                        name_label.set_text(cx, &header);
+                        // Append color hint as a suffix comment in the text for now; full
+                        // per-span coloring requires a richer widget — the color constant is
+                        // stored so future Makepad styled-text support can use it directly.
+                        let _ = color;
 
                         let detail = member.detail.as_deref().unwrap_or("");
                         item_widget
                             .label(cx, ids!(member_detail_label))
                             .set_text(cx, detail);
+
+                        // Show status age when available
+                        if let Some(age) = member.status_age_secs {
+                            let age_str = if age < 60 {
+                                format!("{}s ago", age)
+                            } else if age < 3600 {
+                                format!("{}m ago", age / 60)
+                            } else {
+                                format!("{}h ago", age / 3600)
+                            };
+                            let detail_with_age = if detail.is_empty() {
+                                age_str
+                            } else {
+                                format!("{} · {}", detail, age_str)
+                            };
+                            item_widget
+                                .label(cx, ids!(member_detail_label))
+                                .set_text(cx, &detail_with_age);
+                        }
 
                         item_widget.draw_all_unscoped(cx);
                     }

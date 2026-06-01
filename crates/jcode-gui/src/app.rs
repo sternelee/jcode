@@ -16,10 +16,11 @@ use makepad_widgets::*;
 use crate::agent_status::AgentStatusWidget;
 use crate::composer::ComposerMode;
 use crate::gui_state::{
-    GuiMessage, GuiSwarmMember, MessageRole, SessionEntry, SessionKind, GUI_STATE,
+    GuiMessage, GuiSwarmMember, MessageRole, ProcessingStatus, SessionEntry, SessionKind, GUI_STATE,
 };
 use crate::message_list::MessageListWidget;
 use crate::session_list::SessionListWidget;
+use crate::swarm_board::SwarmBoardWidget;
 
 app_main!(App);
 
@@ -239,6 +240,22 @@ script_mod! {
                             text_style +: { font_size: 13 }
                         }
                         wrap: Word
+                    }
+
+                    // Tool-call summary — mirrors TUI assistant tool call line
+                    tool_calls_view := View {
+                        width: Fill
+                        height: Fit
+                        visible: false
+                        tool_calls_label := Label {
+                            width: Fill
+                            height: Fit
+                            draw_text +: {
+                                color: #78c88c
+                                text_style +: { font_size: 10 }
+                            }
+                            wrap: Word
+                        }
                     }
 
                     duration_view := View {
@@ -479,6 +496,138 @@ script_mod! {
         }
     }
 
+    let SwarmBoardWidget = #(SwarmBoardWidget::register_widget(vm)) {
+        width: Fill
+        height: Fill
+
+        // Three column lists: todo, running, done — drawn in order by SwarmBoardWidget::draw_walk
+        todo_list := PortalList {
+            width: Fill
+            height: Fill
+            flow: Down
+            drag_scrolling: false
+
+            TaskCard := RoundedView {
+                width: Fill
+                height: Fit
+                padding: Inset{top: 6 bottom: 6 left: 10 right: 8}
+                margin: Inset{top: 2 bottom: 2 left: 4 right: 4}
+                show_bg: true
+                draw_bg +: { color: #1e2636 radius: 4.0 }
+
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+                    spacing: 2
+
+                    task_title_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #a0b8d8
+                            text_style +: { font_size: 11 }
+                        }
+                        wrap: Word
+                    }
+
+                    task_assignee_label := Label {
+                        width: Fit
+                        height: Fit
+                        draw_text +: {
+                            color: #6482aa
+                            text_style +: { font_size: 9 }
+                        }
+                    }
+                }
+            }
+        }
+
+        running_list := PortalList {
+            width: Fill
+            height: Fill
+            flow: Down
+            drag_scrolling: false
+
+            TaskCard := RoundedView {
+                width: Fill
+                height: Fit
+                padding: Inset{top: 6 bottom: 6 left: 10 right: 8}
+                margin: Inset{top: 2 bottom: 2 left: 4 right: 4}
+                show_bg: true
+                draw_bg +: { color: #2a2010 radius: 4.0 }
+
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+                    spacing: 2
+
+                    task_title_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #ffc864
+                            text_style +: { font_size: 11 }
+                        }
+                        wrap: Word
+                    }
+
+                    task_assignee_label := Label {
+                        width: Fit
+                        height: Fit
+                        draw_text +: {
+                            color: #a07840
+                            text_style +: { font_size: 9 }
+                        }
+                    }
+                }
+            }
+        }
+
+        done_list := PortalList {
+            width: Fill
+            height: Fill
+            flow: Down
+            drag_scrolling: false
+
+            TaskCard := RoundedView {
+                width: Fill
+                height: Fit
+                padding: Inset{top: 6 bottom: 6 left: 10 right: 8}
+                margin: Inset{top: 2 bottom: 2 left: 4 right: 4}
+                show_bg: true
+                draw_bg +: { color: #1a2a1a radius: 4.0 }
+
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+                    spacing: 2
+
+                    task_title_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #64c864
+                            text_style +: { font_size: 11 }
+                        }
+                        wrap: Word
+                    }
+
+                    task_assignee_label := Label {
+                        width: Fit
+                        height: Fit
+                        draw_text +: {
+                            color: #409040
+                            text_style +: { font_size: 9 }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // ── Main app layout ───────────────────────────────────────────────────────
     startup() do #(App::script_component(vm)) {
         ui: Root {
@@ -495,23 +644,37 @@ script_mod! {
                     // ── Header bar ────────────────────────────────────────
                     View {
                         width: Fill
-                        height: 44
+                        height: 48
                         flow: Right
                         align: Align{y: 0.5}
                         padding: Inset{left: 16 right: 16}
+                        spacing: 12
                         show_bg: true
                         draw_bg +: { color: #1a1a1e }
 
+                        // Session title (fills remaining width)
                         session_title_label := Label {
                             width: Fill
                             height: Fit
                             text: "jcode"
                             draw_text +: {
                                 color: #dcdce6
-                                text_style +: { font_size: 16 bold: true }
+                                text_style +: { font_size: 15 bold: true }
                             }
                         }
 
+                        // Token usage (hidden when no data)
+                        token_usage_label := Label {
+                            width: Fit
+                            height: Fit
+                            text: ""
+                            draw_text +: {
+                                color: #6482aa
+                                text_style +: { font_size: 10 }
+                            }
+                        }
+
+                        // Model + processing status
                         status_label := Label {
                             width: Fit
                             height: Fit
@@ -609,14 +772,15 @@ script_mod! {
                             }
                         }
 
-                        // Right: agent status panel
+                        // Right: agent status + plan board
                         View {
-                            width: 240
+                            width: 260
                             height: Fill
                             flow: Down
                             show_bg: true
                             draw_bg +: { color: #1a1a22 }
 
+                            // ── Agents section header ──────────────────────
                             View {
                                 width: Fill
                                 height: Fit
@@ -632,6 +796,31 @@ script_mod! {
                             }
 
                             agent_status := AgentStatusWidget {}
+
+                            // ── Divider ────────────────────────────────────
+                            View {
+                                width: Fill
+                                height: 1
+                                show_bg: true
+                                draw_bg +: { color: #2a2a34 }
+                            }
+
+                            // ── Plan board section header ──────────────────
+                            View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+
+                                Label {
+                                    text: "Plan"
+                                    draw_text +: {
+                                        color: #8c8c9b
+                                        text_style +: { font_size: 11 bold: true }
+                                    }
+                                }
+                            }
+
+                            swarm_board := SwarmBoardWidget {}
                         }
                     }
                 }
@@ -650,6 +839,10 @@ pub struct App {
 impl App {
     fn populate_demo_state() {
         let mut state = GUI_STATE.write().unwrap();
+
+        // Model / usage info
+        state.model_name = "claude-opus-4-5".into();
+        state.session_tokens = Some((12_400, 3_800));
 
         // Demo sessions
         state.sessions.push(SessionEntry {
@@ -686,7 +879,7 @@ impl App {
             content: "I'll analyze the authentication module. Let me start by examining the token handling code…".into(),
             agent_id: None,
             agent_name: None,
-            tool_calls: vec![],
+            tool_calls: vec!["read_file".into(), "grep".into()],
             tool_data: None,
             duration_secs: Some(1.4),
         });
@@ -699,6 +892,16 @@ impl App {
             tool_calls: vec![],
             tool_data: None,
             duration_secs: None,
+        });
+        state.messages.push(GuiMessage {
+            id: 4,
+            role: MessageRole::Assistant,
+            content: "Found 2 potential issues: (1) JWT secret stored in env without validation, (2) tokens not rotated on privilege escalation.".into(),
+            agent_id: None,
+            agent_name: None,
+            tool_calls: vec![],
+            tool_data: None,
+            duration_secs: Some(3.2),
         });
 
         // Demo swarm members
@@ -724,10 +927,46 @@ impl App {
             session_id: "agent-2".into(),
             name: "Agent-β".into(),
             role: jcode_swarm_core::SwarmRole::Agent,
+            status: jcode_swarm_core::SwarmLifecycleStatus::Done,
+            detail: Some("Completed token rotation".into()),
+            is_coordinator: false,
+            status_age_secs: Some(120),
+        });
+        state.swarm_members.push(GuiSwarmMember {
+            session_id: "agent-3".into(),
+            name: "Agent-γ".into(),
+            role: jcode_swarm_core::SwarmRole::Agent,
             status: jcode_swarm_core::SwarmLifecycleStatus::Ready,
             detail: Some("Awaiting task assignment".into()),
             is_coordinator: false,
             status_age_secs: Some(5),
+        });
+
+        // Demo plan tasks (kanban board)
+        use crate::gui_state::{KanbanColumn, PlanTaskCard};
+        state.plan_tasks.push(PlanTaskCard {
+            id: "t1".into(),
+            title: "Validate JWT secret at startup".into(),
+            column: KanbanColumn::Running,
+            assigned_to: Some("Agent-α".into()),
+        });
+        state.plan_tasks.push(PlanTaskCard {
+            id: "t2".into(),
+            title: "Add token rotation on privilege escalation".into(),
+            column: KanbanColumn::Todo,
+            assigned_to: None,
+        });
+        state.plan_tasks.push(PlanTaskCard {
+            id: "t3".into(),
+            title: "Write auth module tests".into(),
+            column: KanbanColumn::Todo,
+            assigned_to: None,
+        });
+        state.plan_tasks.push(PlanTaskCard {
+            id: "t4".into(),
+            title: "Audit token refresh endpoints".into(),
+            column: KanbanColumn::Done,
+            assigned_to: Some("Agent-β".into()),
         });
 
         // Active session
@@ -754,17 +993,42 @@ impl App {
                 tool_data: None,
                 duration_secs: None,
             });
-            state.is_processing = true;
+            state.processing_status = ProcessingStatus::Thinking { elapsed_secs: 0.0 };
         }
 
         input.set_text(cx, "");
         self.ui.redraw(cx);
+    }
+
+    /// Refresh dynamic header labels (status + token usage) from current GUI state.
+    fn update_header_labels(&mut self, cx: &mut Cx) {
+        let state = GUI_STATE.read().unwrap();
+        let status_text = state.header_status();
+        self.ui
+            .label(cx, ids!(status_label))
+            .set_text(cx, &status_text);
+
+        let usage_text = state.token_usage_label().unwrap_or_default();
+        self.ui
+            .label(cx, ids!(token_usage_label))
+            .set_text(cx, &usage_text);
+
+        if let Some(session) = state
+            .active_session_id
+            .as_ref()
+            .and_then(|id| state.sessions.iter().find(|s| &s.id == id))
+        {
+            self.ui
+                .label(cx, ids!(session_title_label))
+                .set_text(cx, &session.title);
+        }
     }
 }
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         App::populate_demo_state();
+        self.update_header_labels(cx);
         self.ui.redraw(cx);
     }
 
@@ -772,6 +1036,7 @@ impl MatchEvent for App {
         // Send on button click
         if self.ui.button(cx, ids!(send_button)).clicked(actions) {
             self.send_message(cx);
+            self.update_header_labels(cx);
         }
 
         // Send on Enter in text input
@@ -782,6 +1047,7 @@ impl MatchEvent for App {
             .is_some()
         {
             self.send_message(cx);
+            self.update_header_labels(cx);
         }
 
         // Update mode hint when text changes

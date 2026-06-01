@@ -2,7 +2,7 @@
 //!
 //! Message layout mirrors the TUI `MessageRole` distinctions:
 //!   • User    → right-aligned blue bubble
-//!   • Assistant → left-aligned dark bubble (supports markdown via Makepad Markdown widget)
+//!   • Assistant → left-aligned dark bubble; tool-call summaries shown below content
 //!   • Tool / System / Error → full-width status card
 
 use makepad_widgets::*;
@@ -24,19 +24,26 @@ impl Widget for MessageListWidget {
             if let Some(mut list) = item.as_portal_list().borrow_mut() {
                 let count = state.messages.len();
                 // +1 if we're streaming to show the in-progress bubble
-                let total = count + if state.is_processing { 1 } else { 0 };
+                let total = count + if state.processing_status.is_active() { 1 } else { 0 };
                 list.set_item_range(cx, 0, total);
 
                 while let Some(idx) = list.next_visible_item(cx) {
                     // Streaming placeholder at the end
-                    if state.is_processing && idx == count {
+                    if state.processing_status.is_active() && idx == count {
                         let (item_widget, _) = list.item_with_existed(cx, idx, id!(AssistantMsg));
                         item_widget
                             .label(cx, ids!(sender_label))
                             .set_text(cx, "Agent");
+                        let placeholder = state.processing_status.label();
                         item_widget
                             .label(cx, ids!(content_label))
-                            .set_text(cx, "…");
+                            .set_text(cx, &placeholder);
+                        item_widget
+                            .label(cx, ids!(tool_calls_label))
+                            .set_text(cx, "");
+                        item_widget
+                            .view(cx, ids!(tool_calls_view))
+                            .set_visible(cx, false);
                         item_widget.draw_all_unscoped(cx);
                         continue;
                     }
@@ -62,6 +69,29 @@ impl Widget for MessageListWidget {
                         item_widget
                             .label(cx, ids!(content_label))
                             .set_text(cx, &msg.content);
+
+                        // Tool-call summary line (assistant messages only)
+                        if matches!(&msg.role, MessageRole::Assistant) && !msg.tool_calls.is_empty()
+                        {
+                            let tools_text = format!(
+                                "tools: {}",
+                                msg.tool_calls
+                                    .iter()
+                                    .map(|s| s.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(" · ")
+                            );
+                            item_widget
+                                .label(cx, ids!(tool_calls_label))
+                                .set_text(cx, &tools_text);
+                            item_widget
+                                .view(cx, ids!(tool_calls_view))
+                                .set_visible(cx, true);
+                        } else if matches!(&msg.role, MessageRole::Assistant) {
+                            item_widget
+                                .view(cx, ids!(tool_calls_view))
+                                .set_visible(cx, false);
+                        }
 
                         if let Some(d) = msg.duration_secs {
                             let dur_text = format!("{:.1}s", d);

@@ -1,9 +1,9 @@
 //! Swarm plan kanban board — displays plan tasks in three columns:
 //!   To Do | Running | Done
 //!
-//! Each column is a separate portal list in the widget tree. The widget
-//! renders all columns via a single top-level `View` that contains three
-//! sub-views, each with its own `PortalList`.
+//! The right panel renders three stacked `PortalList` widgets (todo_list,
+//! running_list, done_list) each occupying equal vertical space. Task cards
+//! are colour-coded per column: blue (to-do), amber (running), green (done).
 
 use makepad_widgets::*;
 
@@ -14,12 +14,6 @@ use crate::gui_state::{KanbanColumn, GUI_STATE};
 pub struct SwarmBoardWidget {
     #[deref]
     view: View,
-    #[rust]
-    drawn_todo: usize,
-    #[rust]
-    drawn_running: usize,
-    #[rust]
-    drawn_done: usize,
 }
 
 impl Widget for SwarmBoardWidget {
@@ -29,20 +23,12 @@ impl Widget for SwarmBoardWidget {
         let running_tasks: Vec<_> = state.tasks_in_column(&KanbanColumn::Running);
         let done_tasks: Vec<_> = state.tasks_in_column(&KanbanColumn::Done);
 
+        // Portal lists are yielded in layout order: todo_list → running_list → done_list.
+        let all_tasks: [&Vec<_>; 3] = [&todo_tasks, &running_tasks, &done_tasks];
+        let mut list_idx = 0usize;
         while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
             if let Some(mut list) = item.as_portal_list().borrow_mut() {
-                // Identify which column list we are drawing by tracking draw order
-                let (tasks, counter) = if self.drawn_todo == 0 {
-                    self.drawn_todo += 1;
-                    (&todo_tasks, &mut self.drawn_todo)
-                } else if self.drawn_running == 0 {
-                    self.drawn_running += 1;
-                    (&running_tasks, &mut self.drawn_running)
-                } else {
-                    self.drawn_done += 1;
-                    (&done_tasks, &mut self.drawn_done)
-                };
-                let _ = counter;
+                let tasks = all_tasks[list_idx.min(2)];
 
                 list.set_item_range(cx, 0, tasks.len());
                 while let Some(idx) = list.next_visible_item(cx) {
@@ -58,13 +44,9 @@ impl Widget for SwarmBoardWidget {
                         item_widget.draw_all_unscoped(cx);
                     }
                 }
+                list_idx += 1;
             }
         }
-
-        // Reset draw counters for next frame
-        self.drawn_todo = 0;
-        self.drawn_running = 0;
-        self.drawn_done = 0;
 
         DrawStep::done()
     }
