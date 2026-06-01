@@ -107,6 +107,15 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		description: "Show latest tool context in the side panel",
 		args: "[on|off|status]",
 	},
+	{
+		name: "/plan",
+		description: "Enter planning mode to create an actionable plan",
+		args: "[goal]",
+	},
+	{
+		name: "/convene",
+		description: "Ask all agents to contribute their perspectives",
+	},
 ];
 
 /** Parse the slash command from text at or before cursor. Returns null if not a slash prefix. */

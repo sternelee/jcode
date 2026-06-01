@@ -1,6 +1,6 @@
 # TUI → Desktop App Feature Gap Analysis
 
-Updated: 2026-05-29
+Updated: 2026-06-01
 
 ## NavBar Tabs
 
@@ -42,6 +42,69 @@ Updated: 2026-05-29
 | Agent avatar config popover | ✅ | ✅ Implemented | — | Per-avatar model picker |
 | Real-time processing indicators | ✅ | ✅ Implemented | — | Pulse dots, agent status bar |
 | Multi-session concurrent streaming | ✅ | ✅ Implemented | — | streamingIndexByRole |
+
+## New TUI Features (from master merge, 2026-06-01)
+
+### 1. Onboarding Flow (Login + Import Review)
+
+**Status**: ✅ Implemented
+
+Desktop now has a guided first-run onboarding flow:
+- Welcome screen with feature highlights
+- Import review dialog for external credentials (Codex, Claude Code, Cursor)
+- Model selection step
+- Completion state persisted to localStorage
+
+### 2. Cursor Auth Support
+
+**Status**: ✅ Implemented
+
+New auth source for Cursor IDE:
+- `cursor_auth_json` — Cursor's `auth.json` file
+- `cursor_vscdb` — Cursor IDE's SQLite storage (state.vscdb)
+- API key exchange support
+- Displayed in Network page with status indicators
+- Import from external logins during onboarding
+
+### 3. Provider Doctor (diagnostic tool)
+
+**Status**: ✅ Implemented
+
+Desktop has full provider doctor support:
+- "Diagnose" button per configured provider
+- Displays pass/fail checkpoints with details
+- Shows spend info for full tier tests
+- Three tiers: Offline, Catalog, Full
+
+### 4. Live Provider Probes
+
+**Status**: ✅ Implemented
+
+Desktop has live connection testing:
+- "Test" button per configured provider
+- Shows live model count
+- Displays response time
+- Lists available models
+
+### 5. Plan Commands
+
+**Status**: ✅ Implemented
+
+Desktop supports plan commands:
+- `/plan` — Enter planning mode
+- `/plan <goal>` — Plan with specific goal
+- `/convene` — Ask all agents to contribute
+- Plans are written to side panel for review
+
+### 6. Session Picker Loading States
+
+**Status**: ✅ Implemented
+
+Desktop has loading states for session list:
+- Skeleton loading animation during initial load
+- Error state with retry button
+- Empty state with create session prompt
+- Search empty state
 
 ## Remaining Gaps (Backend-dependent)
 

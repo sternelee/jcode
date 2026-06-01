@@ -87,6 +87,10 @@ impl ExternalAuthReviewCandidate {
         &self.source_name
     }
 
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
     /// Build a synthetic candidate for tests / UI fixtures. The resulting
     /// candidate points at the legacy Codex action so it can be summarized and
     /// rendered, but is not expected to actually import successfully.
@@ -299,7 +303,7 @@ fn prompt_to_review_external_auth_sources(
     parse_external_auth_review_selection(&input, candidates.len())
 }
 
-fn approve_external_auth_review_candidate(candidate: &ExternalAuthReviewCandidate) -> Result<()> {
+pub fn approve_external_auth_review_candidate(candidate: &ExternalAuthReviewCandidate) -> Result<()> {
     match candidate.action {
         ExternalAuthReviewAction::SharedExternal(source) => {
             auth::external::trust_external_auth_source(source)?
@@ -476,7 +480,7 @@ async fn validate_shared_external_import(
     anyhow::bail!(errors.join("; "))
 }
 
-async fn validate_external_auth_review_candidate(
+pub async fn validate_external_auth_review_candidate(
     candidate: &ExternalAuthReviewCandidate,
 ) -> Result<String> {
     match candidate.action {

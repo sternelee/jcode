@@ -1,6 +1,6 @@
 {
-  "signature": "Cargo.toml::Unresolved from this turn — Cargo.toml:\n🔴 STOP — 1 issue(s) must be fixed:\n  L320: conflicting keys",
+  "signature": "jcode-app/src/components/ProviderConfigPage.tsx::Unresolved from this turn — jcode-app/src/components/ProviderConfigPage.tsx:\n🔴 STOP — 2 issue(s) must be fixed:\n  L754: Type 'string | null' is not assignable to type 'boolean | undefined'.\n    Type 'null' is not assignable to type 'boolean | undefined'.\n  L768: Type 'string | null' is not assignable to type 'boolean | undefined'.\n    Type 'null' is not assignable to type 'boolean | undefined'.",
   "sessionId": "lens-mpuraz9r-10b21969",
-  "projectSeqStart": 253,
-  "projectSeqEnd": 254
+  "projectSeqStart": 309,
+  "projectSeqEnd": 310
 }

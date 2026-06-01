@@ -5,6 +5,11 @@ import type {
 	ProviderCatalogEntry,
 	ProviderAuthPrompt,
 	AuthDoctorReport,
+	ExternalAuthCandidate,
+	ExternalAuthCandidatesResult,
+	CursorAuthStatus,
+	ProviderDoctorReport,
+	ProviderConnectionTest,
 } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -114,6 +119,22 @@ export function ProviderConfigPage({
 	});
 	const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null);
 	const [usageLoading, setUsageLoading] = useState(false);
+	const [externalCandidates, setExternalCandidates] = useState<
+		ExternalAuthCandidate[]
+	>([]);
+	const [cursorAuthStatus, setCursorAuthStatus] =
+		useState<CursorAuthStatus | null>(null);
+	const [importBusy, setImportBusy] = useState<number | null>(null);
+	const [providerDoctorReport, setProviderDoctorReport] =
+		useState<ProviderDoctorReport | null>(null);
+	const [providerDoctorBusy, setProviderDoctorBusy] = useState<string | null>(
+		null,
+	);
+	const [connectionTest, setConnectionTest] =
+		useState<ProviderConnectionTest | null>(null);
+	const [connectionTestBusy, setConnectionTestBusy] = useState<string | null>(
+		null,
+	);
 
 	const refresh = useCallback(async () => {
 		try {
@@ -140,7 +161,90 @@ export function ProviderConfigPage({
 	useEffect(() => {
 		void refresh();
 		void loadUsage();
+		void loadExternalAuth();
 	}, [refresh, loadUsage]);
+
+	const loadExternalAuth = useCallback(async () => {
+		try {
+			const result = await invoke<ExternalAuthCandidatesResult>(
+				"get_external_auth_candidates",
+			);
+			setExternalCandidates(result.candidates);
+		} catch {
+			/* ignore */
+		}
+		try {
+			const status = await invoke<CursorAuthStatus>("check_cursor_auth_status");
+			setCursorAuthStatus(status);
+		} catch {
+			/* ignore */
+		}
+	}, []);
+
+	const importExternalAuth = useCallback(
+		async (index: number) => {
+			setImportBusy(index);
+			try {
+				const result = await invoke<{
+					imported: boolean;
+					provider: string;
+					detail: string;
+				}>("approve_external_auth_candidate", { index });
+				setAuthMessage({
+					text: `Imported ${result.provider}: ${result.detail}`,
+					type: "ok",
+				});
+				void refresh();
+				void loadExternalAuth();
+			} catch (e) {
+				setAuthMessage({ text: String(e), type: "error" });
+			} finally {
+				setImportBusy(null);
+			}
+		},
+		[refresh],
+	);
+
+	const testConnection = useCallback(async (providerId: string) => {
+		setConnectionTestBusy(providerId);
+		setConnectionTest(null);
+		try {
+			const result = await invoke<ProviderConnectionTest>(
+				"test_provider_connection",
+				{
+					providerId,
+				},
+			);
+			setConnectionTest(result);
+		} catch (e) {
+			setAuthMessage({ text: String(e), type: "error" });
+		} finally {
+			setConnectionTestBusy(null);
+		}
+	}, []);
+
+	const runProviderDoctor = useCallback(
+		async (providerId: string, model?: string) => {
+			setProviderDoctorBusy(providerId);
+			setProviderDoctorReport(null);
+			try {
+				const report = await invoke<ProviderDoctorReport>(
+					"run_provider_doctor",
+					{
+						providerId,
+						model: model || null,
+						tier: "catalog",
+					},
+				);
+				setProviderDoctorReport(report);
+			} catch (e) {
+				setAuthMessage({ text: String(e), type: "error" });
+			} finally {
+				setProviderDoctorBusy(null);
+			}
+		},
+		[],
+	);
 
 	const startAuthFlow = useCallback(async (providerId: string) => {
 		setAuthBusy(true);
@@ -646,12 +750,164 @@ export function ProviderConfigPage({
 													<Badge className="text-[9px]">current</Badge>
 												)}
 											</div>
+											<Button
+												variant="outline"
+												size="sm"
+												className="text-[10px] h-6 gap-1"
+												onClick={() => runProviderDoctor(p.provider_key)}
+												disabled={providerDoctorBusy !== null}
+											>
+												{providerDoctorBusy === p.provider_key ? (
+													<Loader2 className="w-3 h-3 animate-spin" />
+												) : (
+													<Stethoscope className="w-3 h-3" />
+												)}
+												Diagnose
+											</Button>
+											<Button
+												variant="outline"
+												size="sm"
+												className="text-[10px] h-6 gap-1"
+												onClick={() => testConnection(p.provider_key)}
+												disabled={connectionTestBusy !== null}
+											>
+												{connectionTestBusy === p.provider_key ? (
+													<Loader2 className="w-3 h-3 animate-spin" />
+												) : (
+													<Wifi className="w-3 h-3" />
+												)}
+												Test
+											</Button>
 										</div>
 									))}
 								</div>
 							)}
 						</div>
 					</div>
+
+					{/* Provider Doctor Results */}
+					{providerDoctorReport && (
+						<div className="rounded-xl border border-border bg-card overflow-hidden">
+							<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+								<div className="flex items-center gap-2">
+									<Stethoscope className="w-4 h-4 text-primary" />
+									<span className="text-[14px] font-semibold text-foreground">
+										Provider Doctor: {providerDoctorReport.provider_label}
+									</span>
+									<Badge
+										variant={
+											providerDoctorReport.tier_passed
+												? "default"
+												: "destructive"
+										}
+										className="text-[9px]"
+									>
+										{providerDoctorReport.tier_passed ? "PASSED" : "FAILED"}
+									</Badge>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="text-[11px] h-7"
+									onClick={() => setProviderDoctorReport(null)}
+								>
+									Dismiss
+								</Button>
+							</div>
+							<div className="p-4 space-y-2">
+								<div className="text-[12px] text-muted-foreground mb-3">
+									Model: {providerDoctorReport.model} · Tier:{" "}
+									{providerDoctorReport.tier}
+								</div>
+								{providerDoctorReport.checks.map((check, i) => (
+									<div
+										key={i}
+										className={cn(
+											"flex items-start gap-2 p-2 rounded-lg text-[12px]",
+											check.status === "passed" && "bg-emerald-500/5",
+											check.status === "failed" && "bg-destructive/5",
+											check.status === "skipped" && "bg-muted/50",
+										)}
+									>
+										<span className="mt-0.5">
+											{check.status === "passed" && "✓"}
+											{check.status === "failed" && "✗"}
+											{check.status === "skipped" && "⊘"}
+											{check.status === "blocked" && "⊘"}
+											{check.status === "not_run" && "○"}
+										</span>
+										<div className="min-w-0">
+											<div className="font-medium text-foreground">
+												{check.label}
+											</div>
+											{check.detail && (
+												<div className="text-muted-foreground truncate">
+													{check.detail}
+												</div>
+											)}
+										</div>
+									</div>
+								))}
+								{providerDoctorReport.spend_summary && (
+									<div className="text-[11px] text-muted-foreground mt-2 pt-2 border-t border-border">
+										{providerDoctorReport.spend_summary}
+									</div>
+								)}
+							</div>
+						</div>
+					)}
+
+					{/* Connection Test Results */}
+					{connectionTest && (
+						<div className="rounded-xl border border-border bg-card overflow-hidden">
+							<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+								<div className="flex items-center gap-2">
+									<Wifi className="w-4 h-4 text-emerald-500" />
+									<span className="text-[14px] font-semibold text-foreground">
+										Connection Test: {connectionTest.provider_id}
+									</span>
+									<Badge
+										variant={connectionTest.success ? "default" : "destructive"}
+										className="text-[9px]"
+									>
+										{connectionTest.success ? "OK" : "FAILED"}
+									</Badge>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="text-[11px] h-7"
+									onClick={() => setConnectionTest(null)}
+								>
+									Dismiss
+								</Button>
+							</div>
+							<div className="p-4 space-y-2">
+								<div className="text-[12px] text-muted-foreground">
+									{connectionTest.model_count} models available ·{" "}
+									{connectionTest.elapsed_ms}ms
+								</div>
+								{connectionTest.models.length > 0 && (
+									<div className="flex flex-wrap gap-1.5">
+										{connectionTest.models.map((model) => (
+											<Badge
+												key={model}
+												variant="secondary"
+												className="text-[10px]"
+											>
+												{model}
+											</Badge>
+										))}
+										{connectionTest.model_count > 10 && (
+											<Badge variant="outline" className="text-[10px]">
+												+{connectionTest.model_count - 10} more
+											</Badge>
+										)}
+									</div>
+								)}
+							</div>
+						</div>
+					)}
 
 					{/* Available */}
 					<div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -761,6 +1017,126 @@ export function ProviderConfigPage({
 							))}
 						</div>
 					</div>
+
+					{/* External Auth Import */}
+					{externalCandidates.length > 0 && (
+						<div className="rounded-xl border border-border bg-card overflow-hidden">
+							<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+								<div className="flex items-center gap-2">
+									<ShieldCheck className="w-4 h-4 text-emerald-500" />
+									<span className="text-[14px] font-semibold text-foreground">
+										External Logins Found
+									</span>
+								</div>
+								<Badge variant="secondary" className="text-[9px]">
+									{externalCandidates.length}
+								</Badge>
+							</div>
+							<div className="p-4 space-y-3">
+								<p className="text-[12px] text-muted-foreground">
+									Found existing logins from other tools. Import them to reuse
+									credentials.
+								</p>
+								{externalCandidates.map((candidate) => (
+									<div
+										key={candidate.index}
+										className="flex items-center justify-between rounded-lg border border-border p-3"
+									>
+										<div className="min-w-0">
+											<div className="text-[13px] font-medium text-foreground">
+												{candidate.provider_summary}
+											</div>
+											<div className="text-[11px] text-muted-foreground truncate">
+												via {candidate.source_name}
+											</div>
+										</div>
+										<Button
+											variant="outline"
+											size="sm"
+											className="text-[11px] gap-1.5"
+											onClick={() => importExternalAuth(candidate.index)}
+											disabled={importBusy !== null}
+										>
+											{importBusy === candidate.index ? (
+												<Loader2 className="w-3 h-3 animate-spin" />
+											) : (
+												<Plus className="w-3 h-3" />
+											)}
+											Import
+										</Button>
+									</div>
+								))}
+							</div>
+						</div>
+					)}
+
+					{/* Cursor Native Auth */}
+					{cursorAuthStatus && (
+						<div className="rounded-xl border border-border bg-card overflow-hidden">
+							<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
+								<div className="flex items-center gap-2">
+									<Bot className="w-4 h-4 text-primary" />
+									<span className="text-[14px] font-semibold text-foreground">
+										Cursor IDE Auth
+									</span>
+								</div>
+								<Badge
+									variant={cursorAuthStatus.available ? "default" : "outline"}
+									className="text-[9px]"
+								>
+									{cursorAuthStatus.available ? "connected" : "not found"}
+								</Badge>
+							</div>
+							<div className="p-4 space-y-3">
+								<div className="grid grid-cols-2 gap-3">
+									<div className="flex items-center gap-2">
+										<span
+											className={cn(
+												"w-2 h-2 rounded-full",
+												cursorAuthStatus.has_api_key
+													? "bg-emerald-500"
+													: "bg-muted-foreground/30",
+											)}
+										/>
+										<span className="text-[12px] text-muted-foreground">
+											API Key
+										</span>
+									</div>
+									<div className="flex items-center gap-2">
+										<span
+											className={cn(
+												"w-2 h-2 rounded-full",
+												cursorAuthStatus.has_auth_file_token
+													? "bg-emerald-500"
+													: "bg-muted-foreground/30",
+											)}
+										/>
+										<span className="text-[12px] text-muted-foreground">
+											auth.json
+										</span>
+									</div>
+									<div className="flex items-center gap-2">
+										<span
+											className={cn(
+												"w-2 h-2 rounded-full",
+												cursorAuthStatus.has_vscdb_token
+													? "bg-emerald-500"
+													: "bg-muted-foreground/30",
+											)}
+										/>
+										<span className="text-[12px] text-muted-foreground">
+											IDE State
+										</span>
+									</div>
+								</div>
+								{cursorAuthStatus.preferred_source && (
+									<div className="text-[11px] text-muted-foreground">
+										Preferred source: {cursorAuthStatus.preferred_source}
+									</div>
+								)}
+							</div>
+						</div>
+					)}
 
 					{/* Usage */}
 					{onGetUsageInfo && (

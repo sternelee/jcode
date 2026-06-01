@@ -15,6 +15,7 @@ import { TeamPage } from "@/components/TeamPage";
 import { MediaPage } from "@/components/MediaPage";
 import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
 import { SidePanel } from "@/components/SidePanel";
+import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { parseSlashCommand } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
 import type { SessionInfo, PermissionRequest } from "@/types";
@@ -101,6 +102,10 @@ export default function App() {
 	const [sidePanelOpen, setSidePanelOpen] = useState(false);
 	const [gitBranches, setGitBranches] = useState<Record<string, string>>({});
 	const [sidebarOpen, setSidebarOpen] = useState(false);
+	const [onboardingComplete, setOnboardingComplete] = useState(() => {
+		// Check if user has completed onboarding before
+		return localStorage.getItem("jcode-onboarding-complete") === "true";
+	});
 
 	const currentWorkspaceId = state.activeWorkspaceId || DEFAULT_WORKSPACE_ID;
 
@@ -215,6 +220,14 @@ export default function App() {
 			void saveSessionState(state.sessionId, state.workingDir);
 		}
 	}, [state.sessionId, state.workingDir, saveSessionState]);
+
+	const handleOnboardingComplete = (model?: string, providerId?: string) => {
+		localStorage.setItem("jcode-onboarding-complete", "true");
+		setOnboardingComplete(true);
+		if (model && providerId) {
+			void setModel(model, providerId);
+		}
+	};
 
 	// Poll sessions on connect
 	const hasPolledOnConnect = useRef(false);
@@ -719,6 +732,16 @@ export default function App() {
 			: undefined;
 
 	const isChatTab = activeNavTab === "chat";
+
+	// Show onboarding if not completed
+	if (!onboardingComplete) {
+		return (
+			<WelcomeScreen
+				onComplete={handleOnboardingComplete}
+				availableModels={state.availableModels}
+			/>
+		);
+	}
 
 	return (
 		<div className="h-screen bg-background flex flex-col overflow-hidden">

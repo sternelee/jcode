@@ -577,7 +577,7 @@ impl LiveVerificationEvent {
             statuses.insert(checkpoint.clone(), LiveVerificationStageStatus::NotRun);
         }
         for stage in &self.stages {
-            statuses.insert(stage.name.clone(), stage.status.clone());
+            statuses.insert(stage.name.clone(), stage.status);
         }
         statuses
     }
@@ -781,7 +781,7 @@ impl LiveProviderModelCoveragePair {
         {
             Some(LiveVerificationStageStatus::Passed)
         } else if let Some(status) = self.non_passing_checkpoints.get(checkpoint) {
-            Some(status.clone())
+            Some(*status)
         } else if self
             .missing_checkpoints
             .iter()
@@ -1235,7 +1235,7 @@ impl ProviderModelCoverageBuilder {
                     passed_checkpoints.push((*checkpoint).to_string());
                 }
                 Some(status) => {
-                    non_passing_checkpoints.insert((*checkpoint).to_string(), status.clone());
+                    non_passing_checkpoints.insert((*checkpoint).to_string(), *status);
                 }
                 None => missing_checkpoints.push((*checkpoint).to_string()),
             }
@@ -1277,8 +1277,8 @@ fn merge_checkpoint_status(
     }
 
     match current {
-        Some(existing) if rank(existing) >= rank(incoming) => existing.clone(),
-        _ => incoming.clone(),
+        Some(existing) if rank(existing) >= rank(incoming) => *existing,
+        _ => *incoming,
     }
 }
 

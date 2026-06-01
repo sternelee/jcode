@@ -1104,6 +1104,181 @@ async fn get_usage_info() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "providers": reports }))
 }
 
+#[tauri::command]
+async fn get_external_auth_candidates() -> Result<serde_json::Value, String> {
+    let candidates = jcode::external_auth::pending_external_auth_review_candidates()
+        .map_err(|e| format!("Failed to check external auth sources: {e}"))?;
+    let items: Vec<serde_json::Value> = candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate): (usize, &_)| {
+            serde_json::json!({
+                "index": index,
+                "provider_summary": candidate.provider_summary(),
+                "source_name": candidate.source_name(),
+                "path": candidate.path().display().to_string(),
+            })
+        })
+        .collect();
+    Ok(serde_json::json!({ "candidates": items, "total": items.len() }))
+}
+
+#[tauri::command]
+async fn approve_external_auth_candidate(index: usize) -> Result<serde_json::Value, String> {
+    let candidates = jcode::external_auth::pending_external_auth_review_candidates()
+        .map_err(|e| format!("Failed to check external auth sources: {e}"))?;
+    if index >= candidates.len() {
+        return Err(format!(
+            "Invalid candidate index {index} (only {} available)",
+            candidates.len()
+        ));
+    }
+    let candidate = &candidates[index];
+    jcode::external_auth::approve_external_auth_review_candidate(candidate)
+        .map_err(|e| format!("Failed to import auth source: {e}"))?;
+    let validation: String = jcode::external_auth::validate_external_auth_review_candidate(candidate)
+        .await
+        .unwrap_or_else(|e| format!("Imported but validation failed: {e}"));
+    jcode::auth::AuthStatus::invalidate_cache();
+    Ok(serde_json::json!({
+        "imported": true,
+        "provider": candidate.provider_summary(),
+        "detail": validation,
+    }))
+}
+
+#[tauri::command]
+async fn check_cursor_auth_status() -> Result<serde_json::Value, String> {
+    let has_api_key = jcode::auth::cursor::has_cursor_api_key();
+    let has_native = jcode::auth::cursor::has_cursor_native_auth();
+    let has_vscdb = jcode::auth::cursor::has_cursor_vscdb_token();
+    let has_auth_file = jcode::auth::cursor::has_cursor_auth_file_token();
+    let preferred_source = jcode::auth::cursor::preferred_external_auth_source()
+        .map(|s| s.display_name().to_string());
+    Ok(serde_json::json!({
+        "has_api_key": has_api_key,
+        "has_native_auth": has_native,
+        "has_vscdb_token": has_vscdb,
+        "has_auth_file_token": has_auth_file,
+        "preferred_source": preferred_source,
+        "available": has_api_key || has_native,
+    }))
+}
+
+#[tauri::command]
+async fn run_provider_doctor(
+    provider_id: String,
+    model: Option<String>,
+    tier: Option<String>,
+) -> Result<serde_json::Value, String> {
+    use jcode::auth::provider_e2e::{DoctorTier, run_provider_e2e};
+    use jcode::provider_catalog;
+
+    // Try to find by id first, then by display_name (case-insensitive)
+    let provider_id_lower = provider_id.to_ascii_lowercase();
+    let profile = provider_catalog::openai_compatible_profiles()
+        .iter()
+        .find(|p| {
+            p.id == provider_id
+                || p.display_name.to_ascii_lowercase() == provider_id_lower
+                || p.id == provider_id_lower
+        })
+        .ok_or_else(|| format!("Provider '{provider_id}' not found or not OpenAI-compatible"))?;
+
+    let doctor_tier = match tier.as_deref() {
+        Some("offline") => DoctorTier::Offline,
+        Some("catalog") => DoctorTier::Catalog,
+        Some("full") => DoctorTier::Full,
+        _ => DoctorTier::Catalog,
+    };
+
+    // Try to load API key from env or config
+    let api_key = provider_catalog::load_api_key_from_env_or_config(
+        profile.api_key_env,
+        profile.env_file,
+    );
+
+    let api_key_ref = api_key.as_deref().filter(|k| !k.trim().is_empty());
+
+    if doctor_tier.requires_api_key() && api_key_ref.is_none() {
+        return Err(format!(
+            "Provider '{provider_id}' requires an API key for {:?} tier",
+            doctor_tier
+        ));
+    }
+
+    let report = run_provider_e2e(*profile, api_key_ref, model.as_deref(), doctor_tier)
+        .await
+        .map_err(|e| format!("Provider doctor failed: {e}"))?;
+
+    Ok(serde_json::json!({
+        "provider_id": report.provider_id,
+        "provider_label": report.provider_label,
+        "model": report.model,
+        "tier": report.tier.as_str(),
+        "tier_passed": report.tier_passed,
+        "strict_passed": report.strict_passed,
+        "checks": report.checks.iter().map(|check| {
+            serde_json::json!({
+                "checkpoint": check.checkpoint,
+                "label": check.label,
+                "status": match check.status {
+                    jcode::live_tests::LiveVerificationStageStatus::Passed => "passed",
+                    jcode::live_tests::LiveVerificationStageStatus::Failed => "failed",
+                    jcode::live_tests::LiveVerificationStageStatus::Skipped => "skipped",
+                    jcode::live_tests::LiveVerificationStageStatus::Blocked => "blocked",
+                    jcode::live_tests::LiveVerificationStageStatus::NotRun => "not_run",
+                },
+                "detail": check.detail,
+            })
+        }).collect::<Vec<_>>(),
+        "spend": report.spend.to_json(),
+        "spend_summary": report.spend.human_summary(),
+    }))
+}
+
+#[tauri::command]
+async fn test_provider_connection(
+    provider_id: String,
+) -> Result<serde_json::Value, String> {
+    use jcode::auth::live_provider_probes::fetch_live_openai_compatible_models;
+    use jcode::provider_catalog;
+
+    // Try to find by id first, then by display_name (case-insensitive)
+    let provider_id_lower = provider_id.to_ascii_lowercase();
+    let profile = provider_catalog::openai_compatible_profiles()
+        .iter()
+        .find(|p| {
+            p.id == provider_id
+                || p.display_name.to_ascii_lowercase() == provider_id_lower
+                || p.id == provider_id_lower
+        })
+        .ok_or_else(|| format!("Provider '{provider_id}' not found or not OpenAI-compatible"))?;
+
+    let api_key = provider_catalog::load_api_key_from_env_or_config(
+        profile.api_key_env,
+        profile.env_file,
+    );
+
+    let api_key = api_key
+        .filter(|k| !k.trim().is_empty())
+        .ok_or_else(|| format!("No API key found for '{provider_id}'"))?;
+
+    let start = std::time::Instant::now();
+    let models = fetch_live_openai_compatible_models(*profile, &api_key)
+        .await
+        .map_err(|e| format!("Connection test failed: {e}"))?;
+    let elapsed = start.elapsed();
+
+    Ok(serde_json::json!({
+        "provider_id": provider_id,
+        "model_count": models.len(),
+        "models": models.iter().take(10).collect::<Vec<_>>(),
+        "elapsed_ms": elapsed.as_millis() as u64,
+        "success": true,
+    }))
+}
+
 fn delete_session_artifacts(session_id: &str) -> Result<(), String> {
     let session_path = jcode::session::session_path(session_id)
         .map_err(|e| format!("Failed to resolve session path for {session_id}: {e}"))?;
@@ -2212,6 +2387,11 @@ pub fn run() {
             get_auth_status,
             run_auth_doctor,
             get_usage_info,
+            get_external_auth_candidates,
+            approve_external_auth_candidate,
+            check_cursor_auth_status,
+            run_provider_doctor,
+            test_provider_connection,
             get_ambient_status,
             get_ambient_transcripts,
             run_auth_test,

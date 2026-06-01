@@ -14,7 +14,7 @@ pub mod integration;
 pub mod lifecycle;
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) mod lifecycle_driver;
-pub(crate) mod live_provider_probes;
+pub mod live_provider_probes;
 pub mod login_diagnostics;
 pub mod login_flows;
 pub mod oauth;

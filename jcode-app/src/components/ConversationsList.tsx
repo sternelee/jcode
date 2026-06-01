@@ -32,6 +32,9 @@ interface ConversationsListProps {
 	sessionPreviewMap?: Record<string, SessionPreview>;
 	sessionData?: Record<string, PerSessionData>;
 	gitBranches?: Record<string, string>;
+	isLoading?: boolean;
+	error?: string | null;
+	onRetry?: () => void;
 	onToggleWorkspace: (workspaceId: string) => void;
 	onSelectWorkspace: (workspaceId: string) => void;
 	onSelectConversation: (id: string) => void;
@@ -159,6 +162,9 @@ export function ConversationsList({
 	sessionPreviewMap = {},
 	sessionData = {},
 	gitBranches = {},
+	isLoading = false,
+	error = null,
+	onRetry,
 }: ConversationsListProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 
@@ -235,115 +241,160 @@ export function ConversationsList({
 				</div>
 			</div>
 
-			{/* Workspace list */}
-			<div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
-				{filteredWorkspaces.map((wsId) => {
-					const isExpanded = expandedWorkspaces.has(wsId);
-					const isActive = wsId === activeWorkspaceId;
-					const items = workspaceItems.get(wsId) || [];
-					const label = workspaceLabel(wsId);
-
-					return (
-						<div key={wsId}>
-							{/* Workspace header */}
-							<div
-								className={cn(
-									"flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all duration-150 group/ws",
-									isActive ? "bg-sidebar-accent" : "hover:bg-sidebar-accent/50",
-								)}
+			{/* Content - conditional rendering */}
+			{isLoading ? (
+				<div className="flex-1 flex items-center justify-center">
+					<div className="space-y-3 w-full px-4">
+						{[1, 2, 3].map((i) => (
+							<div key={i} className="flex items-center gap-3 animate-pulse">
+								<div className="w-8 h-8 rounded-full bg-sidebar-accent" />
+								<div className="flex-1 space-y-1.5">
+									<div className="h-3 bg-sidebar-accent rounded w-3/4" />
+									<div className="h-2.5 bg-sidebar-accent rounded w-1/2" />
+								</div>
+							</div>
+						))}
+					</div>
+				</div>
+			) : error ? (
+				<div className="flex-1 flex items-center justify-center px-4">
+					<div className="text-center space-y-3">
+						<div className="text-[13px] text-destructive">{error}</div>
+						{onRetry && (
+							<button
+								type="button"
+								onClick={onRetry}
+								className="text-[12px] text-primary hover:underline"
 							>
-								<button
-									type="button"
-									onClick={() => onToggleWorkspace(wsId)}
-									className="w-5 h-5 rounded flex items-center justify-center text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors shrink-0"
-								>
-									<svg
-										viewBox="0 0 16 16"
-										fill="currentColor"
-										className={cn(
-											"w-3.5 h-3.5 transition-transform duration-150",
-											isExpanded && "rotate-90",
-										)}
-									>
-										<path
-											fillRule="evenodd"
-											d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z"
-											clipRule="evenodd"
-										/>
-									</svg>
-								</button>
+								Try again
+							</button>
+						)}
+					</div>
+				</div>
+			) : filteredWorkspaces.length === 0 ? (
+				<div className="flex-1 flex items-center justify-center px-4">
+					<div className="text-center space-y-2">
+						<div className="text-[13px] text-muted-foreground">
+							{searchQuery ? "No matching sessions" : "No sessions yet"}
+						</div>
+						{!searchQuery && (
+							<button
+								type="button"
+								onClick={onCreateSession}
+								className="text-[12px] text-primary hover:underline"
+							>
+								Create your first session
+							</button>
+						)}
+					</div>
+				</div>
+			) : (
+				/* Workspace list */
+				<div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
+					{filteredWorkspaces.map((wsId) => {
+						const isExpanded = expandedWorkspaces.has(wsId);
+						const isActive = wsId === activeWorkspaceId;
+						const items = workspaceItems.get(wsId) || [];
+						const label = workspaceLabel(wsId);
 
-								<button
-									type="button"
-									onClick={() => onSelectWorkspace(wsId)}
-									className="flex-1 text-left min-w-0"
+						return (
+							<div key={wsId}>
+								{/* Workspace header */}
+								<div
+									className={cn(
+										"flex items-center gap-1 px-2 py-1.5 rounded-lg transition-all duration-150 group/ws",
+										isActive
+											? "bg-sidebar-accent"
+											: "hover:bg-sidebar-accent/50",
+									)}
 								>
-									<div className="flex items-center gap-1.5 min-w-0">
-										<span
+									<button
+										type="button"
+										onClick={() => onToggleWorkspace(wsId)}
+										className="w-5 h-5 rounded flex items-center justify-center text-sidebar-foreground/30 hover:text-sidebar-foreground/60 transition-colors shrink-0"
+									>
+										<svg
+											viewBox="0 0 16 16"
+											fill="currentColor"
 											className={cn(
-												"text-[13px] font-medium truncate",
-												isActive
-													? "text-sidebar-primary"
-													: "text-sidebar-foreground",
+												"w-3.5 h-3.5 transition-transform duration-150",
+												isExpanded && "rotate-90",
 											)}
 										>
-											{label}
-										</span>
-										{gitBranches[wsId] && (
-											<span className="shrink-0 text-[10px] font-mono text-sidebar-foreground/40 bg-sidebar-accent/50 px-1 py-0.5 rounded">
-												{gitBranches[wsId]}
+											<path
+												fillRule="evenodd"
+												d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z"
+												clipRule="evenodd"
+											/>
+										</svg>
+									</button>
+
+									<button
+										type="button"
+										onClick={() => onSelectWorkspace(wsId)}
+										className="flex-1 text-left min-w-0"
+									>
+										<div className="flex items-center gap-1.5 min-w-0">
+											<span
+												className={cn(
+													"text-[13px] font-medium truncate",
+													isActive
+														? "text-sidebar-primary"
+														: "text-sidebar-foreground",
+												)}
+											>
+												{label}
 											</span>
+											{gitBranches[wsId] && (
+												<span className="shrink-0 text-[10px] font-mono text-sidebar-foreground/40 bg-sidebar-accent/50 px-1 py-0.5 rounded">
+													{gitBranches[wsId]}
+												</span>
+											)}
+										</div>
+									</button>
+
+									<span className="text-[11px] text-sidebar-foreground/40 mr-1">
+										{items.length}
+									</span>
+								</div>
+
+								{/* Expanded items */}
+								{isExpanded && (
+									<div className="pl-3 pr-1 mt-0.5 space-y-0.5">
+										{items.map((item) => (
+											<ConvItem
+												key={item.id}
+												item={item}
+												isSelected={selectedConvId === item.id}
+												isProcessing={sessionData[item.id]?.isProcessing}
+												onRemove={
+													onRemoveSession && item.avatarType === "single"
+														? () => onRemoveSession(item.id)
+														: undefined
+												}
+												onSelect={() => {
+													onSelectConversation(item.id);
+													if (onSelectSession) {
+														const session = sessions.find(
+															(s) => s.sessionId === item.id,
+														);
+														if (session) onSelectSession(session);
+													}
+												}}
+											/>
+										))}
+										{items.length === 0 && (
+											<div className="px-3 py-3 text-[12px] text-sidebar-foreground/40 text-center">
+												No sessions
+											</div>
 										)}
 									</div>
-								</button>
-
-								<span className="text-[11px] text-sidebar-foreground/40 mr-1">
-									{items.length}
-								</span>
+								)}
 							</div>
-
-							{/* Expanded items */}
-							{isExpanded && (
-								<div className="pl-3 pr-1 mt-0.5 space-y-0.5">
-									{items.map((item) => (
-										<ConvItem
-											key={item.id}
-											item={item}
-											isSelected={selectedConvId === item.id}
-											isProcessing={sessionData[item.id]?.isProcessing}
-											onRemove={
-												onRemoveSession && item.avatarType === "single"
-													? () => onRemoveSession(item.id)
-													: undefined
-											}
-											onSelect={() => {
-												onSelectConversation(item.id);
-												if (onSelectSession) {
-													const session = sessions.find(
-														(s) => s.sessionId === item.id,
-													);
-													if (session) onSelectSession(session);
-												}
-											}}
-										/>
-									))}
-									{items.length === 0 && (
-										<div className="px-3 py-3 text-[12px] text-sidebar-foreground/40 text-center">
-											No sessions
-										</div>
-									)}
-								</div>
-							)}
-						</div>
-					);
-				})}
-
-				{filteredWorkspaces.length === 0 && (
-					<div className="text-center text-[12px] text-sidebar-foreground/40 py-8">
-						{searchQuery ? "No matching workspaces" : "No workspaces yet"}
-					</div>
-				)}
-			</div>
+						);
+					})}
+				</div>
+			)}
 		</div>
 	);
 }

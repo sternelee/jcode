@@ -26,6 +26,10 @@ pub(crate) fn initial_title(args: &Args) -> String {
         Some(Command::Provider(_)) => "jcode provider".to_string(),
         Some(Command::Memory(_)) => "jcode memory".to_string(),
         Some(Command::Session(_)) => "jcode session".to_string(),
+        Some(Command::Clear) => "jcode clear".to_string(),
+        Some(Command::Rewind { .. }) => "jcode rewind".to_string(),
+        Some(Command::SetReasoningEffort { .. }) => "jcode effort".to_string(),
+        Some(Command::Compact) => "jcode compact".to_string(),
         Some(Command::Ambient(subcommand)) => match subcommand {
             AmbientCommand::RunVisible => "jcode ambient visible".to_string(),
             _ => "jcode ambient".to_string(),

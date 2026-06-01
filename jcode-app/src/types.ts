@@ -346,6 +346,54 @@ export interface ProviderAuthSuccess {
 	email?: string | null;
 }
 
+export interface ExternalAuthCandidate {
+	index: number;
+	provider_summary: string;
+	source_name: string;
+	path: string;
+}
+
+export interface ExternalAuthCandidatesResult {
+	candidates: ExternalAuthCandidate[];
+	total: number;
+}
+
+export interface CursorAuthStatus {
+	has_api_key: boolean;
+	has_native_auth: boolean;
+	has_vscdb_token: boolean;
+	has_auth_file_token: boolean;
+	preferred_source: string | null;
+	available: boolean;
+}
+
+export interface ProviderDoctorCheck {
+	checkpoint: string;
+	label: string;
+	status: "passed" | "failed" | "skipped" | "blocked" | "not_run";
+	detail: string;
+}
+
+export interface ProviderDoctorReport {
+	provider_id: string;
+	provider_label: string;
+	model: string;
+	tier: string;
+	tier_passed: boolean;
+	strict_passed: boolean;
+	checks: ProviderDoctorCheck[];
+	spend: Record<string, unknown>;
+	spend_summary: string;
+}
+
+export interface ProviderConnectionTest {
+	provider_id: string;
+	model_count: number;
+	models: string[];
+	elapsed_ms: number;
+	success: boolean;
+}
+
 // --- Server event union ---
 export type ServerEvent =
 	| TextDeltaEvent
