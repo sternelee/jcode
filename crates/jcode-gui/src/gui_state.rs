@@ -5,7 +5,20 @@
 
 use jcode_message_types::ToolCall;
 use jcode_protocol::SwarmMemberStatus;
-use jcode_swarm_core::{SwarmLifecycleStatus, SwarmRole};
+pub use jcode_swarm_core::{SwarmLifecycleStatus, SwarmRole};
+
+/// Global GUI state — read by widget draw_walk, written by AppMain event handlers.
+pub static GUI_STATE: std::sync::RwLock<GuiState> =
+    std::sync::RwLock::new(GuiState {
+        sessions: Vec::new(),
+        active_session_id: None,
+        messages: Vec::new(),
+        swarm_members: Vec::new(),
+        plan_tasks: Vec::new(),
+        composer_draft: String::new(),
+        is_processing: false,
+        current_tool: None,
+    });
 
 // ── Session / conversation ────────────────────────────────────────────────────
 
@@ -143,14 +156,9 @@ impl GuiSwarmMember {
             .clone()
             .map(SwarmRole::from)
             .unwrap_or(SwarmRole::Agent);
-        let status = m
-            .status
-            .clone()
-            .parse::<String>()
-            .map(SwarmRole::from)
-            .ok();
-        let _ = status; // unused — we parse SwarmLifecycleStatus from the string directly
-        let lifecycle = SwarmLifecycleStatus::from(m.status.clone());
+        let lifecycle = SwarmLifecycleStatus::from(
+            m.status.clone(),
+        );
         let is_coordinator = matches!(role, SwarmRole::Coordinator);
         Self {
             session_id: m.session_id.clone(),
@@ -225,8 +233,12 @@ pub struct PlanTaskCard {
 
 impl PlanTaskCard {
     pub fn from_plan_item(item: &jcode_plan::PlanItem, active_ids: &[String]) -> Self {
-        let column = if item.done {
+        let column = if item.status == "done" || item.status == "completed" {
             KanbanColumn::Done
+        } else if item.status == "failed" {
+            KanbanColumn::Failed
+        } else if item.status == "blocked" {
+            KanbanColumn::Blocked
         } else if active_ids.contains(&item.id) {
             KanbanColumn::Running
         } else {
@@ -234,9 +246,9 @@ impl PlanTaskCard {
         };
         Self {
             id: item.id.clone(),
-            title: item.title.clone(),
+            title: item.content.clone(),
             column,
-            assigned_to: None,
+            assigned_to: item.assigned_to.clone(),
         }
     }
 }

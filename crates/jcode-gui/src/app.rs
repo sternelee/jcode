@@ -1,4 +1,4 @@
-//! Main application — Makepad `AppMain` implementation.
+//! Main application — Makepad `AppMain` implementation using the new `script_mod!` API.
 //!
 //! Three-column layout mirroring the jcode TUI:
 //!
@@ -8,511 +8,804 @@
 //!  │ SessionList │   MessageList           │ AgentStatusPanel │
 //!  │ (left 280)  │   (center, fill)        │ (right 240)      │
 //!  │             ├─────────────────────────┤                  │
-//!  │             │ ComposerWidget (bottom) │                  │
+//!  │             │ Composer (bottom)       │                  │
 //!  └─────────────┴─────────────────────────┴──────────────────┘
-//!
-//! A secondary "Board" view (SwarmBoardPanel) can be toggled for swarm
-//! sessions, replacing the message list to show the kanban task board.
 
 use makepad_widgets::*;
 
-use crate::agent_status::{AgentStatusAction, AgentStatusPanel};
-use crate::composer::{ComposerAction, ComposerWidget};
-use crate::gui_state::{GuiMessage, GuiState, KanbanColumn, PlanTaskCard, SessionEntry, SessionKind};
-use crate::message_list::{MessageListPanel};
-use crate::session_list::{SessionListAction, SessionListPanel};
-use crate::swarm_board::{SwarmBoardPanel};
+use crate::agent_status::AgentStatusWidget;
+use crate::composer::ComposerMode;
+use crate::gui_state::{
+    GuiMessage, GuiSwarmMember, MessageRole, SessionEntry, SessionKind, GUI_STATE,
+};
+use crate::message_list::MessageListWidget;
+use crate::session_list::SessionListWidget;
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use makepad_widgets::base::*;
+app_main!(App);
 
-    // Import our custom widgets
-    use crate::session_list::SessionListPanel;
-    use crate::message_list::MessageListPanel;
-    use crate::agent_status::AgentStatusPanel;
-    use crate::composer::ComposerWidget;
-    use crate::swarm_board::SwarmBoardPanel;
+script_mod! {
+    use mod.prelude.widgets.*
 
-    // ── Header bar ────────────────────────────────────────────────────────────
-    HeaderBar = <View> {
-        width: Fill,
-        height: 44.0,
-        flow: Right,
-        align: { y: 0.5 }
-        padding: { left: 16.0, right: 16.0 }
-        draw_bg: { color: #1a1a1e }
+    // ── Custom widget registrations ───────────────────────────────────────────
+    let SessionListWidget = #(SessionListWidget::register_widget(vm)) {
+        width: Fill
+        height: Fill
 
-        title_label = <Label> {
-            width: Fill,
-            height: Fit,
-            draw_text: {
-                color: #dcdce6,
-                text_style: { font_size: 14.0, font_weight: 700.0 }
+        session_list := PortalList {
+            width: Fill
+            height: Fill
+            flow: Down
+            drag_scrolling: false
+
+            SessionRow := RoundedView {
+                width: Fill
+                height: Fit
+                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+                show_bg: true
+                draw_bg +: { color: #202026 radius: 0.0 }
+
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+
+                    View {
+                        width: Fill
+                        height: Fit
+                        flow: Right
+                        align: Align{y: 0.5}
+                        spacing: 4
+
+                        title_label := Label {
+                            width: Fill
+                            height: Fit
+                            draw_text +: {
+                                color: #dcdce6
+                                text_style +: { font_size: 13 }
+                            }
+                        }
+
+                        badge_view := View {
+                            width: Fit
+                            height: Fit
+                            visible: false
+                            badge_label := Label {
+                                width: Fit
+                                height: Fit
+                                draw_text +: {
+                                    color: #8ab4f8
+                                    text_style +: { font_size: 10 }
+                                }
+                            }
+                        }
+                    }
+
+                    preview_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #8c8c9b
+                            text_style +: { font_size: 11 }
+                        }
+                    }
+                }
             }
-            text: "jcode"
-        }
 
-        model_label = <Label> {
-            width: Fit,
-            height: Fit,
-            padding: { right: 16.0 }
-            draw_text: {
-                color: #8c8c9b,
-                text_style: { font_size: 11.5 }
-            }
-            text: ""
-        }
+            SwarmRow := RoundedView {
+                width: Fill
+                height: Fit
+                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+                show_bg: true
+                draw_bg +: { color: #262a37 radius: 0.0 }
 
-        status_label = <Label> {
-            width: Fit,
-            height: Fit,
-            draw_text: {
-                color: #78c88c,
-                text_style: { font_size: 11.5 }
-            }
-            text: "Ready"
-        }
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
 
-        board_toggle_btn = <Button> {
-            width: Fit,
-            height: Fit,
-            margin: { left: 12.0 }
-            padding: { left: 10.0, right: 10.0, top: 4.0, bottom: 4.0 }
-            draw_bg: {
-                color: #26293700,
-                border_radius: 6.0
+                    View {
+                        width: Fill
+                        height: Fit
+                        flow: Right
+                        align: Align{y: 0.5}
+                        spacing: 4
+
+                        title_label := Label {
+                            width: Fill
+                            height: Fit
+                            draw_text +: {
+                                color: #8ab4f8
+                                text_style +: { font_size: 13 }
+                            }
+                        }
+
+                        badge_view := View {
+                            width: Fit
+                            height: Fit
+                            visible: false
+                            badge_label := Label {
+                                width: Fit
+                                height: Fit
+                                draw_text +: {
+                                    color: #ffc864
+                                    text_style +: { font_size: 10 }
+                                }
+                            }
+                        }
+                    }
+
+                    preview_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #8c8c9b
+                            text_style +: { font_size: 11 }
+                        }
+                    }
+                }
             }
-            draw_text: {
-                color: #8ab4f8,
-                text_style: { font_size: 11.5 }
-            }
-            text: "Plan"
         }
     }
 
-    // ── Centre panel: chat + composer OR board ────────────────────────────────
-    CentrePanel = <View> {
-        width: Fill,
-        height: Fill,
-        flow: Down,
+    let MessageListWidget = #(MessageListWidget::register_widget(vm)) {
+        width: Fill
+        height: Fill
 
-        // Chat view (default visible)
-        chat_view = <View> {
-            width: Fill,
-            height: Fill,
-            flow: Down,
+        msg_list := PortalList {
+            width: Fill
+            height: Fill
+            flow: Down
+            drag_scrolling: false
+            auto_tail: true
+            smooth_tail: true
 
-            message_list = <MessageListPanel> {}
-            composer = <ComposerWidget> {}
-        }
+            UserMsg := RoundedView {
+                width: Fill
+                height: Fit
+                margin: Inset{top: 4 bottom: 4 left: 60 right: 8}
+                padding: Inset{left: 12 top: 8 right: 12 bottom: 8}
+                show_bg: true
+                draw_bg +: { color: #1c3a58 radius: 8.0 }
 
-        // Board view (toggled for swarm sessions)
-        board_view = <View> {
-            width: Fill,
-            height: Fill,
-            visible: false,
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+                    spacing: 4
 
-            swarm_board = <SwarmBoardPanel> {}
+                    sender_label := Label {
+                        width: Fit
+                        height: Fit
+                        draw_text +: {
+                            color: #64c8dc
+                            text_style +: { font_size: 10 bold: true }
+                        }
+                    }
+
+                    content_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #dcdce6
+                            text_style +: { font_size: 13 }
+                        }
+                        wrap: Word
+                    }
+
+                    duration_view := View {
+                        width: Fit
+                        height: Fit
+                        visible: false
+                        duration_label := Label {
+                            width: Fit
+                            height: Fit
+                            draw_text +: {
+                                color: #8c8c9b
+                                text_style +: { font_size: 9 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            AssistantMsg := RoundedView {
+                width: Fill
+                height: Fit
+                margin: Inset{top: 4 bottom: 4 left: 8 right: 60}
+                padding: Inset{left: 12 top: 8 right: 12 bottom: 8}
+                show_bg: true
+                draw_bg +: { color: #262a37 radius: 8.0 }
+
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+                    spacing: 4
+
+                    sender_label := Label {
+                        width: Fit
+                        height: Fit
+                        draw_text +: {
+                            color: #8ab4f8
+                            text_style +: { font_size: 10 bold: true }
+                        }
+                    }
+
+                    content_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #d2d2dc
+                            text_style +: { font_size: 13 }
+                        }
+                        wrap: Word
+                    }
+
+                    duration_view := View {
+                        width: Fit
+                        height: Fit
+                        visible: false
+                        duration_label := Label {
+                            width: Fit
+                            height: Fit
+                            draw_text +: {
+                                color: #8c8c9b
+                                text_style +: { font_size: 9 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            ToolMsg := RoundedView {
+                width: Fill
+                height: Fit
+                margin: Inset{top: 2 bottom: 2 left: 8 right: 8}
+                padding: Inset{left: 12 top: 6 right: 12 bottom: 6}
+                show_bg: true
+                draw_bg +: { color: #232d23 radius: 4.0 }
+
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+
+                    sender_label := Label {
+                        width: Fit
+                        height: Fit
+                        draw_text +: {
+                            color: #78c88c
+                            text_style +: { font_size: 10 bold: true }
+                        }
+                    }
+
+                    content_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #a0c8a0
+                            text_style +: { font_size: 12 }
+                        }
+                        wrap: Word
+                    }
+
+                    duration_view := View {
+                        width: Fit
+                        height: Fit
+                        visible: false
+                        duration_label := Label { width: Fit height: Fit }
+                    }
+                }
+            }
+
+            SystemMsg := RoundedView {
+                width: Fill
+                height: Fit
+                margin: Inset{top: 2 bottom: 2 left: 8 right: 8}
+                padding: Inset{left: 12 top: 6 right: 12 bottom: 6}
+                show_bg: true
+                draw_bg +: { color: #372d19 radius: 4.0 }
+
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+
+                    sender_label := Label {
+                        width: Fit
+                        height: Fit
+                        draw_text +: {
+                            color: #c8af50
+                            text_style +: { font_size: 10 bold: true }
+                        }
+                    }
+
+                    content_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #c8b878
+                            text_style +: { font_size: 12 }
+                        }
+                        wrap: Word
+                    }
+
+                    duration_view := View {
+                        width: Fit
+                        height: Fit
+                        visible: false
+                        duration_label := Label { width: Fit height: Fit }
+                    }
+                }
+            }
+
+            ErrorMsg := RoundedView {
+                width: Fill
+                height: Fit
+                margin: Inset{top: 2 bottom: 2 left: 8 right: 8}
+                padding: Inset{left: 12 top: 6 right: 12 bottom: 6}
+                show_bg: true
+                draw_bg +: { color: #461919 radius: 4.0 }
+
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+
+                    sender_label := Label {
+                        width: Fit
+                        height: Fit
+                        draw_text +: {
+                            color: #ff6464
+                            text_style +: { font_size: 10 bold: true }
+                        }
+                    }
+
+                    content_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #ff9090
+                            text_style +: { font_size: 12 }
+                        }
+                        wrap: Word
+                    }
+
+                    duration_view := View {
+                        width: Fit
+                        height: Fit
+                        visible: false
+                        duration_label := Label { width: Fit height: Fit }
+                    }
+                }
+            }
         }
     }
 
-    // ── Root window layout ────────────────────────────────────────────────────
-    App = {{App}} {
-        ui: <Window> {
-            window: {
-                title: "jcode — AI Agent Platform",
-                position: vec2(100.0, 100.0),
-                inner_size: vec2(1280.0, 800.0),
-                min_size: vec2(800.0, 500.0),
+    let AgentStatusWidget = #(AgentStatusWidget::register_widget(vm)) {
+        width: 240
+        height: Fill
+
+        agent_list := PortalList {
+            width: Fill
+            height: Fill
+            flow: Down
+            drag_scrolling: false
+
+            StatsRow := View {
+                width: Fill
+                height: Fit
+                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+
+                stats_label := Label {
+                    width: Fill
+                    height: Fit
+                    draw_text +: {
+                        color: #8ab4f8
+                        text_style +: { font_size: 11 bold: true }
+                    }
+                }
             }
-            draw_bg: { color: #1a1a1e }
-            flow: Down,
 
-            header = <HeaderBar> {}
+            CoordinatorCard := RoundedView {
+                width: Fill
+                height: Fit
+                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+                margin: Inset{top: 2 bottom: 2 left: 4 right: 4}
+                show_bg: true
+                draw_bg +: { color: #262a37 radius: 6.0 }
 
-            body = <View> {
-                width: Fill,
-                height: Fill,
-                flow: Right,
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+                    spacing: 2
 
-                // Left panel separator
-                left_sep = <View> {
-                    width: 1.0,
-                    height: Fill,
-                    draw_bg: { color: #2a2a32 }
+                    member_name_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #ffc864
+                            text_style +: { font_size: 12 bold: true }
+                        }
+                    }
+
+                    member_detail_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #8c8c9b
+                            text_style +: { font_size: 10 }
+                        }
+                        wrap: Word
+                    }
                 }
+            }
 
-                session_list = <SessionListPanel> {}
+            MemberCard := RoundedView {
+                width: Fill
+                height: Fit
+                padding: Inset{top: 6 bottom: 6 left: 12 right: 8}
+                margin: Inset{top: 2 bottom: 2 left: 4 right: 4}
+                show_bg: true
+                draw_bg +: { color: #202026 radius: 4.0 }
 
-                left_sep2 = <View> {
-                    width: 1.0,
-                    height: Fill,
-                    draw_bg: { color: #2a2a32 }
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+                    spacing: 2
+
+                    member_name_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #dcdce6
+                            text_style +: { font_size: 12 }
+                        }
+                    }
+
+                    member_detail_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #8c8c9b
+                            text_style +: { font_size: 10 }
+                        }
+                        wrap: Word
+                    }
                 }
+            }
+        }
+    }
 
-                centre = <CentrePanel> {}
+    // ── Main app layout ───────────────────────────────────────────────────────
+    startup() do #(App::script_component(vm)) {
+        ui: Root {
+            on_startup: || {
+                ui.main_view.render()
+            }
 
-                right_sep = <View> {
-                    width: 1.0,
-                    height: Fill,
-                    draw_bg: { color: #2a2a32 }
+            main_window := Window {
+                window.inner_size: vec2(1200, 800)
+                window.title: "jcode — Agent Chat"
+                body +: {
+                    flow: Down
+
+                    // ── Header bar ────────────────────────────────────────
+                    View {
+                        width: Fill
+                        height: 44
+                        flow: Right
+                        align: Align{y: 0.5}
+                        padding: Inset{left: 16 right: 16}
+                        show_bg: true
+                        draw_bg +: { color: #1a1a1e }
+
+                        session_title_label := Label {
+                            width: Fill
+                            height: Fit
+                            text: "jcode"
+                            draw_text +: {
+                                color: #dcdce6
+                                text_style +: { font_size: 16 bold: true }
+                            }
+                        }
+
+                        status_label := Label {
+                            width: Fit
+                            height: Fit
+                            text: "Ready"
+                            draw_text +: {
+                                color: #8c8c9b
+                                text_style +: { font_size: 11 }
+                            }
+                        }
+                    }
+
+                    // ── Three-column body ─────────────────────────────────
+                    main_view := View {
+                        width: Fill
+                        height: Fill
+                        flow: Right
+                        on_render: || {
+                            // Re-render triggered when state changes
+                        }
+
+                        // Left: session list
+                        View {
+                            width: 280
+                            height: Fill
+                            flow: Down
+                            show_bg: true
+                            draw_bg +: { color: #202026 }
+
+                            View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+
+                                Label {
+                                    text: "Sessions"
+                                    draw_text +: {
+                                        color: #8c8c9b
+                                        text_style +: { font_size: 11 bold: true }
+                                    }
+                                }
+                            }
+
+                            session_list := SessionListWidget {}
+                        }
+
+                        // Center: messages + composer
+                        View {
+                            width: Fill
+                            height: Fill
+                            flow: Down
+                            show_bg: true
+                            draw_bg +: { color: #141418 }
+
+                            message_list := MessageListWidget {}
+
+                            // Composer row
+                            View {
+                                width: Fill
+                                height: Fit
+                                flow: Right
+                                spacing: 8
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
+                                align: Align{y: 1.0}
+                                show_bg: true
+                                draw_bg +: { color: #1e1e24 }
+
+                                composer_input := TextInput {
+                                    width: Fill
+                                    height: Fit
+                                    empty_text: "Message… (Enter to send)"
+                                    draw_bg +: { color: #2a2a30 }
+                                }
+
+                                send_button := Button {
+                                    text: "Send"
+                                    width: 80
+                                }
+                            }
+
+                            // Mode hint
+                            View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{left: 12 top: 2 bottom: 4}
+
+                                mode_label := Label {
+                                    width: Fill
+                                    height: Fit
+                                    text: ""
+                                    draw_text +: {
+                                        color: #8c8c9b
+                                        text_style +: { font_size: 10 }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Right: agent status panel
+                        View {
+                            width: 240
+                            height: Fill
+                            flow: Down
+                            show_bg: true
+                            draw_bg +: { color: #1a1a22 }
+
+                            View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+
+                                Label {
+                                    text: "Agents"
+                                    draw_text +: {
+                                        color: #8c8c9b
+                                        text_style +: { font_size: 11 bold: true }
+                                    }
+                                }
+                            }
+
+                            agent_status := AgentStatusWidget {}
+                        }
+                    }
                 }
-
-                agent_status = <AgentStatusPanel> {}
             }
         }
     }
 }
 
-// ── App ───────────────────────────────────────────────────────────────────────
-
-#[derive(Live, LiveHook)]
+/// Top-level application struct.
+#[derive(Script, ScriptHook)]
 pub struct App {
     #[live]
     ui: WidgetRef,
-    #[rust]
-    state: GuiState,
-    #[rust]
-    show_board: bool,
-}
-
-impl LiveRegister for App {
-    fn live_register(cx: &mut Cx) {
-        // Register Makepad built-in widgets
-        makepad_widgets::live_design(cx);
-        // Register our custom widgets
-        crate::session_list::live_design(cx);
-        crate::message_list::live_design(cx);
-        crate::agent_status::live_design(cx);
-        crate::composer::live_design(cx);
-        crate::swarm_board::live_design(cx);
-    }
-}
-
-impl AppMain for App {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        self.ui.handle_event(cx, event, &mut Scope::empty());
-        self.handle_actions(cx);
-
-        // Initial demo data on startup
-        if let Event::Startup = event {
-            self.populate_demo_state(cx);
-        }
-    }
 }
 
 impl App {
-    fn handle_actions(&mut self, cx: &mut Cx) {
-        let actions = cx.sweep_actions();
+    fn populate_demo_state() {
+        let mut state = GUI_STATE.write().unwrap();
 
-        for action in &actions {
-            // Session list selection
-            if let SessionListAction::Selected { session_id } = action.as_widget_action().cast() {
-                self.activate_session(cx, &session_id);
-            }
-            if let SessionListAction::NewSession = action.as_widget_action().cast() {
-                self.create_new_session(cx);
-            }
+        // Demo sessions
+        state.sessions.push(SessionEntry {
+            id: "s1".into(),
+            title: "Code Review".into(),
+            preview: "Reviewing authentication module".into(),
+            kind: SessionKind::Single,
+            is_active: true,
+            unread: 0,
+        });
+        state.sessions.push(SessionEntry {
+            id: "sg1".into(),
+            title: "Refactor Swarm".into(),
+            preview: "3 agents working…".into(),
+            kind: SessionKind::SwarmGroup { swarm_id: "swarm-1".into() },
+            is_active: false,
+            unread: 2,
+        });
 
-            // Composer submit
-            if let ComposerAction::Submit { text } = action.as_widget_action().cast() {
-                self.handle_submit(cx, text);
-            }
+        // Demo messages
+        state.messages.push(GuiMessage {
+            id: 1,
+            role: MessageRole::User,
+            content: "Please review the authentication module for security issues.".into(),
+            agent_id: None,
+            agent_name: None,
+            tool_calls: vec![],
+            tool_data: None,
+            duration_secs: None,
+        });
+        state.messages.push(GuiMessage {
+            id: 2,
+            role: MessageRole::Assistant,
+            content: "I'll analyze the authentication module. Let me start by examining the token handling code…".into(),
+            agent_id: None,
+            agent_name: None,
+            tool_calls: vec![],
+            tool_data: None,
+            duration_secs: Some(1.4),
+        });
+        state.messages.push(GuiMessage {
+            id: 3,
+            role: MessageRole::Tool,
+            content: "read_file(\"src/auth/token.rs\") → 147 lines".into(),
+            agent_id: None,
+            agent_name: None,
+            tool_calls: vec![],
+            tool_data: None,
+            duration_secs: None,
+        });
 
-            // Board toggle button
-            if self
-                .ui
-                .button(id!(header.board_toggle_btn))
-                .clicked_in_actions(&actions)
-            {
-                self.toggle_board_view(cx);
-            }
-        }
+        // Demo swarm members
+        state.swarm_members.push(GuiSwarmMember {
+            session_id: "coord-1".into(),
+            name: "Coordinator".into(),
+            role: jcode_swarm_core::SwarmRole::Coordinator,
+            status: jcode_swarm_core::SwarmLifecycleStatus::Running,
+            detail: Some("Orchestrating refactor tasks".into()),
+            is_coordinator: true,
+            status_age_secs: Some(30),
+        });
+        state.swarm_members.push(GuiSwarmMember {
+            session_id: "agent-1".into(),
+            name: "Agent-α".into(),
+            role: jcode_swarm_core::SwarmRole::Agent,
+            status: jcode_swarm_core::SwarmLifecycleStatus::Running,
+            detail: Some("Refactoring auth module".into()),
+            is_coordinator: false,
+            status_age_secs: Some(10),
+        });
+        state.swarm_members.push(GuiSwarmMember {
+            session_id: "agent-2".into(),
+            name: "Agent-β".into(),
+            role: jcode_swarm_core::SwarmRole::Agent,
+            status: jcode_swarm_core::SwarmLifecycleStatus::Ready,
+            detail: Some("Awaiting task assignment".into()),
+            is_coordinator: false,
+            status_age_secs: Some(5),
+        });
+
+        // Active session
+        state.active_session_id = Some("s1".into());
     }
 
-    fn activate_session(&mut self, cx: &mut Cx, session_id: &str) {
-        self.state.active_session_id = Some(session_id.to_string());
-
-        // Update session list highlight
-        self.ui
-            .widget(id!(body.session_list))
-            .as_widget(live_id!(SessionListPanel))
-            .borrow_mut()
-            .unwrap()
-            .set_selected(cx, Some(session_id.to_string()));
-
-        // Clear message list for the new session
-        self.ui
-            .widget(id!(body.centre.chat_view.message_list))
-            .as_widget(live_id!(MessageListPanel))
-            .borrow_mut()
-            .unwrap()
-            .clear(cx);
-
-        // Update header title
-        if let Some(entry) = self.state.sessions.iter().find(|s| s.id == session_id) {
-            let title = entry.title.clone();
-            self.ui.label(id!(header.title_label)).set_text(cx, &title);
-
-            // Show/hide board toggle for swarm sessions
-            let is_swarm = matches!(entry.kind, SessionKind::SwarmGroup { .. });
-            self.ui.button(id!(header.board_toggle_btn)).apply_over(
-                cx,
-                live! { visible: (is_swarm) },
-            );
-        }
-
-        // Update composer draft (cleared for new sessions)
-        self.ui
-            .widget(id!(body.centre.chat_view.composer))
-            .as_widget(live_id!(ComposerWidget))
-            .borrow_mut()
-            .unwrap()
-            .set_draft(cx, "");
-    }
-
-    fn create_new_session(&mut self, _cx: &mut Cx) {
-        // In a real implementation this would launch a new jcode session via IPC.
-        // For now we log intent.
-        log!("New session requested");
-    }
-
-    fn handle_submit(&mut self, cx: &mut Cx, text: String) {
+    fn send_message(&mut self, cx: &mut Cx) {
+        let input = self.ui.text_input(cx, ids!(composer_input));
+        let text = input.text();
         if text.trim().is_empty() {
             return;
         }
 
-        // Push user message locally (optimistic)
-        let user_msg = GuiMessage {
-            id: rand_id(),
-            role: crate::gui_state::MessageRole::User,
-            content: text.clone(),
-            agent_id: None,
-            agent_name: None,
-            tool_calls: vec![],
-            tool_data: None,
-            duration_secs: None,
-        };
+        {
+            let mut state = GUI_STATE.write().unwrap();
+            let id = state.messages.len() as u64 + 1;
+            state.messages.push(GuiMessage {
+                id,
+                role: MessageRole::User,
+                content: text,
+                agent_id: None,
+                agent_name: None,
+                tool_calls: vec![],
+                tool_data: None,
+                duration_secs: None,
+            });
+            state.is_processing = true;
+        }
 
-        self.ui
-            .widget(id!(body.centre.chat_view.message_list))
-            .as_widget(live_id!(MessageListPanel))
-            .borrow_mut()
-            .unwrap()
-            .push_message(cx, user_msg);
+        input.set_text(cx, "");
+        self.ui.redraw(cx);
+    }
+}
 
-        // In a real implementation: send `text` to the jcode server over IPC
-        // and receive streaming responses back via an async channel.
-        log!("Submit: {}", text);
-
-        // Mark as processing
-        self.ui
-            .widget(id!(body.centre.chat_view.message_list))
-            .as_widget(live_id!(MessageListPanel))
-            .borrow_mut()
-            .unwrap()
-            .set_processing(cx, true, None);
-
-        self.ui
-            .label(id!(header.status_label))
-            .set_text(cx, "Processing…");
+impl MatchEvent for App {
+    fn handle_startup(&mut self, cx: &mut Cx) {
+        App::populate_demo_state();
+        self.ui.redraw(cx);
     }
 
-    fn toggle_board_view(&mut self, cx: &mut Cx) {
-        self.show_board = !self.show_board;
-
-        self.ui.view(id!(body.centre.chat_view)).apply_over(
-            cx,
-            live! { visible: (!self.show_board) },
-        );
-        self.ui.view(id!(body.centre.board_view)).apply_over(
-            cx,
-            live! { visible: (self.show_board) },
-        );
-
-        let btn_text = if self.show_board { "Chat" } else { "Plan" };
-        self.ui
-            .button(id!(header.board_toggle_btn))
-            .set_text(cx, btn_text);
-    }
-
-    // ── Demo / placeholder data ───────────────────────────────────────────────
-
-    fn populate_demo_state(&mut self, cx: &mut Cx) {
-        use crate::gui_state::*;
-
-        // Seed sessions
-        self.state.sessions = vec![
-            SessionEntry {
-                id: "session-1".into(),
-                title: "Code review".into(),
-                preview: "Reviewing authentication module…".into(),
-                kind: SessionKind::Single,
-                is_active: false,
-                unread: 0,
-            },
-            SessionEntry {
-                id: "swarm-alpha".into(),
-                title: "Swarm: refactor-api".into(),
-                preview: "Coordinator assigned 4 sub-agents".into(),
-                kind: SessionKind::SwarmGroup {
-                    swarm_id: "swarm-alpha".into(),
-                },
-                is_active: false,
-                unread: 3,
-            },
-            SessionEntry {
-                id: "session-2".into(),
-                title: "Debug memory leak".into(),
-                preview: "Running valgrind on target…".into(),
-                kind: SessionKind::Single,
-                is_active: false,
-                unread: 1,
-            },
-        ];
-
-        // Seed swarm members (shown when swarm-alpha is selected)
-        self.state.swarm_members = vec![
-            GuiSwarmMember {
-                session_id: "coord-1".into(),
-                name: "Coordinator".into(),
-                role: jcode_swarm_core::SwarmRole::Coordinator,
-                status: jcode_swarm_core::SwarmLifecycleStatus::Running,
-                detail: Some("Dispatching tasks".into()),
-                is_coordinator: true,
-                status_age_secs: Some(12),
-            },
-            GuiSwarmMember {
-                session_id: "agent-1".into(),
-                name: "Agent A".into(),
-                role: jcode_swarm_core::SwarmRole::Agent,
-                status: jcode_swarm_core::SwarmLifecycleStatus::Running,
-                detail: Some("Refactoring auth.rs".into()),
-                is_coordinator: false,
-                status_age_secs: Some(5),
-            },
-            GuiSwarmMember {
-                session_id: "agent-2".into(),
-                name: "Agent B".into(),
-                role: jcode_swarm_core::SwarmRole::Agent,
-                status: jcode_swarm_core::SwarmLifecycleStatus::Ready,
-                detail: None,
-                is_coordinator: false,
-                status_age_secs: None,
-            },
-            GuiSwarmMember {
-                session_id: "wt-mgr-1".into(),
-                name: "WorktreeMgr".into(),
-                role: jcode_swarm_core::SwarmRole::WorktreeManager,
-                status: jcode_swarm_core::SwarmLifecycleStatus::Completed,
-                detail: None,
-                is_coordinator: false,
-                status_age_secs: Some(120),
-            },
-        ];
-
-        // Seed plan tasks
-        self.state.plan_tasks = vec![
-            PlanTaskCard {
-                id: "task-1".into(),
-                title: "Extract AuthService interface".into(),
-                column: KanbanColumn::Done,
-                assigned_to: Some("Agent A".into()),
-            },
-            PlanTaskCard {
-                id: "task-2".into(),
-                title: "Refactor token validation".into(),
-                column: KanbanColumn::Running,
-                assigned_to: Some("Agent A".into()),
-            },
-            PlanTaskCard {
-                id: "task-3".into(),
-                title: "Update integration tests".into(),
-                column: KanbanColumn::Todo,
-                assigned_to: None,
-            },
-            PlanTaskCard {
-                id: "task-4".into(),
-                title: "Add rate-limiting middleware".into(),
-                column: KanbanColumn::Todo,
-                assigned_to: None,
-            },
-            PlanTaskCard {
-                id: "task-5".into(),
-                title: "CI pipeline green check".into(),
-                column: KanbanColumn::Blocked,
-                assigned_to: None,
-            },
-        ];
-
-        // Push session entries into list widget
-        if let Some(mut panel) = self
-            .ui
-            .widget(id!(body.session_list))
-            .as_widget(live_id!(SessionListPanel))
-            .borrow_mut()
-        {
-            panel.set_entries(cx, self.state.sessions.clone());
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        // Send on button click
+        if self.ui.button(cx, ids!(send_button)).clicked(actions) {
+            self.send_message(cx);
         }
 
-        // Push swarm members into status panel
-        if let Some(mut panel) = self
+        // Send on Enter in text input
+        if self
             .ui
-            .widget(id!(body.agent_status))
-            .as_widget(live_id!(AgentStatusPanel))
-            .borrow_mut()
+            .text_input(cx, ids!(composer_input))
+            .returned(actions)
+            .is_some()
         {
-            panel.set_members(cx, self.state.swarm_members.clone());
-            panel.set_session_info(
-                cx,
-                Some("swarm-alpha".into()),
-                Some("claude-opus-4".into()),
-            );
+            self.send_message(cx);
         }
 
-        // Push plan tasks into board
-        if let Some(mut board) = self
+        // Update mode hint when text changes
+        if let Some(text) = self
             .ui
-            .widget(id!(body.centre.board_view.swarm_board))
-            .as_widget(live_id!(SwarmBoardPanel))
-            .borrow_mut()
+            .text_input(cx, ids!(composer_input))
+            .changed(actions)
         {
-            board.update_plan(cx, Some("swarm-alpha".into()), self.state.plan_tasks.clone());
-        }
-
-        // Welcome message
-        let welcome = GuiMessage {
-            id: 0,
-            role: crate::gui_state::MessageRole::System,
-            content: "Welcome to jcode GUI — select a session from the left panel to begin."
-                .into(),
-            agent_id: None,
-            agent_name: None,
-            tool_calls: vec![],
-            tool_data: None,
-            duration_secs: None,
-        };
-        if let Some(mut msg_panel) = self
-            .ui
-            .widget(id!(body.centre.chat_view.message_list))
-            .as_widget(live_id!(MessageListPanel))
-            .borrow_mut()
-        {
-            msg_panel.push_message(cx, welcome);
+            let mode = ComposerMode::detect(&text);
+            self.ui
+                .label(cx, ids!(mode_label))
+                .set_text(cx, mode.placeholder());
         }
     }
 }
 
-// ── Simple pseudo-random id generator ────────────────────────────────────────
+impl AppMain for App {
+    fn script_mod(vm: &mut ScriptVm) -> ScriptValue {
+        makepad_widgets::script_mod(vm);
+        self::script_mod(vm)
+    }
 
-fn rand_id() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0)
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        self.match_event(cx, event);
+        self.ui.handle_event(cx, event, &mut Scope::empty());
+    }
 }
-
-app_main!(App);

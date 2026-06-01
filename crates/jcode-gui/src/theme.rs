@@ -1,72 +1,42 @@
-//! Color theme for jcode-gui.
+//! Color theme hex strings for jcode-gui.
 //!
-//! Mirrors the TUI colour palette (jcode-tui-style + info_widget colours)
-//! translated to Makepad's `Vec4` (RGBA f32 0.0-1.0) format.
+//! Colors are referenced directly in `script_mod!` as hex literals (e.g. `color: #1a1a1e`).
+//! These constants are kept for use in Rust code that needs to set colors programmatically.
 
-use makepad_widgets::makepad_micro_serde::*;
+// ── Background hex strings ────────────────────────────────────────────────────
+pub const BG_PRIMARY:   &str = "#1a1a1e";
+pub const BG_PANEL:     &str = "#202026";
+pub const BG_CHAT:      &str = "#141418";
+pub const BG_SELECTED:  &str = "#2d2d37";
+pub const BG_ASSISTANT: &str = "#262a37";
+pub const BG_USER:      &str = "#1c3a58";
+pub const BG_TOOL:      &str = "#232d23";
+pub const BG_SYSTEM:    &str = "#372d19";
+pub const BG_ERROR:     &str = "#461919";
+pub const BG_COMPOSER:  &str = "#1e1e24";
 
-/// Convert an (r, g, b) u8 triple and alpha to a Makepad Vec4.
-#[inline]
-pub fn rgba(r: u8, g: u8, b: u8, a: u8) -> makepad_widgets::DVec4 {
-    makepad_widgets::DVec4 {
-        x: r as f64 / 255.0,
-        y: g as f64 / 255.0,
-        z: b as f64 / 255.0,
-        w: a as f64 / 255.0,
-    }
-}
+// ── Foreground hex strings ────────────────────────────────────────────────────
+pub const FG_PRIMARY:   &str = "#dcdce6";
+pub const FG_DIM:       &str = "#8c8c9b";
+pub const FG_ACCENT:    &str = "#8ab4f8";
+pub const FG_USER:      &str = "#64c8dc";
+pub const FG_ASSISTANT: &str = "#d2d2dc";
+pub const FG_SYSTEM:    &str = "#c8af50";
+pub const FG_ERROR:     &str = "#ff6464";
+pub const FG_TOOL:      &str = "#78c88c";
 
-#[inline]
-pub fn rgb(r: u8, g: u8, b: u8) -> makepad_widgets::DVec4 {
-    rgba(r, g, b, 255)
-}
+// ── Swarm status hex strings ──────────────────────────────────────────────────
+pub const SWARM_SPAWNED:   &str = "#8c8c96";
+pub const SWARM_READY:     &str = "#78b478";
+pub const SWARM_RUNNING:   &str = "#ffc864";
+pub const SWARM_BLOCKED:   &str = "#ffaa50";
+pub const SWARM_FAILED:    &str = "#ff6464";
+pub const SWARM_COMPLETED: &str = "#64c864";
+pub const SWARM_STOPPED:   &str = "#8c8c96";
 
-// ── Background ────────────────────────────────────────────────────────────────
-/// Main window background (dark charcoal)
-pub fn bg_primary()   -> makepad_widgets::DVec4 { rgb(26,  26,  30) }
-/// Left / right panel background
-pub fn bg_panel()     -> makepad_widgets::DVec4 { rgb(32,  32,  38) }
-/// Message list background
-pub fn bg_chat()      -> makepad_widgets::DVec4 { rgb(20,  20,  24) }
-/// Selected / hovered item
-pub fn bg_selected()  -> makepad_widgets::DVec4 { rgb(45,  45,  55) }
-/// Card / bubble background for assistant messages
-pub fn bg_assistant() -> makepad_widgets::DVec4 { rgb(38,  42,  55) }
-/// Card / bubble background for user messages
-pub fn bg_user()      -> makepad_widgets::DVec4 { rgb(28,  58,  88) }
-/// Tool call card background
-pub fn bg_tool()      -> makepad_widgets::DVec4 { rgb(35,  45,  35) }
-/// System message background
-pub fn bg_system()    -> makepad_widgets::DVec4 { rgb(55,  45,  25) }
-/// Error message background
-pub fn bg_error()     -> makepad_widgets::DVec4 { rgb(70,  25,  25) }
-/// Input / composer background
-pub fn bg_composer()  -> makepad_widgets::DVec4 { rgb(30,  30,  36) }
-
-// ── Foreground ────────────────────────────────────────────────────────────────
-pub fn fg_primary()   -> makepad_widgets::DVec4 { rgb(220, 220, 230) }
-pub fn fg_dim()       -> makepad_widgets::DVec4 { rgb(140, 140, 155) }
-pub fn fg_accent()    -> makepad_widgets::DVec4 { rgb(138, 180, 248) }
-/// User message text colour (bright cyan)
-pub fn fg_user()      -> makepad_widgets::DVec4 { rgb(100, 200, 220) }
-/// Assistant message text colour (soft white)
-pub fn fg_assistant() -> makepad_widgets::DVec4 { rgb(210, 210, 220) }
-pub fn fg_system()    -> makepad_widgets::DVec4 { rgb(200, 175,  80) }
-pub fn fg_error()     -> makepad_widgets::DVec4 { rgb(255, 100, 100) }
-pub fn fg_tool()      -> makepad_widgets::DVec4 { rgb(120, 200, 140) }
-
-// ── Swarm status colours ──────────────────────────────────────────────────────
-pub fn swarm_spawned()   -> makepad_widgets::DVec4 { rgb(140, 140, 150) }
-pub fn swarm_ready()     -> makepad_widgets::DVec4 { rgb(120, 180, 120) }
-pub fn swarm_running()   -> makepad_widgets::DVec4 { rgb(255, 200, 100) }
-pub fn swarm_blocked()   -> makepad_widgets::DVec4 { rgb(255, 170,  80) }
-pub fn swarm_failed()    -> makepad_widgets::DVec4 { rgb(255, 100, 100) }
-pub fn swarm_completed() -> makepad_widgets::DVec4 { rgb(100, 200, 100) }
-pub fn swarm_stopped()   -> makepad_widgets::DVec4 { rgb(140, 140, 150) }
-
-// ── Kanban column accent colours ──────────────────────────────────────────────
-pub fn kanban_todo()    -> makepad_widgets::DVec4 { rgb(100, 130, 170) }
-pub fn kanban_running() -> makepad_widgets::DVec4 { rgb(255, 200, 100) }
-pub fn kanban_done()    -> makepad_widgets::DVec4 { rgb(100, 200, 100) }
-pub fn kanban_failed()  -> makepad_widgets::DVec4 { rgb(255, 100, 100) }
-pub fn kanban_blocked() -> makepad_widgets::DVec4 { rgb(255, 170,  80) }
+// ── Kanban column hex strings ─────────────────────────────────────────────────
+pub const KANBAN_TODO:    &str = "#6482aa";
+pub const KANBAN_RUNNING: &str = "#ffc864";
+pub const KANBAN_DONE:    &str = "#64c864";
+pub const KANBAN_FAILED:  &str = "#ff6464";
+pub const KANBAN_BLOCKED: &str = "#ffaa50";

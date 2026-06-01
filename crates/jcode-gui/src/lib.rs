@@ -7,6 +7,9 @@
 //!   • Composer input with slash-command and shell-mode detection (bottom)
 //!   • Kanban plan board for swarm task tracking
 
+// Re-export makepad_widgets so `crate::makepad_widgets::script_mod` resolves in app.rs
+pub use makepad_widgets;
+
 pub mod agent_status;
 pub mod app;
 pub mod composer;

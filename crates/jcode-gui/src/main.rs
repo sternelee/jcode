@@ -1,9 +1,8 @@
 //! Binary entry point for `jcode-gui`.
 //!
-//! Delegates entirely to the Makepad `app_main!` macro registered in `app.rs`.
-//! The `app_main!` macro expands to a `main` function so this file only needs
-//! to pull in the crate root.
+//! The `app_main!(App)` macro in `app.rs` generates `app_main()`,
+//! so we just delegate to it here.
 
 fn main() {
-    jcode_gui::app::main_app();
+    jcode_gui::app::app_main();
 }
