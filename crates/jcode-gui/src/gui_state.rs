@@ -19,6 +19,10 @@ pub static GUI_STATE: std::sync::RwLock<GuiState> =
         processing_status: ProcessingStatus::Idle,
         model_name: String::new(),
         session_tokens: None,
+        slash_suggestions: Vec::new(),
+        slash_selected: 0,
+        file_suggestions: Vec::new(),
+        file_selected: 0,
     });
 
 // ── Session / conversation ────────────────────────────────────────────────────
@@ -312,6 +316,17 @@ pub struct GuiState {
     pub model_name: String,
     /// Cumulative token counts for the active session `(input, output)`.
     pub session_tokens: Option<(u64, u64)>,
+    // ── Autocomplete suggestion state ─────────────────────────────────────────
+    /// Active slash-command suggestions `(command_name, description)`.
+    /// Non-empty only while the user is typing a `/` command.
+    pub slash_suggestions: Vec<(String, String)>,
+    /// Index of the highlighted entry in `slash_suggestions`.
+    pub slash_selected: usize,
+    /// Active `@`-file suggestions (file names relative to the working directory).
+    /// Non-empty only while an `@` mention is being typed.
+    pub file_suggestions: Vec<String>,
+    /// Index of the highlighted entry in `file_suggestions`.
+    pub file_selected: usize,
 }
 
 impl GuiState {

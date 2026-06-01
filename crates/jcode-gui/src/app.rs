@@ -14,12 +14,14 @@
 use makepad_widgets::*;
 
 use crate::agent_status::AgentStatusWidget;
-use crate::composer::ComposerMode;
+use crate::composer::{self, ComposerMode};
+use crate::file_popup::FilePopupWidget;
 use crate::gui_state::{
     GuiMessage, GuiSwarmMember, MessageRole, ProcessingStatus, SessionEntry, SessionKind, GUI_STATE,
 };
 use crate::message_list::MessageListWidget;
 use crate::session_list::SessionListWidget;
+use crate::slash_popup::SlashPopupWidget;
 use crate::swarm_board::SwarmBoardWidget;
 
 app_main!(App);
@@ -496,6 +498,128 @@ script_mod! {
         }
     }
 
+    let SlashPopupWidget = #(SlashPopupWidget::register_widget(vm)) {
+        width: Fill
+        height: Fit
+        flow: Down
+        show_bg: true
+        draw_bg +: { color: #252530 }
+
+        slash_list := PortalList {
+            width: Fill
+            height: Fit
+            flow: Down
+            drag_scrolling: false
+
+            SlashRow := View {
+                width: Fill
+                height: Fit
+                flow: Right
+                spacing: 8
+                padding: Inset{top: 6 bottom: 6 left: 14 right: 12}
+                show_bg: true
+                draw_bg +: { color: #252530 }
+
+                slash_cmd_label := Label {
+                    width: 160
+                    height: Fit
+                    draw_text +: {
+                        color: #8ab4f8
+                        text_style +: { font_size: 12 }
+                    }
+                }
+
+                slash_desc_label := Label {
+                    width: Fill
+                    height: Fit
+                    draw_text +: {
+                        color: #8c8c9b
+                        text_style +: { font_size: 11 }
+                    }
+                }
+            }
+
+            SlashRowSelected := View {
+                width: Fill
+                height: Fit
+                flow: Right
+                spacing: 8
+                padding: Inset{top: 6 bottom: 6 left: 14 right: 12}
+                show_bg: true
+                draw_bg +: { color: #2e3045 }
+
+                slash_cmd_label := Label {
+                    width: 160
+                    height: Fit
+                    draw_text +: {
+                        color: #c8d8ff
+                        text_style +: { font_size: 12 }
+                    }
+                }
+
+                slash_desc_label := Label {
+                    width: Fill
+                    height: Fit
+                    draw_text +: {
+                        color: #aaaacc
+                        text_style +: { font_size: 11 }
+                    }
+                }
+            }
+        }
+    }
+
+    let FilePopupWidget = #(FilePopupWidget::register_widget(vm)) {
+        width: Fill
+        height: Fit
+        flow: Down
+        show_bg: true
+        draw_bg +: { color: #252530 }
+
+        file_list := PortalList {
+            width: Fill
+            height: Fit
+            flow: Down
+            drag_scrolling: false
+
+            FileRow := View {
+                width: Fill
+                height: Fit
+                flow: Right
+                padding: Inset{top: 6 bottom: 6 left: 14 right: 12}
+                show_bg: true
+                draw_bg +: { color: #252530 }
+
+                file_name_label := Label {
+                    width: Fill
+                    height: Fit
+                    draw_text +: {
+                        color: #b0e0b0
+                        text_style +: { font_size: 12 }
+                    }
+                }
+            }
+
+            FileRowSelected := View {
+                width: Fill
+                height: Fit
+                flow: Right
+                padding: Inset{top: 6 bottom: 6 left: 14 right: 12}
+                show_bg: true
+                draw_bg +: { color: #2e3a2e }
+
+                file_name_label := Label {
+                    width: Fill
+                    height: Fit
+                    draw_text +: {
+                        color: #d0ffd0
+                        text_style +: { font_size: 12 }
+                    }
+                }
+            }
+        }
+    }
+
     let SwarmBoardWidget = #(SwarmBoardWidget::register_widget(vm)) {
         width: Fill
         height: Fill
@@ -729,6 +853,12 @@ script_mod! {
                             draw_bg +: { color: #141418 }
 
                             message_list := MessageListWidget {}
+
+                            // ── Slash-command suggestion popup ─────────────────
+                            slash_popup := SlashPopupWidget {}
+
+                            // ── @ file-mention suggestion popup ────────────────
+                            file_popup := FilePopupWidget {}
 
                             // Composer row
                             View {
@@ -994,10 +1124,96 @@ impl App {
                 duration_secs: None,
             });
             state.processing_status = ProcessingStatus::Thinking { elapsed_secs: 0.0 };
+            // Clear all suggestion state after sending.
+            state.slash_suggestions.clear();
+            state.slash_selected = 0;
+            state.file_suggestions.clear();
+            state.file_selected = 0;
         }
 
         input.set_text(cx, "");
         self.ui.redraw(cx);
+    }
+
+    /// Recompute slash/file suggestions from `text` and store them in `GUI_STATE`.
+    fn update_suggestions(&self, text: &str) {
+        const MAX: usize = 8;
+        let slash: Vec<(String, String)> = composer::slash_suggestions(text, MAX)
+            .into_iter()
+            .map(|(cmd, desc)| (cmd.to_string(), desc.to_string()))
+            .collect();
+
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let files = if let Some(query) = composer::at_file_query(text) {
+            composer::file_suggestions(&cwd, query, MAX)
+        } else {
+            Vec::new()
+        };
+
+        let mut state = GUI_STATE.write().unwrap();
+        if state.slash_selected >= slash.len() {
+            state.slash_selected = 0;
+        }
+        state.slash_suggestions = slash;
+
+        if state.file_selected >= files.len() {
+            state.file_selected = 0;
+        }
+        state.file_suggestions = files;
+    }
+
+    /// Accept the currently highlighted slash suggestion and insert it into the input.
+    fn accept_slash_suggestion(&mut self, cx: &mut Cx) -> bool {
+        let (cmd, selected) = {
+            let state = GUI_STATE.read().unwrap();
+            let cmd = state
+                .slash_suggestions
+                .get(state.slash_selected)
+                .map(|(c, _)| c.clone());
+            (cmd, state.slash_selected)
+        };
+        let Some(cmd) = cmd else {
+            return false;
+        };
+        let _ = selected; // already used above
+        let input = self.ui.text_input(cx, ids!(composer_input));
+        input.set_text(cx, &cmd);
+        {
+            let mut state = GUI_STATE.write().unwrap();
+            state.slash_suggestions.clear();
+            state.slash_selected = 0;
+        }
+        self.ui.redraw(cx);
+        true
+    }
+
+    /// Accept the currently highlighted file suggestion and append it after the `@`.
+    fn accept_file_suggestion(&mut self, cx: &mut Cx) -> bool {
+        let file_name = {
+            let state = GUI_STATE.read().unwrap();
+            state
+                .file_suggestions
+                .get(state.file_selected)
+                .cloned()
+        };
+        let Some(file_name) = file_name else {
+            return false;
+        };
+        let input = self.ui.text_input(cx, ids!(composer_input));
+        let current = input.text();
+        // Replace the text after the last '@' with the chosen file name.
+        if let Some(at_pos) = current.rfind('@') {
+            let prefix = &current[..at_pos];
+            let replacement = format!("{}@{}", prefix, file_name);
+            input.set_text(cx, &replacement);
+        }
+        {
+            let mut state = GUI_STATE.write().unwrap();
+            state.file_suggestions.clear();
+            state.file_selected = 0;
+        }
+        self.ui.redraw(cx);
+        true
     }
 
     /// Refresh dynamic header labels (status + token usage) from current GUI state.
@@ -1039,27 +1255,98 @@ impl MatchEvent for App {
             self.update_header_labels(cx);
         }
 
-        // Send on Enter in text input
-        if self
-            .ui
-            .text_input(cx, ids!(composer_input))
-            .returned(actions)
-            .is_some()
-        {
-            self.send_message(cx);
-            self.update_header_labels(cx);
+        let composer = self.ui.text_input(cx, ids!(composer_input));
+
+        // ── Unhandled key events from the TextInput ───────────────────────────
+        // ArrowUp/ArrowDown in a single-line TextInput emit KeyDownUnhandled,
+        // which we intercept here to navigate the suggestion lists.
+        if let Some(key_event) = composer.key_down_unhandled(actions) {
+            let (has_slash, slash_len, has_file, file_len) = {
+                let state = GUI_STATE.read().unwrap();
+                (
+                    !state.slash_suggestions.is_empty(),
+                    state.slash_suggestions.len(),
+                    !state.file_suggestions.is_empty(),
+                    state.file_suggestions.len(),
+                )
+            };
+            match key_event.key_code {
+                KeyCode::ArrowUp if has_slash => {
+                    let mut state = GUI_STATE.write().unwrap();
+                    state.slash_selected = state
+                        .slash_selected
+                        .checked_sub(1)
+                        .unwrap_or(slash_len - 1);
+                    drop(state);
+                    self.ui.redraw(cx);
+                }
+                KeyCode::ArrowDown if has_slash => {
+                    let mut state = GUI_STATE.write().unwrap();
+                    state.slash_selected = (state.slash_selected + 1) % slash_len;
+                    drop(state);
+                    self.ui.redraw(cx);
+                }
+                KeyCode::ArrowUp if has_file => {
+                    let mut state = GUI_STATE.write().unwrap();
+                    state.file_selected =
+                        state.file_selected.checked_sub(1).unwrap_or(file_len - 1);
+                    drop(state);
+                    self.ui.redraw(cx);
+                }
+                KeyCode::ArrowDown if has_file => {
+                    let mut state = GUI_STATE.write().unwrap();
+                    state.file_selected = (state.file_selected + 1) % file_len;
+                    drop(state);
+                    self.ui.redraw(cx);
+                }
+                KeyCode::Tab if has_slash => {
+                    self.accept_slash_suggestion(cx);
+                }
+                KeyCode::Tab if has_file => {
+                    self.accept_file_suggestion(cx);
+                }
+                KeyCode::Escape => {
+                    let mut state = GUI_STATE.write().unwrap();
+                    state.slash_suggestions.clear();
+                    state.slash_selected = 0;
+                    state.file_suggestions.clear();
+                    state.file_selected = 0;
+                    drop(state);
+                    self.ui.redraw(cx);
+                }
+                _ => {}
+            }
         }
 
-        // Update mode hint when text changes
-        if let Some(text) = self
-            .ui
-            .text_input(cx, ids!(composer_input))
-            .changed(actions)
-        {
+        // Escape from the TextInput widget itself
+        if composer.escaped(actions) {
+            let mut state = GUI_STATE.write().unwrap();
+            state.slash_suggestions.clear();
+            state.slash_selected = 0;
+            state.file_suggestions.clear();
+            state.file_selected = 0;
+            drop(state);
+            self.ui.redraw(cx);
+        }
+
+        // ── Enter: accept suggestion or send message ──────────────────────────
+        if let Some(_returned) = composer.returned(actions) {
+            // If a slash popup is open, accept it; otherwise send the message.
+            if !self.accept_slash_suggestion(cx) && !self.accept_file_suggestion(cx) {
+                self.send_message(cx);
+                self.update_header_labels(cx);
+            }
+        }
+
+        // ── Text change: update mode hint and suggestion lists ────────────────
+        if let Some(text) = composer.changed(actions) {
             let mode = ComposerMode::detect(&text);
             self.ui
                 .label(cx, ids!(mode_label))
                 .set_text(cx, mode.placeholder());
+
+            self.update_suggestions(&text);
+            self.ui.redraw(cx);
         }
     }
 }
