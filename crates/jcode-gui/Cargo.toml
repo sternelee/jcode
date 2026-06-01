@@ -1,0 +1,28 @@
+[package]
+name = "jcode-gui"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Makepad-based GUI for jcode — Telegram-style agent chat platform with multi-agent swarm support"
+
+[[bin]]
+name = "jcode-gui"
+path = "src/main.rs"
+
+[dependencies]
+# Makepad GUI framework
+makepad-widgets = { git = "https://github.com/makepad/makepad.git", branch = "rik" }
+
+# jcode domain crates — GUI only depends on data types, not TUI rendering
+jcode-swarm-core   = { path = "../jcode-swarm-core" }
+jcode-protocol     = { path = "../jcode-protocol" }
+jcode-session-types = { path = "../jcode-session-types" }
+jcode-tui-messages = { path = "../jcode-tui-messages" }
+jcode-message-types = { path = "../jcode-message-types" }
+jcode-plan         = { path = "../jcode-plan" }
+
+# Async runtime & serialization
+tokio  = { version = "1", features = ["full"] }
+serde  = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
