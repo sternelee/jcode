@@ -145,12 +145,14 @@ pub fn file_suggestions(working_dir: &Path, query: &str, max: usize) -> Vec<Stri
         return vec![];
     };
     let q = query.to_ascii_lowercase();
+    let query_is_hidden = q.starts_with('.');
     let mut results: Vec<String> = entries
         .filter_map(|e| e.ok())
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') {
-                return None; // skip hidden files
+            // Skip hidden files unless the user explicitly typed a '.' prefix.
+            if name.starts_with('.') && !query_is_hidden {
+                return None;
             }
             if name.to_ascii_lowercase().starts_with(q.as_str()) {
                 // Append '/' suffix for directories.
