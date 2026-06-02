@@ -23,7 +23,7 @@ use tokio::sync::{Mutex, OnceCell, RwLock, broadcast, mpsc};
 type ChannelSubscriptions = Arc<RwLock<HashMap<String, HashMap<String, HashSet<String>>>>>;
 
 #[derive(Clone)]
-pub(super) struct ServerRuntime {
+pub(crate) struct ServerRuntime {
     sessions: Arc<RwLock<HashMap<String, Arc<Mutex<Agent>>>>>,
     event_tx: broadcast::Sender<ServerEvent>,
     provider: Arc<dyn Provider>,
@@ -196,7 +196,7 @@ impl ServerRuntime {
         );
     }
 
-    async fn run_client_stream(
+    pub(crate) async fn run_client_stream(
         self,
         stream: Stream,
         error_prefix: &'static str,

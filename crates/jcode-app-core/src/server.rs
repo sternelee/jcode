@@ -539,6 +539,14 @@ impl Server {
         ServerRuntime::from_server(self)
     }
 
+    /// Public-in-crate accessor for the internal `ServerRuntime`. Used by
+    /// the in-process client shim (`inproc_client::Server::inproc_client`)
+    /// which needs to spawn the `run_client_stream` task on the same
+    /// runtime the server uses.
+    pub(crate) fn runtime_handle(&self) -> ServerRuntime {
+        self.runtime()
+    }
+
     fn build_registry_info(&self) -> crate::registry::ServerInfo {
         crate::registry::ServerInfo {
             id: self.identity.id.clone(),
