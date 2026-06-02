@@ -40,7 +40,12 @@ impl Widget for SessionListWidget {
                 while let Some(idx) = list.next_visible_item(cx) {
                     if let Some(entry) = state.sessions.get(idx) {
                         let is_swarm = matches!(&entry.kind, SessionKind::SwarmGroup { .. });
-                        let template = if is_swarm { id!(SwarmRow) } else { id!(SessionRow) };
+                        let template = match (is_swarm, entry.is_active) {
+                            (true,  true)  => id!(SwarmRowActive),
+                            (true,  false) => id!(SwarmRow),
+                            (false, true)  => id!(SessionRowActive),
+                            (false, false) => id!(SessionRow),
+                        };
                         let (item_widget, _) = list.item_with_existed(cx, idx, template);
 
                         // Icon + title

@@ -50,6 +50,18 @@ impl ComposerMode {
             Self::ShellRemote => "!> shell command (remote)…",
         }
     }
+
+    /// Short keyboard hint shown below the composer bar.
+    /// Returns an empty string for Chat mode to avoid duplicating the placeholder.
+    pub fn mode_hint(&self) -> &'static str {
+        match self {
+            Self::Chat => "",
+            Self::SlashCommand => "↑↓ navigate  ·  Tab accept  ·  Esc dismiss",
+            Self::AtMention => "↑↓ navigate  ·  Tab complete  ·  Esc dismiss",
+            Self::ShellLocal => "! runs in local shell",
+            Self::ShellRemote => "!> runs on remote host",
+        }
+    }
 }
 
 // ── Slash command catalogue ───────────────────────────────────────────────────
@@ -138,13 +150,32 @@ pub fn at_file_query(input: &str) -> Option<&str> {
     Some(query)
 }
 
-/// Lists files in `working_dir` (non-recursively) whose name starts with
-/// `query`.  Returns at most `max` results.
+/// Lists files whose names start with `query` relative to `working_dir`.
+///
+/// Supports subdirectory navigation: if `query` contains a `/` the path up to
+/// the last `/` is treated as a subdirectory to descend into, and only the
+/// trailing component is used as the name filter.  Results include the
+/// directory prefix so that Tab-completing a suggestion produces the full
+/// relative path (e.g. `src/main.rs`).
+///
+/// Hidden files (starting with `.`) are omitted unless the user explicitly
+/// typed a `.` prefix for the name component.  Returns at most `max` results;
+/// `max == 0` means no limit.
 pub fn file_suggestions(working_dir: &Path, query: &str, max: usize) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(working_dir) else {
+    // Split query into optional directory prefix and file-name filter.
+    let (dir, name_prefix, path_prefix) = if let Some(slash_pos) = query.rfind('/') {
+        let subdir = &query[..slash_pos];
+        let name_part = &query[slash_pos + 1..];
+        let dir = working_dir.join(subdir);
+        (dir, name_part.to_owned(), format!("{}/", subdir))
+    } else {
+        (working_dir.to_path_buf(), query.to_owned(), String::new())
+    };
+
+    let Ok(entries) = std::fs::read_dir(&dir) else {
         return vec![];
     };
-    let q = query.to_ascii_lowercase();
+    let q = name_prefix.to_ascii_lowercase();
     let query_is_hidden = q.starts_with('.');
     let mut results: Vec<String> = entries
         .filter_map(|e| e.ok())
@@ -155,9 +186,9 @@ pub fn file_suggestions(working_dir: &Path, query: &str, max: usize) -> Vec<Stri
                 return None;
             }
             if name.to_ascii_lowercase().starts_with(q.as_str()) {
-                // Append '/' suffix for directories.
+                // Append '/' suffix for directories so the user can keep navigating.
                 let suffix = if entry.path().is_dir() { "/" } else { "" };
-                Some(format!("{}{}", name, suffix))
+                Some(format!("{}{}{}", path_prefix, name, suffix))
             } else {
                 None
             }

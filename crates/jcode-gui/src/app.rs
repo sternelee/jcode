@@ -147,6 +147,116 @@ script_mod! {
                     }
                 }
             }
+
+            // ── Active-session variants (highlighted background) ───────────────
+
+            SessionRowActive := RoundedView {
+                width: Fill
+                height: Fit
+                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+                show_bg: true
+                draw_bg +: { color: #2d2d37 radius: 0.0 }
+
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+
+                    View {
+                        width: Fill
+                        height: Fit
+                        flow: Right
+                        align: Align{y: 0.5}
+                        spacing: 4
+
+                        title_label := Label {
+                            width: Fill
+                            height: Fit
+                            draw_text +: {
+                                color: #dcdce6
+                                text_style +: { font_size: 13 bold: true }
+                            }
+                        }
+
+                        badge_view := View {
+                            width: Fit
+                            height: Fit
+                            visible: false
+                            badge_label := Label {
+                                width: Fit
+                                height: Fit
+                                draw_text +: {
+                                    color: #8ab4f8
+                                    text_style +: { font_size: 10 }
+                                }
+                            }
+                        }
+                    }
+
+                    preview_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #a0a0b4
+                            text_style +: { font_size: 11 }
+                        }
+                    }
+                }
+            }
+
+            SwarmRowActive := RoundedView {
+                width: Fill
+                height: Fit
+                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+                show_bg: true
+                draw_bg +: { color: #2d2d37 radius: 0.0 }
+
+                View {
+                    width: Fill
+                    height: Fit
+                    flow: Down
+
+                    View {
+                        width: Fill
+                        height: Fit
+                        flow: Right
+                        align: Align{y: 0.5}
+                        spacing: 4
+
+                        title_label := Label {
+                            width: Fill
+                            height: Fit
+                            draw_text +: {
+                                color: #a0c8ff
+                                text_style +: { font_size: 13 bold: true }
+                            }
+                        }
+
+                        badge_view := View {
+                            width: Fit
+                            height: Fit
+                            visible: false
+                            badge_label := Label {
+                                width: Fit
+                                height: Fit
+                                draw_text +: {
+                                    color: #ffc864
+                                    text_style +: { font_size: 10 }
+                                }
+                            }
+                        }
+                    }
+
+                    preview_label := Label {
+                        width: Fill
+                        height: Fit
+                        draw_text +: {
+                            color: #a0a0b4
+                            text_style +: { font_size: 11 }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -810,6 +920,14 @@ script_mod! {
                         }
                     }
 
+                    // ── Header / body separator ───────────────────────────
+                    View {
+                        width: Fill
+                        height: 1
+                        show_bg: true
+                        draw_bg +: { color: #2a2a34 }
+                    }
+
                     // ── Three-column body ─────────────────────────────────
                     main_view := View {
                         width: Fill
@@ -842,6 +960,14 @@ script_mod! {
                             }
 
                             session_list := SessionListWidget {}
+                        }
+
+                        // ── Left / center column separator ────────────────
+                        View {
+                            width: 1
+                            height: Fill
+                            show_bg: true
+                            draw_bg +: { color: #2a2a34 }
                         }
 
                         // Center: messages + composer
@@ -884,7 +1010,7 @@ script_mod! {
                                 }
                             }
 
-                            // Mode hint
+                            // Mode hint — keyboard shortcuts for active mode
                             View {
                                 width: Fill
                                 height: Fit
@@ -895,11 +1021,19 @@ script_mod! {
                                     height: Fit
                                     text: ""
                                     draw_text +: {
-                                        color: #8c8c9b
+                                        color: #6482aa
                                         text_style +: { font_size: 10 }
                                     }
                                 }
                             }
+                        }
+
+                        // ── Center / right column separator ───────────────
+                        View {
+                            width: 1
+                            height: Fill
+                            show_bg: true
+                            draw_bg +: { color: #2a2a34 }
                         }
 
                         // Right: agent status + plan board
@@ -1164,18 +1298,16 @@ impl App {
 
     /// Accept the currently highlighted slash suggestion and insert it into the input.
     fn accept_slash_suggestion(&mut self, cx: &mut Cx) -> bool {
-        let (cmd, selected) = {
+        let cmd = {
             let state = GUI_STATE.read().unwrap();
-            let cmd = state
+            state
                 .slash_suggestions
                 .get(state.slash_selected)
-                .map(|(c, _)| c.clone());
-            (cmd, state.slash_selected)
+                .map(|(c, _)| c.clone())
         };
         let Some(cmd) = cmd else {
             return false;
         };
-        let _ = selected; // already used above
         let input = self.ui.text_input(cx, ids!(composer_input));
         input.set_text(cx, &cmd);
         {
@@ -1343,7 +1475,7 @@ impl MatchEvent for App {
             let mode = ComposerMode::detect(&text);
             self.ui
                 .label(cx, ids!(mode_label))
-                .set_text(cx, mode.placeholder());
+                .set_text(cx, mode.mode_hint());
 
             self.update_suggestions(&text);
             self.ui.redraw(cx);
