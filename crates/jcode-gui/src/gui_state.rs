@@ -43,6 +43,10 @@ pub static GUI_STATE: std::sync::LazyLock<std::sync::RwLock<GuiState>> =
             skills: Vec::new(),
             all_sessions: Vec::new(),
             session_titles: HashMap::new(),
+            // ── UI-local state (not from server events) ─────────
+            sidebar_collapsed: false,
+            welcome_suggestions: default_welcome_suggestions(),
+            hovered_message_id: None,
             // ── internal counters (private) ──────────────────────
             next_msg_id: 0,
         })
@@ -363,12 +367,36 @@ pub struct GuiState {
     /// Per-session display titles; populated from `SessionRenamed` /
     /// `SessionId` / `History` events.
     pub session_titles: HashMap<String, String>,
+    // ── UI-local state (mutated by `App`, not by `apply_event`) ─────
+    /// Whether the left sidebar is collapsed to the icon rail.
+    /// GUI-only; the server has no opinion on the layout.
+    pub sidebar_collapsed: bool,
+    /// Default suggestion prompts shown in the welcome / empty
+    /// state. A follow-up pass can fetch these from a server
+    /// route; for now they are hardcoded in
+    /// `default_welcome_suggestions()`.
+    pub welcome_suggestions: Vec<String>,
+    /// Id of the assistant message currently under the cursor;
+    /// when `Some(_)`, the message list widget renders its hover
+    /// action row. `None` when no row is hovered.
+    pub hovered_message_id: Option<u64>,
     // ── Internal counter (used by `apply_event` for new bubbles) ─────────
     /// Monotonic id minted for every new `GuiMessage` we push. We
     /// keep it as a regular field (not private) so `apply_event`
     /// can bump it directly; it is not part of the user-visible
     /// state.
     pub next_msg_id: u64,
+}
+
+/// Default welcome suggestions shown when no messages exist.
+/// A follow-up pass can replace this with a server-driven list
+/// (e.g. fetched on first `History` event).
+fn default_welcome_suggestions() -> Vec<String> {
+    vec![
+        "Refactor the auth module to use a single session-token table".to_string(),
+        "Add unit tests for the swarm coordinator lifecycle".to_string(),
+        "Investigate the last 10 CI flakes and propose fixes".to_string(),
+    ]
 }
 
 impl GuiState {
