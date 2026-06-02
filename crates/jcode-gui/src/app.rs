@@ -204,7 +204,7 @@ script_mod! {
                             height: Fit
                             draw_text +: {
                                 color: #dcdce6
-                                text_style +: { font_size: 13 bold: true }
+                                text_style +: { font_size: 13 }
                             }
                         }
 
@@ -258,7 +258,7 @@ script_mod! {
                             height: Fit
                             draw_text +: {
                                 color: #a0c8ff
-                                text_style +: { font_size: 13 bold: true }
+                                text_style +: { font_size: 13 }
                             }
                         }
 
@@ -321,7 +321,7 @@ script_mod! {
                         height: Fit
                         draw_text +: {
                             color: #64c8dc
-                            text_style +: { font_size: 10 bold: true }
+                            text_style +: { font_size: 10 }
                         }
                     }
 
@@ -332,7 +332,7 @@ script_mod! {
                             color: #dcdce6
                             text_style +: { font_size: 13 }
                         }
-                        wrap: Word
+
                     }
 
                     duration_view := View {
@@ -370,7 +370,7 @@ script_mod! {
                         height: Fit
                         draw_text +: {
                             color: #8ab4f8
-                            text_style +: { font_size: 10 bold: true }
+                            text_style +: { font_size: 10 }
                         }
                     }
 
@@ -381,7 +381,7 @@ script_mod! {
                             color: #d2d2dc
                             text_style +: { font_size: 13 }
                         }
-                        wrap: Word
+
                     }
 
                     // Tool-call summary — mirrors TUI assistant tool call line
@@ -396,7 +396,7 @@ script_mod! {
                                 color: #78c88c
                                 text_style +: { font_size: 10 }
                             }
-                            wrap: Word
+
                         }
                     }
 
@@ -434,7 +434,7 @@ script_mod! {
                         height: Fit
                         draw_text +: {
                             color: #78c88c
-                            text_style +: { font_size: 10 bold: true }
+                            text_style +: { font_size: 10 }
                         }
                     }
 
@@ -445,7 +445,7 @@ script_mod! {
                             color: #a0c8a0
                             text_style +: { font_size: 12 }
                         }
-                        wrap: Word
+
                     }
 
                     duration_view := View {
@@ -475,7 +475,7 @@ script_mod! {
                         height: Fit
                         draw_text +: {
                             color: #c8af50
-                            text_style +: { font_size: 10 bold: true }
+                            text_style +: { font_size: 10 }
                         }
                     }
 
@@ -486,7 +486,7 @@ script_mod! {
                             color: #c8b878
                             text_style +: { font_size: 12 }
                         }
-                        wrap: Word
+
                     }
 
                     duration_view := View {
@@ -516,7 +516,7 @@ script_mod! {
                         height: Fit
                         draw_text +: {
                             color: #ff6464
-                            text_style +: { font_size: 10 bold: true }
+                            text_style +: { font_size: 10 }
                         }
                     }
 
@@ -527,7 +527,7 @@ script_mod! {
                             color: #ff9090
                             text_style +: { font_size: 12 }
                         }
-                        wrap: Word
+
                     }
 
                     duration_view := View {
@@ -561,7 +561,7 @@ script_mod! {
                     height: Fit
                     draw_text +: {
                         color: #8ab4f8
-                        text_style +: { font_size: 11 bold: true }
+                        text_style +: { font_size: 11 }
                     }
                 }
             }
@@ -585,7 +585,7 @@ script_mod! {
                         height: Fit
                         draw_text +: {
                             color: #ffc864
-                            text_style +: { font_size: 12 bold: true }
+                            text_style +: { font_size: 12 }
                         }
                     }
 
@@ -596,7 +596,7 @@ script_mod! {
                             color: #8c8c9b
                             text_style +: { font_size: 10 }
                         }
-                        wrap: Word
+
                     }
                 }
             }
@@ -631,7 +631,7 @@ script_mod! {
                             color: #8c8c9b
                             text_style +: { font_size: 10 }
                         }
-                        wrap: Word
+
                     }
                 }
             }
@@ -792,7 +792,7 @@ script_mod! {
                             color: #a0b8d8
                             text_style +: { font_size: 11 }
                         }
-                        wrap: Word
+
                     }
 
                     task_assignee_label := Label {
@@ -834,7 +834,7 @@ script_mod! {
                             color: #ffc864
                             text_style +: { font_size: 11 }
                         }
-                        wrap: Word
+
                     }
 
                     task_assignee_label := Label {
@@ -876,7 +876,7 @@ script_mod! {
                             color: #64c864
                             text_style +: { font_size: 11 }
                         }
-                        wrap: Word
+
                     }
 
                     task_assignee_label := Label {
@@ -923,7 +923,7 @@ script_mod! {
                             text: "jcode"
                             draw_text +: {
                                 color: #dcdce6
-                                text_style +: { font_size: 15 bold: true }
+                                text_style +: { font_size: 15 }
                             }
                         }
 
@@ -984,7 +984,7 @@ script_mod! {
                                     text: "Sessions"
                                     draw_text +: {
                                         color: #8c8c9b
-                                        text_style +: { font_size: 11 bold: true }
+                                        text_style +: { font_size: 11 }
                                     }
                                 }
                             }
@@ -1084,7 +1084,7 @@ script_mod! {
                                     text: "Agents"
                                     draw_text +: {
                                         color: #8c8c9b
-                                        text_style +: { font_size: 11 bold: true }
+                                        text_style +: { font_size: 11 }
                                     }
                                 }
                             }
@@ -1109,7 +1109,7 @@ script_mod! {
                                     text: "Plan"
                                     draw_text +: {
                                         color: #8c8c9b
-                                        text_style +: { font_size: 11 bold: true }
+                                        text_style +: { font_size: 11 }
                                     }
                                 }
                             }
@@ -1685,10 +1685,3 @@ async fn dispatch_command(client: &mut InprocClient, cmd: GuiCommand) -> Result<
     }
 }
 
-/// Placeholder: kept for symmetry with future passes. The first
-/// implementation uses the synchronous `default_provider`; a later
-/// pass can wire the env-driven `provider_init` from the CLI.
-#[allow(dead_code)]
-async fn _self_build_provider_await_inline() -> Arc<dyn Provider> {
-    Arc::new(jcode_app_core::provider::jcode::JcodeProvider::new())
-}
