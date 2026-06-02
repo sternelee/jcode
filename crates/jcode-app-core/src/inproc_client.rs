@@ -36,29 +36,64 @@ pub struct InprocClient {
 }
 
 impl InprocClient {
-    /// Spin up an in-process client for `server`. The server-side half of
-    /// the paired stream is dispatched to `handle_client` on the same
-    /// tokio runtime that owns the server. A second task drains the
-    /// client-side stream and pumps decoded events into an mpsc the GUI
-    /// can poll.
+    /// Spin up an in-process client for `server` on the current
+    /// tokio runtime. **The caller must be inside a tokio runtime
+    /// context** (e.g. `tokio::runtime::Runtime::enter()` or
+    /// `Runtime::block_on(async { ... })`) so that `Stream::pair()`
+    /// and the two spawned tasks have access to the IO driver.
+    ///
+    /// Most callers should use [`InprocClient::start_with_handle`]
+    /// instead, which takes an explicit `&Handle` and lets the
+    /// caller pin the tasks to a specific runtime.
     pub fn start(server: &Arc<Server>) -> Result<Self> {
+        Self::start_with_handle(server, None)
+    }
+
+    /// Spin up an in-process client for `server`. When `handle`
+    /// is `Some`, both the server-side dispatch task and the
+    /// client-side read task are spawned on that handle's
+    /// runtime. When `None`, the current tokio runtime is used.
+    ///
+    /// **Important**: `Stream::pair()` (used internally to obtain
+    /// the paired Unix socket halves) requires a tokio IO
+    /// driver. The driver is registered on a runtime, so this
+    /// function must be called from a thread that has a tokio
+    /// runtime entered — either the worker thread that hosts
+    /// the server, or the GUI's main thread after it has called
+    /// `tokio::runtime::Runtime::enter()`.
+    pub fn start_with_handle(
+        server: &Arc<Server>,
+        handle: Option<&tokio::runtime::Handle>,
+    ) -> Result<Self> {
         let (server_stream, client_stream) = stream_pair()
             .map_err(|e| anyhow::anyhow!("failed to create in-process stream pair: {e}"))?;
         let runtime = server.runtime_handle();
-        tokio::spawn(async move {
+
+        // The two async tasks below need to be `Pin<Box<dyn Future +
+        // Send>>` so the closure we pass to `tokio::spawn` /
+        // `Handle::spawn` is monomorphic. We use a type alias for
+        // clarity.
+        type BoxedFut = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>;
+
+        let dispatch_fut: BoxedFut = Box::pin(async move {
             runtime
                 .run_client_stream(server_stream, "Inproc client error", false)
                 .await;
         });
+        match handle {
+            Some(h) => {
+                let _ = h.spawn(dispatch_fut);
+            }
+            None => {
+                let _ = tokio::spawn(dispatch_fut);
+            }
+        }
+
         let (reader, writer) = client_stream.into_split();
         let reader = BufReader::new(reader);
-
-        // Spawn a task that owns the reader. It decodes newline-delimited
-        // JSON `ServerEvent`s and forwards them to the mpsc receiver the
-        // GUI holds. When the server stream closes (EOF), the task ends
-        // and the receiver naturally drains.
         let (tx, rx) = mpsc::unbounded_channel::<ServerEvent>();
-        tokio::spawn(async move {
+
+        let reader_fut: BoxedFut = Box::pin(async move {
             let mut lines = reader.lines();
             loop {
                 match lines.next_line().await {
@@ -91,6 +126,14 @@ impl InprocClient {
                 }
             }
         });
+        match handle {
+            Some(h) => {
+                let _ = h.spawn(reader_fut);
+            }
+            None => {
+                let _ = tokio::spawn(reader_fut);
+            }
+        }
 
         Ok(Self {
             writer,

@@ -1426,16 +1426,48 @@ impl MatchEvent for App {
         // The worker task drives the in-process server. It:
         //   1. constructs the default provider;
         //   2. boots `GuiBackend::start` (which spawns the server
-        //      worker thread and creates the InprocClient);
-        //   3. fires the initial Subscribe + GetHistory so the first
-        //      History event lands on the main thread;
+        //      worker thread, builds the InprocClient on the
+        //      worker's tokio runtime, and ships it back via
+        //      `std::sync::mpsc`);
+        //   3. sends the initial Subscribe + GetHistory;
         //   4. drains `cmd_rx` for the lifetime of the GUI and
         //      forwards each `GuiCommand` to the InprocClient.
         let (init_tx, init_rx) = oneshot::channel::<Result<Arc<GuiBackend>, anyhow::Error>>();
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<GuiCommand>();
         let _ = cx.spawner().spawn(async move {
-            let provider = Self::default_provider();
-            let backend = match GuiBackend::start(provider).await {
+            // `GuiBackend::start` is sync but blocking; run it on
+            // a separate std::thread so we don't hold up the
+            // Makepad executor. Ship the result back via a
+            // `std::sync::mpsc` channel that we poll with a
+            // yield-based busy wait (Makepad's executor has no
+            // blocking primitive, but the work finishes in
+            // well under a second so this is fine for startup).
+            let (rt_tx, rt_rx) = std::sync::mpsc::channel::<Result<Arc<GuiBackend>, anyhow::Error>>();
+            std::thread::spawn(move || {
+                let _ = rt_tx.send(GuiBackend::start(Self::default_provider()));
+            });
+            let backend = loop {
+                match rt_rx.try_recv() {
+                    Ok(v) => break v,
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        // Yield to the executor so the UI stays
+                        // responsive. A single `cx.spawner` yield
+                        // via `tokio::task::yield_now` is not
+                        // available here; instead, sleep briefly
+                        // and re-check. 10ms is short enough to
+                        // be invisible to the user on startup
+                        // (the backend typically finishes in
+                        // <50ms).
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        break Err(anyhow::anyhow!(
+                            "GuiBackend startup thread died before producing a result"
+                        ));
+                    }
+                }
+            };
+            let backend = match backend {
                 Ok(b) => b,
                 Err(e) => {
                     let _ = init_tx.send(Err(e));

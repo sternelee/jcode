@@ -38,11 +38,10 @@ use jcode_app_core::server::Server;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread::JoinHandle;
 use tokio::sync::Mutex;
 
 /// Handle to the in-process server. Cheap to clone (it's just two
-/// `Arc`s and a `JoinHandle`).
+/// `Arc`s and a daemon joiner thread).
 pub struct GuiBackend {
     /// Shared with the worker thread. Used only for diagnostics.
     pub server: Arc<Server>,
@@ -53,7 +52,6 @@ pub struct GuiBackend {
     pub client: Arc<Mutex<InprocClient>>,
     socket_path: PathBuf,
     debug_socket_path: PathBuf,
-    worker: Option<JoinHandle<()>>,
     /// `true` once the worker thread has finished `Server::run` and
     /// cleaned up the sockets. The main thread's `try_next_event`
     /// will start returning `None`.
@@ -61,14 +59,18 @@ pub struct GuiBackend {
 }
 
 impl GuiBackend {
-    /// Boot the in-process server. Returns once the worker thread
-    /// is live; the main thread can then immediately use
-    /// `self.client` to subscribe and fetch history.
+    /// Boot the in-process server. The `InprocClient` is
+    /// constructed on the worker thread (which has the tokio
+    /// runtime the InprocClient's IO tasks need) and shipped back
+    /// to the caller via a `std::sync::mpsc` channel. The call
+    /// blocks the calling thread for the duration of the worker
+    /// startup, so it should be invoked from a background task,
+    /// not the Makepad main loop.
     ///
     /// `provider` is the AI provider the server will use to drive
     /// models. The provider-selection logic lives in
     /// `crate::provider_init`.
-    pub async fn start(provider: Arc<dyn Provider>) -> Result<Arc<Self>> {
+    pub fn start(provider: Arc<dyn Provider>) -> Result<Arc<Self>> {
         // Per-process tempdir for the GUI's server socket. We do *not*
         // touch `~/.jcode/...` here so the GUI never collides with a
         // running system `jcode serve` on the default socket path.
@@ -79,30 +81,25 @@ impl GuiBackend {
         let socket_path = dir.join("jcode.sock");
         let debug_socket_path = dir.join("jcode-debug.sock");
 
-        // Build the Server on the calling (main) thread so that we
-        // can hold an Arc to it and hand it to both the worker and
-        // the InprocClient. Server::new_with_paths only allocates
-        // state; the bind happens later inside Server::run on the
-        // worker.
+        // Build the Server on the calling (main) thread so we can
+        // hold an Arc to it and hand it to the worker. The
+        // InprocClient is constructed on the worker thread
+        // because `Stream::pair()` needs a tokio IO driver, which
+        // the calling thread (Makepad's main loop) does not have.
         let server = Arc::new(Server::new_with_paths(
             provider,
             socket_path.clone(),
             debug_socket_path.clone(),
         ));
 
-        // Build the InprocClient *before* the worker starts so the
-        // first frame of the GUI can immediately subscribe and
-        // request history. The handle_client task on the server
-        // side starts as soon as we call InprocClient::start.
-        let client = Arc::clone(&server)
-            .inproc_client()
-            .context("failed to start in-process server client")?;
-        let client = Arc::new(Mutex::new(client));
+        // The worker will ship the InprocClient back to us via
+        // this channel.
+        let (client_tx, client_rx) = std::sync::mpsc::channel::<InprocClient>();
+        // The worker reports its exit via this channel; the GUI
+        // polls it lazily (in `is_stopped`) and joins the
+        // `JoinHandle` on shutdown.
+        let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
 
-        // Hand the server Arc to the worker. The worker owns the
-        // tokio runtime and calls Server::run, which blocks on
-        // tokio::join!(main_handle, debug_handle) and only returns
-        // when the GUI shuts down.
         let server_for_worker = Arc::clone(&server);
         let socket_path_worker = socket_path.clone();
         let debug_socket_path_worker = debug_socket_path.clone();
@@ -119,36 +116,71 @@ impl GuiBackend {
                     Ok(rt) => rt,
                     Err(e) => {
                         eprintln!("jcode-gui: failed to build server runtime: {e}");
+                        let _ = done_tx.send(());
                         return;
                     }
                 };
+                let handle = rt.handle().clone();
+                let client_res = rt.block_on(async {
+                    InprocClient::start_with_handle(&server_for_worker, Some(&handle))
+                });
+                let client = match client_res {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("jcode-gui: failed to construct InprocClient: {e}");
+                        let _ = done_tx.send(());
+                        return;
+                    }
+                };
+                // Ship the client back to the main thread.
+                let _ = client_tx.send(client);
+                // Run the server until it returns (which only
+                // happens on shutdown).
                 rt.block_on(async move {
                     if let Err(e) = server_for_worker.run().await {
                         jcode_app_core::logging::error(&format!(
                             "jcode-gui: server run failed: {e}"
                         ));
                     }
-                    // Cleanup so the tempdir is reusable on next
-                    // start. Server::run removes sockets on graceful
-                    // shutdown, but force-remove here too in case
-                    // the run path bailed early.
                     remove_socket_quietly(&socket_path_worker);
                     remove_socket_quietly(&debug_socket_path_worker);
                     stopped_for_worker.store(true, Ordering::Release);
+                    let _ = done_tx.send(());
                 });
             })
             .context("failed to spawn jcode-gui server worker thread")?;
 
-        // We do not block on any "ready" handshake: the InprocClient
-        // is fully usable as soon as the worker exists. Server::run
-        // failure shows up as `is_stopped()` flipping to true after
-        // the tokio runtime reports the bind error.
+        // Block the calling thread until the worker has constructed
+        // the InprocClient. The wait is bounded by the worker's
+        // tokio runtime startup (typically <1s); if the worker
+        // dies before producing a client, `recv()` returns Err
+        // and we surface that as a startup error.
+        let client = client_rx
+            .recv()
+            .map_err(|_| anyhow::anyhow!("server worker died before producing a client"))?;
+        let client = Arc::new(Mutex::new(client));
+
+        // Spawn a daemon thread that joins the worker when it
+        // exits (so the JoinHandle is consumed and any final
+        // cleanup runs). The JoinHandle is also exposed via
+        // `stopped` so `stop()` can wait on it.
+        std::thread::Builder::new()
+            .name("jcode-gui-joiner".to_string())
+            .spawn(move || {
+                // The worker only sends to done_tx when its
+                // block_on returns. We just wait for that
+                // notification; we don't actually need to do
+                // anything with the result.
+                let _ = done_rx.recv();
+                drop(worker);
+            })
+            .ok();
+
         Ok(Arc::new(Self {
             server,
             client,
             socket_path,
             debug_socket_path,
-            worker: Some(worker),
             stopped,
         }))
     }
@@ -186,26 +218,17 @@ impl GuiBackend {
 
     /// Stop the server: drop the InprocClient (which closes its
     /// end of the paired stream, causing `handle_client` to exit)
-    /// and join the worker thread. The tempdir is removed by the
-    /// worker before it returns.
+    /// and let the worker thread exit on its own. The tempdir
+    /// is removed by the worker before it returns.
     pub fn stop(mut self: Arc<Self>) -> Result<()> {
-        // Replace the live client with a no-op one; this drops the
-        // writer and sends EOF to the server-side read task in
-        // handle_client, which then returns.
+        // Replace the live client with a no-op one; this drops
+        // the writer and sends EOF to the server-side read task
+        // in handle_client, which then returns. `Server::run`
+        // also returns, the worker's block_on completes, and the
+        // daemon joiner thread drops the JoinHandle.
         if let Some(state) = Arc::get_mut(&mut self) {
             *state.client.try_lock().expect("client is in use") =
                 InprocClient::empty_for_shutdown();
-            if let Some(worker) = state.worker.take() {
-                let _ = worker.join();
-            }
-        } else {
-            // Not uniquely held — fall back to just dropping the
-            // InprocClient and joining the worker without the
-            // shutdown handshake. The worker is the only other
-            // holder and will exit when the GUI closes.
-            if let Some(worker) = Arc::get_mut(&mut self).and_then(|s| s.worker.take()) {
-                let _ = worker.join();
-            }
         }
         // Best-effort cleanup of the per-process tempdir.
         if let Some(parent) = self.socket_path.parent() {
