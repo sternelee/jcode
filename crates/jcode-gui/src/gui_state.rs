@@ -1,28 +1,51 @@
 //! Shared GUI state types for jcode-gui.
 //!
-//! These mirror the data models used by jcode-tui (DisplayMessage, SwarmMemberStatus, etc.)
-//! but are decoupled from ratatui so they can be used with Makepad.
+//! These mirror the data models used by jcode-tui (DisplayMessage,
+//! SwarmMemberStatus, etc.) but are decoupled from ratatui so they can
+//! be used with Makepad.
+//!
+//! The [`GuiState`] struct is the single source of truth for the widget
+//! tree. It is mutated by [`GuiState::apply_event`] whenever a
+//! `ServerEvent` arrives from the in-process server, and read by each
+//! widget's `draw_walk`.
 
 use jcode_message_types::ToolCall;
-use jcode_protocol::SwarmMemberStatus;
+use jcode_protocol::{ServerEvent, SwarmMemberStatus};
 pub use jcode_swarm_core::{SwarmLifecycleStatus, SwarmRole};
+use std::collections::HashMap;
 
-/// Global GUI state — read by widget draw_walk, written by AppMain event handlers.
-pub static GUI_STATE: std::sync::RwLock<GuiState> =
-    std::sync::RwLock::new(GuiState {
-        sessions: Vec::new(),
-        active_session_id: None,
-        messages: Vec::new(),
-        swarm_members: Vec::new(),
-        plan_tasks: Vec::new(),
-        composer_draft: String::new(),
-        processing_status: ProcessingStatus::Idle,
-        model_name: String::new(),
-        session_tokens: None,
-        slash_suggestions: Vec::new(),
-        slash_selected: 0,
-        file_suggestions: Vec::new(),
-        file_selected: 0,
+/// Global GUI state — read by widget draw_walk, written by the
+/// `ServerEvent` event pump. Wrapped in `LazyLock` so the initial
+/// values can use non-`const` constructors (e.g. `HashMap::new()`).
+pub static GUI_STATE: std::sync::LazyLock<std::sync::RwLock<GuiState>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::RwLock::new(GuiState {
+            sessions: Vec::new(),
+            active_session_id: None,
+            messages: Vec::new(),
+            swarm_members: Vec::new(),
+            plan_tasks: Vec::new(),
+            composer_draft: String::new(),
+            processing_status: ProcessingStatus::Idle,
+            model_name: String::new(),
+            session_tokens: None,
+            slash_suggestions: Vec::new(),
+            slash_selected: 0,
+            file_suggestions: Vec::new(),
+            file_selected: 0,
+            // ── live-event fields ───────────────────────────────
+            streaming_text: String::new(),
+            streaming_tool_calls: Vec::new(),
+            is_streaming: false,
+            provider_model: String::new(),
+            provider_name: String::new(),
+            mcp_servers: Vec::new(),
+            skills: Vec::new(),
+            all_sessions: Vec::new(),
+            session_titles: HashMap::new(),
+            // ── internal counters (private) ──────────────────────
+            next_msg_id: 0,
+        })
     });
 
 // ── Session / conversation ────────────────────────────────────────────────────
@@ -69,9 +92,13 @@ pub enum MessageRole {
     Error,
     BackgroundTask,
     Usage,
+    Memory,
+    Overnight,
+    Swarm,
 }
 
 impl MessageRole {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(role: &str) -> Self {
         match role {
             "user" => Self::User,
@@ -81,6 +108,9 @@ impl MessageRole {
             "error" => Self::Error,
             "background_task" => Self::BackgroundTask,
             "usage" => Self::Usage,
+            "memory" => Self::Memory,
+            "overnight" => Self::Overnight,
+            "swarm" => Self::Swarm,
             _ => Self::System,
         }
     }
@@ -95,6 +125,9 @@ impl MessageRole {
             Self::Error => "Error",
             Self::BackgroundTask => "Background",
             Self::Usage => "Usage",
+            Self::Memory => "Memory",
+            Self::Overnight => "Overnight",
+            Self::Swarm => "Swarm",
         }
     }
 }
@@ -115,29 +148,6 @@ pub struct GuiMessage {
     /// Tool call data for role=Tool messages.
     pub tool_data: Option<ToolCall>,
     pub duration_secs: Option<f32>,
-}
-
-impl GuiMessage {
-    pub fn from_display(msg: &jcode_tui_messages::DisplayMessage) -> Self {
-        let id = {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-            let mut h = DefaultHasher::new();
-            msg.content.hash(&mut h);
-            msg.role.hash(&mut h);
-            h.finish()
-        };
-        Self {
-            id,
-            role: MessageRole::from_str(&msg.role),
-            content: msg.content.clone(),
-            agent_id: None,
-            agent_name: None,
-            tool_calls: msg.tool_calls.clone(),
-            tool_data: msg.tool_data.clone(),
-            duration_secs: msg.duration_secs,
-        }
-    }
 }
 
 // ── Swarm ─────────────────────────────────────────────────────────────────────
@@ -161,9 +171,7 @@ impl GuiSwarmMember {
             .clone()
             .map(SwarmRole::from)
             .unwrap_or(SwarmRole::Agent);
-        let lifecycle = SwarmLifecycleStatus::from(
-            m.status.clone(),
-        );
+        let lifecycle = SwarmLifecycleStatus::from(m.status.clone());
         let is_coordinator = matches!(role, SwarmRole::Coordinator);
         Self {
             session_id: m.session_id.clone(),
@@ -327,11 +335,358 @@ pub struct GuiState {
     pub file_suggestions: Vec<String>,
     /// Index of the highlighted entry in `file_suggestions`.
     pub file_selected: usize,
+    // ── Live streaming state (mutated by `apply_event`) ─────────────────
+    /// Text currently streaming into the in-progress assistant bubble.
+    /// The message list widget renders this into the placeholder
+    /// bubble at the end of the list.
+    pub streaming_text: String,
+    /// Tool names that have fired during the current turn; shown in
+    /// the assistant tool-call summary line.
+    pub streaming_tool_calls: Vec<String>,
+    /// True while a model turn is in progress (set on the first
+    /// `TextDelta` or `ToolStart`, cleared on `Done` / `Error` /
+    /// `Interrupted` / `MessageEnd`).
+    pub is_streaming: bool,
+    // ── Provider / model / MCP / skills metadata from `ServerEvent::History` ──
+    /// Provider model id (e.g. `"claude-opus-4-5"`).
+    pub provider_model: String,
+    /// Provider name (e.g. `"anthropic"`, `"openai"`).
+    pub provider_name: String,
+    /// Connected MCP server names.
+    pub mcp_servers: Vec<String>,
+    /// Available skill names.
+    pub skills: Vec<String>,
+    // ── Session discovery (from `ServerEvent::History::all_sessions` and `SessionId` / `SessionRenamed`) ──
+    /// All session ids known to the server, used to populate the
+    /// session picker / left panel.
+    pub all_sessions: Vec<String>,
+    /// Per-session display titles; populated from `SessionRenamed` /
+    /// `SessionId` / `History` events.
+    pub session_titles: HashMap<String, String>,
+    // ── Internal counter (used by `apply_event` for new bubbles) ─────────
+    /// Monotonic id minted for every new `GuiMessage` we push. We
+    /// keep it as a regular field (not private) so `apply_event`
+    /// can bump it directly; it is not part of the user-visible
+    /// state.
+    pub next_msg_id: u64,
 }
 
 impl GuiState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Mutate `self` to reflect a single `ServerEvent` from the
+    /// in-process server. The widget tree reads back from `self` on
+    /// the next frame.
+    ///
+    /// This is the single bridge between the server's wire protocol
+    /// and the widget data model. Keep it side-effect free except for
+    /// `self` — no logging, no I/O.
+    pub fn apply_event(&mut self, ev: &ServerEvent) {
+        match ev {
+            // ── Streaming ──────────────────────────────────────────────
+            ServerEvent::TextDelta { text } => {
+                if !self.is_streaming {
+                    // First delta of a new turn: reset the streaming
+                    // accumulator.
+                    self.streaming_text.clear();
+                    self.streaming_tool_calls.clear();
+                    self.is_streaming = true;
+                }
+                self.streaming_text.push_str(text);
+                // Switch to Streaming with the latest token totals;
+                // we don't know them precisely, so carry 0s and let
+                // `TokenUsage` refine them as it arrives.
+                self.processing_status = ProcessingStatus::Streaming {
+                    input_tokens: 0,
+                    output_tokens: 0,
+                };
+            }
+            ServerEvent::TextReplace { text } => {
+                // Recovery path: streaming produced garbled text and
+                // the server is replacing it with a clean prefix.
+                self.streaming_text.clear();
+                self.streaming_text.push_str(text);
+            }
+            ServerEvent::ToolStart { name, .. } | ServerEvent::ToolExec { name, .. } => {
+                self.streaming_tool_calls.push(name.clone());
+                self.processing_status = ProcessingStatus::RunningTool(name.clone());
+            }
+            ServerEvent::ToolDone { name, error, .. } => {
+                if let Some(err) = error {
+                    // Surface the failure as an Error role bubble.
+                    let new_msg_id = self.next_msg_id();
+                    self.messages.push(GuiMessage {
+                        id: new_msg_id,
+                        role: MessageRole::Error,
+                        content: format!("{} failed: {}", name, err),
+                        agent_id: None,
+                        agent_name: None,
+                        tool_calls: vec![],
+                        tool_data: None,
+                        duration_secs: None,
+                    });
+                } else {
+                    let new_msg_id = self.next_msg_id();
+                    self.messages.push(GuiMessage {
+                        id: new_msg_id,
+                        role: MessageRole::Tool,
+                        content: format!("{} ✓", name),
+                        agent_id: None,
+                        agent_name: None,
+                        tool_calls: vec![],
+                        tool_data: None,
+                        duration_secs: None,
+                    });
+                }
+            }
+            ServerEvent::MessageEnd => {
+                // Provider has emitted the visible assistant text;
+                // the turn may still be finalising bookkeeping.
+                // Keep `is_streaming` true until `Done` / `Error` /
+                // `Interrupted` arrives.
+            }
+            ServerEvent::Done { .. } => {
+                self.seal_streaming_turn();
+            }
+            ServerEvent::Error { message, .. } => {
+                let new_msg_id = self.next_msg_id();
+                self.messages.push(GuiMessage {
+                    id: new_msg_id,
+                    role: MessageRole::Error,
+                    content: message.clone(),
+                    agent_id: None,
+                    agent_name: None,
+                    tool_calls: vec![],
+                    tool_data: None,
+                    duration_secs: None,
+                });
+                self.seal_streaming_turn();
+            }
+            ServerEvent::Interrupted => {
+                let new_msg_id = self.next_msg_id();
+                self.messages.push(GuiMessage {
+                    id: new_msg_id,
+                    role: MessageRole::System,
+                    content: "Interrupted".to_string(),
+                    agent_id: None,
+                    agent_name: None,
+                    tool_calls: vec![],
+                    tool_data: None,
+                    duration_secs: None,
+                });
+                self.seal_streaming_turn();
+            }
+
+            // ── Token usage / model / status ──────────────────────────
+            ServerEvent::TokenUsage { input, output, .. } => {
+                self.session_tokens = Some((*input, *output));
+                self.processing_status = ProcessingStatus::Streaming {
+                    input_tokens: *input,
+                    output_tokens: *output,
+                };
+            }
+            ServerEvent::ConnectionType { connection } => {
+                self.provider_name = connection.clone();
+            }
+            ServerEvent::UpstreamProvider { provider } => {
+                self.provider_name = provider.clone();
+            }
+            ServerEvent::StatusDetail { .. } | ServerEvent::ConnectionPhase { .. } => {
+                // Treated as transient; header already shows the
+                // current processing status.
+            }
+
+            // ── Swarm ─────────────────────────────────────────────────
+            ServerEvent::SwarmStatus { members } => {
+                self.swarm_members = members.iter().map(GuiSwarmMember::from_protocol).collect();
+            }
+            ServerEvent::SwarmPlan { items, summary, .. } => {
+                let active_ids: Vec<String> = summary
+                    .as_ref()
+                    .map(|s| s.active_ids.clone())
+                    .unwrap_or_default();
+                self.plan_tasks = items
+                    .iter()
+                    .map(|i| PlanTaskCard::from_plan_item(i, &active_ids))
+                    .collect();
+            }
+            ServerEvent::SwarmPlanProposal { .. } => {
+                // A new plan was proposed to a coordinator. We don't
+                // surface it as a chat bubble in this pass; the
+                // kanban board will refresh on the subsequent
+                // SwarmPlan event.
+            }
+
+            // ── Session metadata ──────────────────────────────────────
+            ServerEvent::SessionId { session_id } => {
+                self.active_session_id = Some(session_id.clone());
+                if !self.all_sessions.contains(session_id) {
+                    self.all_sessions.push(session_id.clone());
+                }
+            }
+            ServerEvent::SessionRenamed {
+                session_id,
+                display_title,
+                ..
+            } => {
+                self.session_titles
+                    .insert(session_id.clone(), display_title.clone());
+                self.rebuild_session_entries();
+            }
+            ServerEvent::SessionCloseRequested { reason } => {
+                let new_msg_id = self.next_msg_id();
+                self.messages.push(GuiMessage {
+                    id: new_msg_id,
+                    role: MessageRole::System,
+                    content: format!("Server requested close: {}", reason),
+                    agent_id: None,
+                    agent_name: None,
+                    tool_calls: vec![],
+                    tool_data: None,
+                    duration_secs: None,
+                });
+            }
+
+            // ── Conversation history (full sync) ──────────────────────
+            ServerEvent::History {
+                session_id,
+                messages,
+                provider_name,
+                provider_model,
+                mcp_servers,
+                skills,
+                all_sessions,
+                total_tokens,
+                ..
+            } => {
+                self.active_session_id = Some(session_id.clone());
+                self.messages = messages
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, m)| GuiMessage {
+                        id: idx as u64,
+                        role: MessageRole::from_str(&m.role),
+                        content: m.content.clone(),
+                        agent_id: None,
+                        agent_name: None,
+                        tool_calls: m.tool_calls.clone().unwrap_or_default(),
+                        tool_data: m.tool_data.clone(),
+                        duration_secs: None,
+                    })
+                    .collect();
+                self.next_msg_id = self.messages.len() as u64;
+                if let Some(p) = provider_name {
+                    self.provider_name = p.clone();
+                }
+                if let Some(m) = provider_model {
+                    self.provider_model = m.clone();
+                    self.model_name = m.clone();
+                }
+                self.mcp_servers = mcp_servers.clone();
+                self.skills = skills.clone();
+                if let Some(t) = total_tokens {
+                    self.session_tokens = Some(*t);
+                }
+                if !all_sessions.is_empty() {
+                    self.all_sessions = all_sessions.clone();
+                }
+                // Rebuild the `sessions` left-panel from the
+                // discovered ids, merging in any titles we already
+                // know.
+                self.rebuild_session_entries();
+            }
+
+            // ── Compaction / memory / side panels ─────────────────────
+            ServerEvent::Compaction { .. }
+            | ServerEvent::MemoryInjected { .. }
+            | ServerEvent::MemoryActivity { .. }
+            | ServerEvent::SidePaneImages { .. }
+            | ServerEvent::GeneratedImage { .. }
+            | ServerEvent::BatchProgress { .. }
+            | ServerEvent::KvCacheRequest { .. } => {
+                // Not surfaced in the GUI first pass.
+            }
+
+            // ── MCP / one-shot control ────────────────────────────────
+            ServerEvent::McpStatus { servers } => {
+                self.mcp_servers = servers.clone();
+            }
+            ServerEvent::SoftInterruptInjected { content, .. } => {
+                let new_msg_id = self.next_msg_id();
+                self.messages.push(GuiMessage {
+                    id: new_msg_id,
+                    role: MessageRole::System,
+                    content: format!("[soft interrupt] {}", content),
+                    agent_id: None,
+                    agent_name: None,
+                    tool_calls: vec![],
+                    tool_data: None,
+                    duration_secs: None,
+                });
+            }
+
+            // ── Trivial keepalives ─────────────────────────────────────
+            ServerEvent::Ack { .. }
+            | ServerEvent::Pong { .. }
+            | ServerEvent::State { .. }
+            | ServerEvent::DebugResponse { .. }
+            | ServerEvent::ClientDebugRequest { .. } => {}
+
+            // Anything we haven't explicitly named above is ignored
+            // deliberately — the GUI surfaces only the categories
+            // its widgets render.
+            _ => {}
+        }
+    }
+
+    /// End-of-turn: push whatever was in `streaming_text` as a final
+    /// assistant bubble, then reset the streaming accumulators.
+    fn seal_streaming_turn(&mut self) {
+        if self.is_streaming && !self.streaming_text.is_empty() {
+            let tool_calls = std::mem::take(&mut self.streaming_tool_calls);
+            let text = std::mem::take(&mut self.streaming_text);
+            let id = self.next_msg_id();
+            self.messages.push(GuiMessage {
+                id,
+                role: MessageRole::Assistant,
+                content: text,
+                agent_id: None,
+                agent_name: None,
+                tool_calls,
+                tool_data: None,
+                duration_secs: None,
+            });
+        } else {
+            self.streaming_text.clear();
+            self.streaming_tool_calls.clear();
+        }
+        self.is_streaming = false;
+        self.processing_status = ProcessingStatus::Idle;
+    }
+
+    /// Re-derive the left-panel `sessions` vector from
+    /// `all_sessions` + `session_titles`. Preserves the `is_active`
+    /// flag for the currently selected session.
+    fn rebuild_session_entries(&mut self) {
+        let active = self.active_session_id.clone();
+        self.sessions = self
+            .all_sessions
+            .iter()
+            .map(|id| SessionEntry {
+                id: id.clone(),
+                title: self
+                    .session_titles
+                    .get(id)
+                    .cloned()
+                    .unwrap_or_else(|| id.chars().take(8).collect()),
+                preview: String::new(),
+                kind: SessionKind::Single,
+                is_active: Some(id) == active.as_ref(),
+                unread: 0,
+            })
+            .collect();
     }
 
     /// Formatted header status string — model name and processing status.
@@ -370,5 +725,14 @@ impl GuiState {
         let mut members: Vec<&GuiSwarmMember> = self.swarm_members.iter().collect();
         members.sort_by(|a, b| b.is_coordinator.cmp(&a.is_coordinator));
         members
+    }
+
+    /// Mint the next monotonic message id and return it. Pulled out as
+    /// a small helper so every push site in `apply_event` does it the
+    /// same way.
+    fn next_msg_id(&mut self) -> u64 {
+        let id = self.next_msg_id;
+        self.next_msg_id = self.next_msg_id.wrapping_add(1);
+        id
     }
 }

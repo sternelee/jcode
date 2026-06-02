@@ -28,22 +28,47 @@ impl Widget for MessageListWidget {
                 list.set_item_range(cx, 0, total);
 
                 while let Some(idx) = list.next_visible_item(cx) {
-                    // Streaming placeholder at the end
-                    if state.processing_status.is_active() && idx == count {
+                    // Streaming placeholder at the end. We use
+                    // `is_streaming` (set by `GuiState::apply_event`
+                    // on every TextDelta) rather than
+                    // `processing_status.is_active()` because the
+                    // latter is also true for `RunningTool`, where
+                    // the placeholder is still an assistant bubble
+                    // but the model has paused text emission.
+                    if state.is_streaming && idx == count {
                         let (item_widget, _) = list.item_with_existed(cx, idx, id!(AssistantMsg));
                         item_widget
                             .label(cx, ids!(sender_label))
                             .set_text(cx, "Agent");
-                        let placeholder = state.processing_status.label();
                         item_widget
                             .label(cx, ids!(content_label))
-                            .set_text(cx, &placeholder);
-                        item_widget
-                            .label(cx, ids!(tool_calls_label))
-                            .set_text(cx, "");
-                        item_widget
-                            .view(cx, ids!(tool_calls_view))
-                            .set_visible(cx, false);
+                            .set_text(cx, &state.streaming_text);
+                        // Tool-call summary line under the
+                        // streaming bubble.
+                        if !state.streaming_tool_calls.is_empty() {
+                            let tools_text = format!(
+                                "tools: {}",
+                                state
+                                    .streaming_tool_calls
+                                    .iter()
+                                    .map(|s| s.as_str())
+                                    .collect::<Vec<_>>()
+                                    .join(" · ")
+                            );
+                            item_widget
+                                .label(cx, ids!(tool_calls_label))
+                                .set_text(cx, &tools_text);
+                            item_widget
+                                .view(cx, ids!(tool_calls_view))
+                                .set_visible(cx, true);
+                        } else {
+                            item_widget
+                                .label(cx, ids!(tool_calls_label))
+                                .set_text(cx, "");
+                            item_widget
+                                .view(cx, ids!(tool_calls_view))
+                                .set_visible(cx, false);
+                        }
                         item_widget.draw_all_unscoped(cx);
                         continue;
                     }
