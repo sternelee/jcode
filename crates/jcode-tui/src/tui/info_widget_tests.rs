@@ -110,6 +110,52 @@ fn todos_widgets_show_item_and_aggregate_confidence() {
 }
 
 #[test]
+fn todos_widget_renders_exact_pips_for_small_lists() {
+    let mk = |status: &str| crate::todo::TodoItem {
+        id: status.to_string(),
+        content: format!("item {status}"),
+        status: status.to_string(),
+        priority: "medium".to_string(),
+        confidence: Some(80),
+        completion_confidence: None,
+        blocked_by: Vec::new(),
+        assigned_to: None,
+    };
+    let data = InfoWidgetData {
+        todos: vec![
+            mk("completed"),
+            mk("completed"),
+            mk("in_progress"),
+            mk("pending"),
+        ],
+        ..Default::default()
+    };
+
+    let lines = render_todos_widget(&data, Rect::new(0, 0, 80, 8));
+    let header = lines_text(&lines[..1]);
+    // Exact 1:1 pips on the header: 2 done + 1 active render as filled ●,
+    // 1 open renders as hollow ○. (Active is full amber, not half.)
+    assert_eq!(
+        header.matches('●').count(),
+        3,
+        "expected 3 filled pips: {header}"
+    );
+    assert_eq!(
+        header.matches('○').count(),
+        1,
+        "expected 1 open pip: {header}"
+    );
+    assert!(
+        !header.contains('◐'),
+        "active pip should be full, not half: {header}"
+    );
+    // The old block bar should be gone everywhere.
+    let all = lines_text(&lines);
+    assert!(!all.contains('█'), "old block bar should be gone: {all}");
+    assert!(!all.contains('░'), "old empty bar should be gone: {all}");
+}
+
+#[test]
 fn cost_based_usage_widgets_show_price_and_tokens() {
     let usage = UsageInfo {
         provider: UsageProvider::CostBased,
@@ -133,6 +179,63 @@ fn cost_based_usage_widgets_show_price_and_tokens() {
     let compact_text = lines_text(&render_usage_compact(&usage, 40));
     assert!(compact_text.contains("$0.0123"));
     assert!(compact_text.contains("12.3K in + 678 out"));
+}
+
+#[test]
+fn anthropic_subscription_widget_shows_estimated_api_cost() {
+    // Claude subscription / OAuth: not billed per token, but we surface an
+    // estimated equivalent API cost line alongside the usage bars.
+    let usage = UsageInfo {
+        provider: UsageProvider::Anthropic,
+        five_hour: 0.25,
+        seven_day: 0.10,
+        total_cost: 0.0,
+        estimated_cost: Some(1.2345),
+        input_tokens: 100_000,
+        output_tokens: 5_000,
+        available: true,
+        ..Default::default()
+    };
+    let data = InfoWidgetData {
+        usage_info: Some(usage.clone()),
+        ..Default::default()
+    };
+
+    let expanded_text = lines_text(&render_usage_widget(&data, Rect::new(0, 0, 40, 6)));
+    assert!(expanded_text.contains("$1.23"), "expanded: {expanded_text}");
+    assert!(
+        expanded_text.contains("est. API cost"),
+        "expanded: {expanded_text}"
+    );
+    // Subscription usage bars are still shown.
+    assert!(
+        expanded_text.contains("5-hour"),
+        "expanded: {expanded_text}"
+    );
+
+    let compact_text = lines_text(&render_usage_compact(&usage, 40));
+    assert!(compact_text.contains("$1.23"), "compact: {compact_text}");
+    assert!(
+        compact_text.contains("est. API cost"),
+        "compact: {compact_text}"
+    );
+}
+
+#[test]
+fn anthropic_subscription_widget_hides_zero_estimated_cost() {
+    let usage = UsageInfo {
+        provider: UsageProvider::Anthropic,
+        total_cost: 0.0,
+        estimated_cost: Some(0.0),
+        available: true,
+        ..Default::default()
+    };
+    let data = InfoWidgetData {
+        usage_info: Some(usage.clone()),
+        ..Default::default()
+    };
+    let expanded_text = lines_text(&render_usage_widget(&data, Rect::new(0, 0, 40, 6)));
+    assert!(!expanded_text.contains("est. API cost"), "{expanded_text}");
 }
 
 fn node(kind: &str, label: &str, degree: usize) -> GraphNode {
