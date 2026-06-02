@@ -59,7 +59,13 @@ app_main!(App);
 script_mod! {
     use mod.prelude.widgets.*
 
-    // ── Custom widget registrations ───────────────────────────────────────────
+    // ── Custom widget registrations ──────────────────────────────────────────
+    // Each of these still wraps a `View` and is registered so that
+    // `App::script_component` can build it. The internals were
+    // rewritten for the ChatGPT-style layout; see each file's
+    // `impl Widget for …` for the draw_walk that consumes
+    // `GUI_STATE`.
+
     let SessionListWidget = #(SessionListWidget::register_widget(vm)) {
         width: Fill
         height: Fill
@@ -75,41 +81,19 @@ script_mod! {
                 height: Fit
                 padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
                 show_bg: true
-                draw_bg +: { color: #202026 radius: 0.0 }
+                draw_bg +: { color: #18181c radius: 6.0 }
 
                 View {
                     width: Fill
                     height: Fit
                     flow: Down
 
-                    View {
+                    title_label := Label {
                         width: Fill
                         height: Fit
-                        flow: Right
-                        align: Align{y: 0.5}
-                        spacing: 4
-
-                        title_label := Label {
-                            width: Fill
-                            height: Fit
-                            draw_text +: {
-                                color: #dcdce6
-                                text_style +: { font_size: 13 }
-                            }
-                        }
-
-                        badge_view := View {
-                            width: Fit
-                            height: Fit
-                            visible: false
-                            badge_label := Label {
-                                width: Fit
-                                height: Fit
-                                draw_text +: {
-                                    color: #8ab4f8
-                                    text_style +: { font_size: 10 }
-                                }
-                            }
+                        draw_text +: {
+                            color: #dcdce6
+                            text_style +: { font_size: 13 }
                         }
                     }
 
@@ -118,170 +102,6 @@ script_mod! {
                         height: Fit
                         draw_text +: {
                             color: #8c8c9b
-                            text_style +: { font_size: 11 }
-                        }
-                    }
-                }
-            }
-
-            SwarmRow := RoundedView {
-                width: Fill
-                height: Fit
-                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
-                show_bg: true
-                draw_bg +: { color: #262a37 radius: 0.0 }
-
-                View {
-                    width: Fill
-                    height: Fit
-                    flow: Down
-
-                    View {
-                        width: Fill
-                        height: Fit
-                        flow: Right
-                        align: Align{y: 0.5}
-                        spacing: 4
-
-                        title_label := Label {
-                            width: Fill
-                            height: Fit
-                            draw_text +: {
-                                color: #8ab4f8
-                                text_style +: { font_size: 13 }
-                            }
-                        }
-
-                        badge_view := View {
-                            width: Fit
-                            height: Fit
-                            visible: false
-                            badge_label := Label {
-                                width: Fit
-                                height: Fit
-                                draw_text +: {
-                                    color: #ffc864
-                                    text_style +: { font_size: 10 }
-                                }
-                            }
-                        }
-                    }
-
-                    preview_label := Label {
-                        width: Fill
-                        height: Fit
-                        draw_text +: {
-                            color: #8c8c9b
-                            text_style +: { font_size: 11 }
-                        }
-                    }
-                }
-            }
-
-            // ── Active-session variants (highlighted background) ───────────────
-
-            SessionRowActive := RoundedView {
-                width: Fill
-                height: Fit
-                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
-                show_bg: true
-                draw_bg +: { color: #2d2d37 radius: 0.0 }
-
-                View {
-                    width: Fill
-                    height: Fit
-                    flow: Down
-
-                    View {
-                        width: Fill
-                        height: Fit
-                        flow: Right
-                        align: Align{y: 0.5}
-                        spacing: 4
-
-                        title_label := Label {
-                            width: Fill
-                            height: Fit
-                            draw_text +: {
-                                color: #dcdce6
-                                text_style +: { font_size: 13 }
-                            }
-                        }
-
-                        badge_view := View {
-                            width: Fit
-                            height: Fit
-                            visible: false
-                            badge_label := Label {
-                                width: Fit
-                                height: Fit
-                                draw_text +: {
-                                    color: #8ab4f8
-                                    text_style +: { font_size: 10 }
-                                }
-                            }
-                        }
-                    }
-
-                    preview_label := Label {
-                        width: Fill
-                        height: Fit
-                        draw_text +: {
-                            color: #a0a0b4
-                            text_style +: { font_size: 11 }
-                        }
-                    }
-                }
-            }
-
-            SwarmRowActive := RoundedView {
-                width: Fill
-                height: Fit
-                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
-                show_bg: true
-                draw_bg +: { color: #2d2d37 radius: 0.0 }
-
-                View {
-                    width: Fill
-                    height: Fit
-                    flow: Down
-
-                    View {
-                        width: Fill
-                        height: Fit
-                        flow: Right
-                        align: Align{y: 0.5}
-                        spacing: 4
-
-                        title_label := Label {
-                            width: Fill
-                            height: Fit
-                            draw_text +: {
-                                color: #a0c8ff
-                                text_style +: { font_size: 13 }
-                            }
-                        }
-
-                        badge_view := View {
-                            width: Fit
-                            height: Fit
-                            visible: false
-                            badge_label := Label {
-                                width: Fit
-                                height: Fit
-                                draw_text +: {
-                                    color: #ffc864
-                                    text_style +: { font_size: 10 }
-                                }
-                            }
-                        }
-                    }
-
-                    preview_label := Label {
-                        width: Fill
-                        height: Fit
-                        draw_text +: {
-                            color: #a0a0b4
                             text_style +: { font_size: 11 }
                         }
                     }
@@ -302,13 +122,14 @@ script_mod! {
             auto_tail: true
             smooth_tail: true
 
+            // User bubble: right-aligned, blue tint, max ~70% width.
             UserMsg := RoundedView {
                 width: Fill
                 height: Fit
                 margin: Inset{top: 4 bottom: 4 left: 60 right: 8}
-                padding: Inset{left: 12 top: 8 right: 12 bottom: 8}
+                padding: Inset{left: 14 top: 10 right: 14 bottom: 10}
                 show_bg: true
-                draw_bg +: { color: #1c3a58 radius: 8.0 }
+                draw_bg +: { color: #1f3a5b radius: 12.0 }
 
                 View {
                     width: Fill
@@ -319,6 +140,7 @@ script_mod! {
                     sender_label := Label {
                         width: Fit
                         height: Fit
+                        text: "You"
                         draw_text +: {
                             color: #64c8dc
                             text_style +: { font_size: 10 }
@@ -332,32 +154,18 @@ script_mod! {
                             color: #dcdce6
                             text_style +: { font_size: 13 }
                         }
-
-                    }
-
-                    duration_view := View {
-                        width: Fit
-                        height: Fit
-                        visible: false
-                        duration_label := Label {
-                            width: Fit
-                            height: Fit
-                            draw_text +: {
-                                color: #8c8c9b
-                                text_style +: { font_size: 9 }
-                            }
-                        }
                     }
                 }
             }
 
-            AssistantMsg := RoundedView {
+            // Agent bubble: left-aligned, no bubble background, just
+            // a sender label and the body. Tool-call summary line
+            // appears below the body when tools fired.
+            AssistantMsg := View {
                 width: Fill
                 height: Fit
                 margin: Inset{top: 4 bottom: 4 left: 8 right: 60}
-                padding: Inset{left: 12 top: 8 right: 12 bottom: 8}
-                show_bg: true
-                draw_bg +: { color: #262a37 radius: 8.0 }
+                padding: Inset{left: 4 top: 8 right: 4 bottom: 8}
 
                 View {
                     width: Fill
@@ -368,6 +176,7 @@ script_mod! {
                     sender_label := Label {
                         width: Fit
                         height: Fit
+                        text: "Agent"
                         draw_text +: {
                             color: #8ab4f8
                             text_style +: { font_size: 10 }
@@ -381,10 +190,8 @@ script_mod! {
                             color: #d2d2dc
                             text_style +: { font_size: 13 }
                         }
-
                     }
 
-                    // Tool-call summary — mirrors TUI assistant tool call line
                     tool_calls_view := View {
                         width: Fill
                         height: Fit
@@ -396,145 +203,98 @@ script_mod! {
                                 color: #78c88c
                                 text_style +: { font_size: 10 }
                             }
-
                         }
                     }
 
-                    duration_view := View {
+                    // Hover-action row — visible only when the
+                    // GUI's `hovered_message_id` matches this
+                    // row's id. The MessageListWidget's draw_walk
+                    // toggles visibility per-row.
+                    hover_actions := View {
                         width: Fit
                         height: Fit
+                        margin: Inset{top: 4}
+                        spacing: 6
                         visible: false
-                        duration_label := Label {
+
+                        copy_button := Button {
                             width: Fit
                             height: Fit
+                            padding: Inset{top: 4 bottom: 4 left: 10 right: 10}
+                            text: "Copy"
+                            draw_bg +: { color: #252529 }
                             draw_text +: {
                                 color: #8c8c9b
-                                text_style +: { font_size: 9 }
+                                text_style +: { font_size: 10 }
+                            }
+                        }
+
+                        regen_button := Button {
+                            width: Fit
+                            height: Fit
+                            padding: Inset{top: 4 bottom: 4 left: 10 right: 10}
+                            text: "↻ Regenerate"
+                            draw_bg +: { color: #252529 }
+                            draw_text +: {
+                                color: #8c8c9b
+                                text_style +: { font_size: 10 }
                             }
                         }
                     }
                 }
             }
 
+            // Tool call card — a single short row per tool event.
             ToolMsg := RoundedView {
-                width: Fill
+                width: Fit
                 height: Fit
                 margin: Inset{top: 2 bottom: 2 left: 8 right: 8}
-                padding: Inset{left: 12 top: 6 right: 12 bottom: 6}
+                padding: Inset{left: 10 top: 4 right: 10 bottom: 4}
                 show_bg: true
-                draw_bg +: { color: #232d23 radius: 4.0 }
+                draw_bg +: { color: #1c2419 radius: 4.0 }
 
-                View {
-                    width: Fill
+                content_label := Label {
+                    width: Fit
                     height: Fit
-                    flow: Down
-
-                    sender_label := Label {
-                        width: Fit
-                        height: Fit
-                        draw_text +: {
-                            color: #78c88c
-                            text_style +: { font_size: 10 }
-                        }
-                    }
-
-                    content_label := Label {
-                        width: Fill
-                        height: Fit
-                        draw_text +: {
-                            color: #a0c8a0
-                            text_style +: { font_size: 12 }
-                        }
-
-                    }
-
-                    duration_view := View {
-                        width: Fit
-                        height: Fit
-                        visible: false
-                        duration_label := Label { width: Fit height: Fit }
+                    draw_text +: {
+                        color: #78c88c
+                        text_style +: { font_size: 11 }
                     }
                 }
             }
 
-            SystemMsg := RoundedView {
+            // System notice — a centered dim row.
+            SystemMsg := View {
                 width: Fill
                 height: Fit
                 margin: Inset{top: 2 bottom: 2 left: 8 right: 8}
-                padding: Inset{left: 12 top: 6 right: 12 bottom: 6}
-                show_bg: true
-                draw_bg +: { color: #372d19 radius: 4.0 }
+                padding: Inset{left: 12 top: 4 right: 12 bottom: 4}
 
-                View {
+                content_label := Label {
                     width: Fill
                     height: Fit
-                    flow: Down
-
-                    sender_label := Label {
-                        width: Fit
-                        height: Fit
-                        draw_text +: {
-                            color: #c8af50
-                            text_style +: { font_size: 10 }
-                        }
-                    }
-
-                    content_label := Label {
-                        width: Fill
-                        height: Fit
-                        draw_text +: {
-                            color: #c8b878
-                            text_style +: { font_size: 12 }
-                        }
-
-                    }
-
-                    duration_view := View {
-                        width: Fit
-                        height: Fit
-                        visible: false
-                        duration_label := Label { width: Fit height: Fit }
+                    draw_text +: {
+                        color: #c8af50
+                        text_style +: { font_size: 11 }
                     }
                 }
             }
 
+            // Error notice — a tinted card.
             ErrorMsg := RoundedView {
                 width: Fill
                 height: Fit
                 margin: Inset{top: 2 bottom: 2 left: 8 right: 8}
                 padding: Inset{left: 12 top: 6 right: 12 bottom: 6}
                 show_bg: true
-                draw_bg +: { color: #461919 radius: 4.0 }
+                draw_bg +: { color: #3a1a1a radius: 4.0 }
 
-                View {
+                content_label := Label {
                     width: Fill
                     height: Fit
-                    flow: Down
-
-                    sender_label := Label {
-                        width: Fit
-                        height: Fit
-                        draw_text +: {
-                            color: #ff6464
-                            text_style +: { font_size: 10 }
-                        }
-                    }
-
-                    content_label := Label {
-                        width: Fill
-                        height: Fit
-                        draw_text +: {
-                            color: #ff9090
-                            text_style +: { font_size: 12 }
-                        }
-
-                    }
-
-                    duration_view := View {
-                        width: Fit
-                        height: Fit
-                        visible: false
-                        duration_label := Label { width: Fit height: Fit }
+                    draw_text +: {
+                        color: #ff9090
+                        text_style +: { font_size: 11 }
                     }
                 }
             }
@@ -542,7 +302,7 @@ script_mod! {
     }
 
     let AgentStatusWidget = #(AgentStatusWidget::register_widget(vm)) {
-        width: 240
+        width: Fill
         height: Fill
 
         agent_list := PortalList {
@@ -596,7 +356,6 @@ script_mod! {
                             color: #8c8c9b
                             text_style +: { font_size: 10 }
                         }
-
                     }
                 }
             }
@@ -631,7 +390,6 @@ script_mod! {
                             color: #8c8c9b
                             text_style +: { font_size: 10 }
                         }
-
                     }
                 }
             }
@@ -764,7 +522,6 @@ script_mod! {
         width: Fill
         height: Fill
 
-        // Three column lists: todo, running, done — drawn in order by SwarmBoardWidget::draw_walk
         todo_list := PortalList {
             width: Fill
             height: Fill
@@ -792,7 +549,6 @@ script_mod! {
                             color: #a0b8d8
                             text_style +: { font_size: 11 }
                         }
-
                     }
 
                     task_assignee_label := Label {
@@ -834,7 +590,6 @@ script_mod! {
                             color: #ffc864
                             text_style +: { font_size: 11 }
                         }
-
                     }
 
                     task_assignee_label := Label {
@@ -876,7 +631,6 @@ script_mod! {
                             color: #64c864
                             text_style +: { font_size: 11 }
                         }
-
                     }
 
                     task_assignee_label := Label {
@@ -892,53 +646,109 @@ script_mod! {
         }
     }
 
-    // ── Main app layout ───────────────────────────────────────────────────────
+    // ── Shared row templates used by the new App layout ─────────────
+    // A suggestion tile shown in the empty state.
+    let SuggestionCard = RoundedView {
+        width: 360
+        height: Fit
+        padding: Inset{top: 14 bottom: 14 left: 16 right: 16}
+        margin: Inset{top: 0 bottom: 12 right: 12}
+        show_bg: true
+        draw_bg +: { color: #1a1a1e radius: 10.0 }
+
+        suggestion_label := Label {
+            width: Fill
+            height: Fit
+            draw_text +: {
+                color: #dcdce6
+                text_style +: { font_size: 13 }
+            }
+        }
+    }
+
+    // A compact pill shown when the sidebar is collapsed to the
+    // icon rail. Just a 28×28 button with the icon's text.
+    let IconRailButton = Button {
+        width: 36
+        height: 36
+        draw_bg +: { color: #252529 radius: 8.0 }
+        draw_text +: {
+            color: #dcdce6
+            text_style +: { font_size: 16 }
+        }
+    }
+
+    // ── App layout ──────────────────────────────────────────────────────
+    // Top bar (56px) + body row (sidebar + central column + optional
+    // right panel).
     startup() do #(App::script_component(vm)) {
         ui: Root {
-            on_startup: || {
-                ui.main_view.render()
-            }
-
             main_window := Window {
                 window.inner_size: vec2(1200, 800)
-                window.title: "jcode — Agent Chat"
+                window.title: "jcode"
                 body +: {
                     flow: Down
+                    draw_bg +: { color: #0f0f12 }
 
-                    // ── Header bar ────────────────────────────────────────
-                    View {
+                    // ── Top bar ─────────────────────────────────────────
+                    top_bar := View {
                         width: Fill
-                        height: 48
+                        height: 56
                         flow: Right
                         align: Align{y: 0.5}
-                        padding: Inset{left: 16 right: 16}
+                        padding: Inset{left: 12 right: 12}
                         spacing: 12
                         show_bg: true
-                        draw_bg +: { color: #1a1a1e }
+                        draw_bg +: { color: #18181c }
 
-                        // Session title (fills remaining width)
-                        session_title_label := Label {
-                            width: Fill
+                        // Sidebar collapse / expand toggle.
+                        sidebar_toggle := Button {
+                            width: 32
+                            height: 32
+                            text: "≡"
+                            draw_bg +: { color: #252529 radius: 6.0 }
+                            draw_text +: {
+                                color: #dcdce6
+                                text_style +: { font_size: 16 }
+                            }
+                        }
+
+                        // App title / brand.
+                        title_label := Label {
+                            width: Fit
                             height: Fit
                             text: "jcode"
                             draw_text +: {
                                 color: #dcdce6
-                                text_style +: { font_size: 15 }
+                                text_style +: { font_size: 16 }
                             }
                         }
 
-                        // Token usage (hidden when no data)
-                        token_usage_label := Label {
+                        // Model selector pill (label only for this
+                        // pass; the dropdown is a follow-up).
+                        model_pill := View {
                             width: Fit
-                            height: Fit
-                            text: ""
-                            draw_text +: {
-                                color: #6482aa
-                                text_style +: { font_size: 10 }
+                            height: 28
+                            padding: Inset{left: 12 right: 12}
+                            align: Align{y: 0.5}
+                            show_bg: true
+                            draw_bg +: { color: #1a1a1e radius: 14.0 }
+
+                            model_label := Label {
+                                width: Fit
+                                height: Fit
+                                text: "claude-opus-4-5"
+                                draw_text +: {
+                                    color: #8ab4f8
+                                    text_style +: { font_size: 11 }
+                                }
                             }
                         }
 
-                        // Model + processing status
+                        View { width: Fill height: 1 }
+
+                        // Right side: connection status + token
+                        // usage. Hidden when narrow.
                         status_label := Label {
                             width: Fit
                             height: Fit
@@ -948,168 +758,281 @@ script_mod! {
                                 text_style +: { font_size: 11 }
                             }
                         }
+
+                        token_usage_label := Label {
+                            width: Fit
+                            height: Fit
+                            text: ""
+                            margin: Inset{left: 12}
+                            draw_text +: {
+                                color: #6482aa
+                                text_style +: { font_size: 10 }
+                            }
+                        }
                     }
 
-                    // ── Header / body separator ───────────────────────────
+                    // 1px divider under the top bar.
                     View {
                         width: Fill
                         height: 1
                         show_bg: true
-                        draw_bg +: { color: #2a2a34 }
+                        draw_bg +: { color: #2a2a2f }
                     }
 
-                    // ── Three-column body ─────────────────────────────────
-                    main_view := View {
+                    // ── Body row ───────────────────────────────────────
+                    body_row := View {
                         width: Fill
                         height: Fill
                         flow: Right
-                        on_render: || {
-                            // Re-render triggered when state changes
-                        }
 
-                        // Left: session list
-                        View {
+                        // ── Left sidebar (full sessions view) ───────────
+                        // `visible: true` is overridden per-frame by
+                        // `App::update_header_labels` from
+                        // `state.sidebar_collapsed`.
+                        sidebar := View {
                             width: 280
                             height: Fill
                             flow: Down
                             show_bg: true
-                            draw_bg +: { color: #202026 }
+                            draw_bg +: { color: #18181c }
 
+                            new_chat_button := Button {
+                                width: Fill
+                                height: 36
+                                margin: Inset{top: 10 bottom: 8 left: 12 right: 12}
+                                padding: Inset{left: 12 right: 12}
+                                text: "+  New chat"
+                                align: Align{x: 0.0, y: 0.5}
+                                draw_bg +: { color: #252529 radius: 8.0 }
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+
+                            // Section header.
                             View {
                                 width: Fill
                                 height: Fit
-                                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+                                padding: Inset{top: 4 bottom: 4 left: 16 right: 12}
 
                                 Label {
                                     text: "Sessions"
                                     draw_text +: {
                                         color: #8c8c9b
-                                        text_style +: { font_size: 11 }
+                                        text_style +: { font_size: 10 }
                                     }
                                 }
                             }
 
                             session_list := SessionListWidget {}
-                        }
 
-                        // ── Left / center column separator ────────────────
-                        View {
-                            width: 1
-                            height: Fill
-                            show_bg: true
-                            draw_bg +: { color: #2a2a34 }
-                        }
-
-                        // Center: messages + composer
-                        View {
-                            width: Fill
-                            height: Fill
-                            flow: Down
-                            show_bg: true
-                            draw_bg +: { color: #141418 }
-
-                            message_list := MessageListWidget {}
-
-                            // ── Slash-command suggestion popup ─────────────────
-                            slash_popup := SlashPopupWidget {}
-
-                            // ── @ file-mention suggestion popup ────────────────
-                            file_popup := FilePopupWidget {}
-
-                            // Composer row
+                            // Bottom-left settings link (no-op
+                            // for this pass).
                             View {
                                 width: Fill
-                                height: Fit
-                                flow: Right
-                                spacing: 8
-                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
-                                align: Align{y: 1.0}
+                                height: 1
+                                margin: Inset{top: 0 bottom: 0}
                                 show_bg: true
-                                draw_bg +: { color: #1e1e24 }
-
-                                composer_input := TextInput {
-                                    width: Fill
-                                    height: Fit
-                                    empty_text: "Message… (Enter to send)"
-                                    draw_bg +: { color: #2a2a30 }
-                                }
-
-                                send_button := Button {
-                                    text: "Send"
-                                    width: 80
-                                }
+                                draw_bg +: { color: #2a2a2f }
                             }
 
-                            // Mode hint — keyboard shortcuts for active mode
                             View {
                                 width: Fill
                                 height: Fit
-                                padding: Inset{left: 12 top: 2 bottom: 4}
+                                padding: Inset{top: 8 bottom: 12 left: 16 right: 12}
+                                flow: Right
+                                spacing: 8
 
-                                mode_label := Label {
-                                    width: Fill
-                                    height: Fit
-                                    text: ""
+                                Label {
+                                    text: "⚙ Settings"
                                     draw_text +: {
-                                        color: #6482aa
-                                        text_style +: { font_size: 10 }
+                                        color: #8c8c9b
+                                        text_style +: { font_size: 11 }
                                     }
                                 }
                             }
                         }
 
-                        // ── Center / right column separator ───────────────
-                        View {
-                            width: 1
+                        // ── Collapsed icon rail (visible only when
+                        // sidebar_collapsed) ───────────────────────────
+                        icon_rail := View {
+                            width: 56
                             height: Fill
+                            flow: Down
+                            align: Align{x: 0.5}
+                            padding: Inset{top: 10}
+                            spacing: 8
                             show_bg: true
-                            draw_bg +: { color: #2a2a34 }
+                            draw_bg +: { color: #18181c }
+
+                            expand_button := IconRailButton { text: "≡" }
+                            new_chat_rail := IconRailButton { text: "+" }
                         }
 
-                        // Right: agent status + plan board
-                        View {
+                        // ── Central column: messages + composer ──────────
+                        center := View {
+                            width: Fill
+                            height: Fill
+                            flow: Down
+                            show_bg: true
+                            draw_bg +: { color: #0f0f12 }
+
+                            // Welcome / empty state — visible only
+                            // when `state.messages.is_empty()`.
+                            welcome_view := View {
+                                width: Fill
+                                height: Fill
+                                flow: Down
+                                align: Align{x: 0.5, y: 0.5}
+                                padding: Inset{top: 60}
+
+                                View {
+                                    width: Fit
+                                    height: Fit
+                                    margin: Inset{bottom: 24}
+
+                                    Label {
+                                        text: "What can I help with?"
+                                        draw_text +: {
+                                            color: #dcdce6
+                                            text_style +: { font_size: 22 }
+                                        }
+                                    }
+                                }
+
+                                // Suggestion cards stack vertically so
+                                // they read as a clean column. (Makepad
+                                // doesn't have a CSS-style wrap-flow
+                                // helper; a future pass can use a
+                                // custom layout that does row-wrap.)
+                                suggestions_column := View {
+                                    width: Fit
+                                    height: Fit
+                                    flow: Down
+
+                                    suggestion_1 := SuggestionCard {
+                                        suggestion_label: { text: "Refactor the auth module to use a single session-token table" }
+                                    }
+                                    suggestion_2 := SuggestionCard {
+                                        suggestion_label: { text: "Add unit tests for the swarm coordinator lifecycle" }
+                                    }
+                                    suggestion_3 := SuggestionCard {
+                                        suggestion_label: { text: "Investigate the last 10 CI flakes and propose fixes" }
+                                    }
+                                }
+                            }
+
+                            // The actual message thread.
+                            message_list := MessageListWidget {}
+
+                            View { width: Fill height: 1 }
+
+                            // Slash-command suggestion popup
+                            // (sits above the composer when the
+                            // user types a `/`).
+                            slash_popup := SlashPopupWidget {}
+
+                            // `@`-file-mention popup.
+                            file_popup := FilePopupWidget {}
+
+                            // ── Composer (sticky bottom) ─────────────────
+                            composer_area := View {
+                                width: Fill
+                                height: Fit
+                                flow: Down
+                                padding: Inset{top: 8 bottom: 16 left: 0 right: 0}
+                                show_bg: true
+                                draw_bg +: { color: #0f0f12 }
+
+                                composer_row := View {
+                                    width: Fill
+                                    height: Fit
+                                    flow: Right
+                                    align: Align{y: 1.0}
+                                    padding: Inset{left: 24 right: 24}
+                                    spacing: 12
+
+                                    composer_input := TextInput {
+                                        width: Fill
+                                        height: Fit
+                                        padding: Inset{top: 12 bottom: 12 left: 16 right: 16}
+                                        empty_text: "Ask anything…"
+                                        draw_bg +: { color: #1a1a1e radius: 12.0 }
+                                    }
+
+                                    send_button := Button {
+                                        width: 44
+                                        height: 44
+                                        text: "↑"
+                                        draw_bg +: { color: #1a1a1e radius: 12.0 }
+                                        draw_text +: {
+                                            color: #8ab4f8
+                                            text_style +: { font_size: 18 }
+                                        }
+                                    }
+                                }
+
+                                View {
+                                    width: Fill
+                                    height: Fit
+                                    padding: Inset{top: 4 bottom: 0 left: 24 right: 24}
+
+                                    mode_label := Label {
+                                        width: Fill
+                                        height: Fit
+                                        text: ""
+                                        draw_text +: {
+                                            color: #6482aa
+                                            text_style +: { font_size: 10 }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Right panel (agent status + plan board) ───
+                        right_panel := View {
                             width: 260
                             height: Fill
                             flow: Down
                             show_bg: true
-                            draw_bg +: { color: #1a1a22 }
+                            draw_bg +: { color: #18181c }
 
-                            // ── Agents section header ──────────────────────
                             View {
                                 width: Fill
                                 height: Fit
-                                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+                                padding: Inset{top: 12 bottom: 8 left: 12 right: 12}
 
                                 Label {
                                     text: "Agents"
                                     draw_text +: {
                                         color: #8c8c9b
-                                        text_style +: { font_size: 11 }
+                                        text_style +: { font_size: 10 }
                                     }
                                 }
                             }
 
                             agent_status := AgentStatusWidget {}
 
-                            // ── Divider ────────────────────────────────────
                             View {
                                 width: Fill
                                 height: 1
+                                margin: Inset{top: 4 bottom: 4}
                                 show_bg: true
-                                draw_bg +: { color: #2a2a34 }
+                                draw_bg +: { color: #2a2a2f }
                             }
 
-                            // ── Plan board section header ──────────────────
                             View {
                                 width: Fill
                                 height: Fit
-                                padding: Inset{top: 8 bottom: 8 left: 12 right: 8}
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
 
                                 Label {
                                     text: "Plan"
                                     draw_text +: {
                                         color: #8c8c9b
-                                        text_style +: { font_size: 11 }
+                                        text_style +: { font_size: 10 }
                                     }
                                 }
                             }
@@ -1122,7 +1045,6 @@ script_mod! {
         }
     }
 }
-
 /// Top-level application struct.
 #[derive(Script, ScriptHook)]
 pub struct App {
@@ -1140,6 +1062,10 @@ pub struct App {
     /// Last error from backend startup (if any). Rendered in the
     /// header status in red.
     last_error: Mutex<Option<String>>,
+    /// Whether the left sidebar is collapsed to the icon rail.
+    /// Lives on `App` (not `GUI_STATE`) because it's a purely
+    /// UI-local toggle, not derived from any server state.
+    sidebar_collapsed: bool,
 }
 
 /// All backend-related state held by `App`. We use a struct so the
@@ -1272,14 +1198,19 @@ impl App {
             .label(cx, ids!(token_usage_label))
             .set_text(cx, &usage_text);
 
-        if let Some(session) = state
-            .active_session_id
-            .as_ref()
-            .and_then(|id| state.sessions.iter().find(|s| &s.id == id))
-        {
+        // Model pill: prefer the active session's
+        // `provider_model` (e.g. "claude-opus-4-5"); fall back
+        // to the global `model_name` field which is set on the
+        // first `History` event.
+        let model_text = if !state.provider_model.is_empty() {
+            state.provider_model.clone()
+        } else {
+            state.model_name.clone()
+        };
+        if !model_text.is_empty() {
             self.ui
-                .label(cx, ids!(session_title_label))
-                .set_text(cx, &session.title);
+                .label(cx, ids!(model_label))
+                .set_text(cx, &model_text);
         }
     }
 
@@ -1308,6 +1239,108 @@ impl App {
         let _ = self.send_command(GuiCommand::SendMessage(text));
         input.set_text(cx, "");
         self.update_header_labels(cx);
+    }
+
+    /// The send button doubles as stop while a stream is in
+    /// flight. `handle_actions` calls this on every click; we
+    /// decide based on the current `processing_status` whether to
+    /// fire `SendMessage` (new turn) or `Cancel` (interrupt).
+    fn on_send_or_stop_click(&mut self, cx: &mut Cx) {
+        let is_active = GUI_STATE
+            .read()
+            .map(|s| s.processing_status.is_active())
+            .unwrap_or(false);
+        if is_active {
+            // We don't have a real cancel request id to send —
+            // the previous SendMessage id lives in the worker
+            // task. Send a soft interrupt instead, which the
+            // server injects at the next safe point.
+            let _ = self.send_command(GuiCommand::SoftInterrupt(
+                "User pressed Stop".to_string(),
+                true,
+            ));
+        } else {
+            self.send_message(cx);
+        }
+        self.update_send_button_label(cx);
+        self.update_header_labels(cx);
+    }
+
+    /// Update the send/stop button label from `processing_status`.
+    /// Called after every state change that could toggle streaming
+    /// on/off. The colour is fixed in the `script_mod!` block to
+    /// keep this path simple (Makepad doesn't expose a per-button
+    /// text-color setter; the colour would have to be re-applied
+    /// via the `draw_text` shader, which is out of scope for this
+    /// pass).
+    fn update_send_button_label(&mut self, cx: &mut Cx) {
+        let is_active = GUI_STATE
+            .read()
+            .map(|s| s.processing_status.is_active())
+            .unwrap_or(false);
+        let btn = self.ui.button(cx, ids!(send_button));
+        if is_active {
+            btn.set_text(cx, "■");
+        } else {
+            btn.set_text(cx, "↑");
+        }
+    }
+
+    /// Toggle the sidebar between the 280px panel and the
+    /// 56px icon rail. Mutates `self.sidebar_collapsed` and
+    /// repaints so the visibility takes effect.
+    fn toggle_sidebar(&mut self, cx: &mut Cx) {
+        self.sidebar_collapsed = !self.sidebar_collapsed;
+        self.update_layout_visibility(cx);
+    }
+
+    /// Update sidebar / icon_rail / right_panel / welcome
+    /// visibility from the current `sidebar_collapsed` and
+    /// message-count state. Called after every event drain and
+    /// after the toggle click.
+    fn update_layout_visibility(&mut self, cx: &mut Cx) {
+        let (collapsed, empty) = {
+            let state = GUI_STATE.read().unwrap();
+            (
+                self.sidebar_collapsed,
+                state.messages.is_empty() && !state.is_streaming,
+            )
+        };
+        self.ui.view(cx, ids!(sidebar)).set_visible(cx, !collapsed);
+        self.ui.view(cx, ids!(icon_rail)).set_visible(cx, collapsed);
+        // Right panel: hidden when sidebar is collapsed to give
+        // the chat thread more room. (The kanban + agent status
+        // is rarely needed; the user can re-open.)
+        self.ui.view(cx, ids!(right_panel)).set_visible(cx, !collapsed);
+        // Welcome view visible only when there are no messages.
+        self.ui.view(cx, ids!(welcome_view)).set_visible(cx, empty);
+        self.ui.redraw(cx);
+    }
+
+    /// Fill the composer with one of the welcome suggestions.
+    /// Suggestions come from `GUI_STATE.welcome_suggestions` (set
+    /// once in `default_welcome_suggestions`); we pick by
+    /// index so the GUI never owns the strings directly.
+    fn on_suggestion_click(&mut self, cx: &mut Cx, index: usize) {
+        let suggestion = {
+            let state = GUI_STATE.read().unwrap();
+            state
+                .welcome_suggestions
+                .get(index)
+                .cloned()
+                .unwrap_or_default()
+        };
+        if suggestion.is_empty() {
+            return;
+        }
+        let input = self.ui.text_input(cx, ids!(composer_input));
+        input.set_text(cx, &suggestion);
+        // The text-input widget's cursor drops at the end of the
+        // new text by default; the user can just type or press
+        // Enter to send. (Makepad's set_cursor API takes a Cursor
+        // struct, which is heavier than we need for a focus
+        // adjustment here.)
+        self.ui.redraw(cx);
     }
 
     /// Accept the currently highlighted slash suggestion. If the
@@ -1503,6 +1536,11 @@ impl MatchEvent for App {
         self.backend.cmd_tx = Some(cmd_tx);
         self.backend.backend_init_rx = Some(init_rx);
 
+        // Initial layout: sidebar visible, icon rail hidden,
+        // welcome view visible (no messages yet). The send
+        // button starts as "↑" (Idle).
+        self.update_layout_visibility(cx);
+        self.update_send_button_label(cx);
         self.update_header_labels(cx);
         self.ui.redraw(cx);
     }
@@ -1512,13 +1550,45 @@ impl MatchEvent for App {
         self.poll_backend_init(cx);
         if self.drain_backend_events() {
             self.update_header_labels(cx);
+            self.update_send_button_label(cx);
+            self.update_layout_visibility(cx);
             self.ui.redraw(cx);
         }
 
-        // Send on button click
+        // ── Top bar: sidebar toggle ───────────────────────────────
+        if self.ui.button(cx, ids!(sidebar_toggle)).clicked(actions) {
+            self.toggle_sidebar(cx);
+        }
+        // Same widget id path; the icon-rail's `expand_button`
+        // also opens the sidebar when collapsed.
+        if self.ui.button(cx, ids!(expand_button)).clicked(actions) {
+            self.toggle_sidebar(cx);
+        }
+
+        // ── New chat buttons (sidebar + icon rail) ──────────────────
+        if self.ui.button(cx, ids!(new_chat_button)).clicked(actions)
+            || self.ui.button(cx, ids!(new_chat_rail)).clicked(actions)
+        {
+            // `Clear` removes the conversation history; the
+            // server will push an empty `History` back, which
+            // re-derives the welcome view.
+            let _ = self.send_command(GuiCommand::Clear);
+        }
+
+        // ── Welcome suggestion cards ─────────────────────────────────
+        if self.ui.view(cx, ids!(suggestion_1)).finger_up(actions).is_some() {
+            self.on_suggestion_click(cx, 0);
+        }
+        if self.ui.view(cx, ids!(suggestion_2)).finger_up(actions).is_some() {
+            self.on_suggestion_click(cx, 1);
+        }
+        if self.ui.view(cx, ids!(suggestion_3)).finger_up(actions).is_some() {
+            self.on_suggestion_click(cx, 2);
+        }
+
+        // Send / Stop on button click.
         if self.ui.button(cx, ids!(send_button)).clicked(actions) {
-            self.send_message(cx);
-            self.update_header_labels(cx);
+            self.on_send_or_stop_click(cx);
         }
 
         let composer = self.ui.text_input(cx, ids!(composer_input));
@@ -1622,6 +1692,8 @@ impl AppMain for App {
         self.poll_backend_init(cx);
         if self.drain_backend_events() {
             self.update_header_labels(cx);
+            self.update_send_button_label(cx);
+            self.update_layout_visibility(cx);
             self.ui.redraw(cx);
         }
         self.match_event(cx, event);
