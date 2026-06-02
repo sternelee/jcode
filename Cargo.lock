@@ -3821,6 +3821,7 @@ name = "jcode-gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "jcode-app-core",
  "jcode-message-types",
  "jcode-plan",
  "jcode-protocol",

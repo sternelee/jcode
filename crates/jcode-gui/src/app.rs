@@ -10,19 +10,49 @@
 //!  │             ├─────────────────────────┤                  │
 //!  │             │ Composer (bottom)       │                  │
 //!  └─────────────┴─────────────────────────┴──────────────────┘
+//!
+//! The App hosts a [`GuiBackend`] in an `Arc<GuiBackend>`; the
+//! backend owns the in-process server and an `InprocClient`. The
+//! main thread drives the Makepad event loop; a small async task on
+//! the same Makepad runtime forwards `GuiCommand` enum values to
+//! the `InprocClient` and pumps `ServerEvent`s into [`GUI_STATE`]
+//! via `GuiState::apply_event`.
 
 use makepad_widgets::*;
 
 use crate::agent_status::AgentStatusWidget;
 use crate::composer::{self, ComposerMode};
 use crate::file_popup::FilePopupWidget;
-use crate::gui_state::{
-    GuiMessage, GuiSwarmMember, MessageRole, ProcessingStatus, SessionEntry, SessionKind, GUI_STATE,
-};
+use crate::gui_backend::GuiBackend;
+use crate::gui_state::{GUI_STATE, ProcessingStatus};
 use crate::message_list::MessageListWidget;
 use crate::session_list::SessionListWidget;
 use crate::slash_popup::SlashPopupWidget;
 use crate::swarm_board::SwarmBoardWidget;
+use jcode_app_core::inproc_client::InprocClient;
+use jcode_app_core::protocol::ServerEvent;
+use jcode_app_core::provider::Provider;
+use std::sync::{Arc, Mutex};
+use tokio::sync::{mpsc, oneshot};
+
+/// Commands the main thread sends to the worker task that owns the
+/// `InprocClient`. Each variant maps to one or two
+/// `InprocClient::*` async method calls. Some variants are reserved
+/// for follow-up passes (e.g. an explicit Cancel button) and are
+/// `#[allow(dead_code)]`'d to silence the warning.
+#[derive(Debug)]
+#[allow(dead_code)]
+enum GuiCommand {
+    SendMessage(String),
+    SoftInterrupt(String, bool),
+    Cancel(u64),
+    Clear,
+    SetModel(String),
+    CycleModel(i8),
+    RefreshModels,
+    ResumeSession(String),
+    Reload,
+}
 
 app_main!(App);
 
@@ -1098,263 +1128,144 @@ script_mod! {
 pub struct App {
     #[live]
     ui: WidgetRef,
+    /// `None` until the in-process server has finished starting up.
+    /// Populated by a oneshot the worker task writes to.
+    backend: BackendState,
+    /// Monotonic id used to correlate the next `SendMessage` request
+    /// with a future `Cancel` from the UI. Reserved for a follow-up
+    /// pass that wires the explicit Cancel button; currently
+    /// unused.
+    #[allow(dead_code)]
+    next_request_id: u64,
+    /// Last error from backend startup (if any). Rendered in the
+    /// header status in red.
+    last_error: Mutex<Option<String>>,
+}
+
+/// All backend-related state held by `App`. We use a struct so the
+/// `Debug` derive on `App` stays cheap (one `None` / `Some(...)`
+/// branch). The fields are individually wrapped:
+/// - `cmd_tx` is the channel the main thread posts `GuiCommand`s
+///   into; the worker task drains it.
+/// - `backend_init_rx` resolves once when the worker has finished
+///   starting the server.
+/// - `backend` is `Some` once init is complete.
+#[derive(Default)]
+struct BackendState {
+    cmd_tx: Option<mpsc::UnboundedSender<GuiCommand>>,
+    backend_init_rx: Option<oneshot::Receiver<Result<Arc<GuiBackend>, anyhow::Error>>>,
+    backend: Option<Arc<GuiBackend>>,
 }
 
 impl App {
-    fn populate_demo_state() {
-        let mut state = GUI_STATE.write().unwrap();
-
-        // Model / usage info
-        state.model_name = "claude-opus-4-5".into();
-        state.session_tokens = Some((12_400, 3_800));
-
-        // Demo sessions
-        state.sessions.push(SessionEntry {
-            id: "s1".into(),
-            title: "Code Review".into(),
-            preview: "Reviewing authentication module".into(),
-            kind: SessionKind::Single,
-            is_active: true,
-            unread: 0,
-        });
-        state.sessions.push(SessionEntry {
-            id: "sg1".into(),
-            title: "Refactor Swarm".into(),
-            preview: "3 agents working…".into(),
-            kind: SessionKind::SwarmGroup { swarm_id: "swarm-1".into() },
-            is_active: false,
-            unread: 2,
-        });
-
-        // Demo messages
-        state.messages.push(GuiMessage {
-            id: 1,
-            role: MessageRole::User,
-            content: "Please review the authentication module for security issues.".into(),
-            agent_id: None,
-            agent_name: None,
-            tool_calls: vec![],
-            tool_data: None,
-            duration_secs: None,
-        });
-        state.messages.push(GuiMessage {
-            id: 2,
-            role: MessageRole::Assistant,
-            content: "I'll analyze the authentication module. Let me start by examining the token handling code…".into(),
-            agent_id: None,
-            agent_name: None,
-            tool_calls: vec!["read_file".into(), "grep".into()],
-            tool_data: None,
-            duration_secs: Some(1.4),
-        });
-        state.messages.push(GuiMessage {
-            id: 3,
-            role: MessageRole::Tool,
-            content: "read_file(\"src/auth/token.rs\") → 147 lines".into(),
-            agent_id: None,
-            agent_name: None,
-            tool_calls: vec![],
-            tool_data: None,
-            duration_secs: None,
-        });
-        state.messages.push(GuiMessage {
-            id: 4,
-            role: MessageRole::Assistant,
-            content: "Found 2 potential issues: (1) JWT secret stored in env without validation, (2) tokens not rotated on privilege escalation.".into(),
-            agent_id: None,
-            agent_name: None,
-            tool_calls: vec![],
-            tool_data: None,
-            duration_secs: Some(3.2),
-        });
-
-        // Demo swarm members
-        state.swarm_members.push(GuiSwarmMember {
-            session_id: "coord-1".into(),
-            name: "Coordinator".into(),
-            role: jcode_swarm_core::SwarmRole::Coordinator,
-            status: jcode_swarm_core::SwarmLifecycleStatus::Running,
-            detail: Some("Orchestrating refactor tasks".into()),
-            is_coordinator: true,
-            status_age_secs: Some(30),
-        });
-        state.swarm_members.push(GuiSwarmMember {
-            session_id: "agent-1".into(),
-            name: "Agent-α".into(),
-            role: jcode_swarm_core::SwarmRole::Agent,
-            status: jcode_swarm_core::SwarmLifecycleStatus::Running,
-            detail: Some("Refactoring auth module".into()),
-            is_coordinator: false,
-            status_age_secs: Some(10),
-        });
-        state.swarm_members.push(GuiSwarmMember {
-            session_id: "agent-2".into(),
-            name: "Agent-β".into(),
-            role: jcode_swarm_core::SwarmRole::Agent,
-            status: jcode_swarm_core::SwarmLifecycleStatus::Done,
-            detail: Some("Completed token rotation".into()),
-            is_coordinator: false,
-            status_age_secs: Some(120),
-        });
-        state.swarm_members.push(GuiSwarmMember {
-            session_id: "agent-3".into(),
-            name: "Agent-γ".into(),
-            role: jcode_swarm_core::SwarmRole::Agent,
-            status: jcode_swarm_core::SwarmLifecycleStatus::Ready,
-            detail: Some("Awaiting task assignment".into()),
-            is_coordinator: false,
-            status_age_secs: Some(5),
-        });
-
-        // Demo plan tasks (kanban board)
-        use crate::gui_state::{KanbanColumn, PlanTaskCard};
-        state.plan_tasks.push(PlanTaskCard {
-            id: "t1".into(),
-            title: "Validate JWT secret at startup".into(),
-            column: KanbanColumn::Running,
-            assigned_to: Some("Agent-α".into()),
-        });
-        state.plan_tasks.push(PlanTaskCard {
-            id: "t2".into(),
-            title: "Add token rotation on privilege escalation".into(),
-            column: KanbanColumn::Todo,
-            assigned_to: None,
-        });
-        state.plan_tasks.push(PlanTaskCard {
-            id: "t3".into(),
-            title: "Write auth module tests".into(),
-            column: KanbanColumn::Todo,
-            assigned_to: None,
-        });
-        state.plan_tasks.push(PlanTaskCard {
-            id: "t4".into(),
-            title: "Audit token refresh endpoints".into(),
-            column: KanbanColumn::Done,
-            assigned_to: Some("Agent-β".into()),
-        });
-
-        // Active session
-        state.active_session_id = Some("s1".into());
+    /// Default provider the GUI uses when the user has not set
+    /// `JCODE_PROVIDER` / `JCODE_PROVIDER_PROFILE_NAME`. This is the
+    /// simplest provider that always works without external auth
+    /// (the `JcodeProvider` is the project's own aggregator). A
+    /// follow-up pass wires the full env-driven `init_provider` from
+    /// the CLI for parity with the TUI.
+    fn default_provider() -> Arc<dyn Provider> {
+        Arc::new(jcode_app_core::provider::jcode::JcodeProvider::new())
     }
 
-    fn send_message(&mut self, cx: &mut Cx) {
-        let input = self.ui.text_input(cx, ids!(composer_input));
-        let text = input.text();
-        if text.trim().is_empty() {
+    /// Run a closure on the GUI state under a write lock.
+    fn with_state_mut<R>(f: impl FnOnce(&mut crate::gui_state::GuiState) -> R) -> R {
+        let mut guard = GUI_STATE.write().unwrap();
+        f(&mut guard)
+    }
+
+    /// Read-only accessor for tests / future introspection.
+    #[allow(dead_code)]
+    fn with_state<R>(f: impl FnOnce(&crate::gui_state::GuiState) -> R) -> R {
+        let guard = GUI_STATE.read().unwrap();
+        f(&guard)
+    }
+
+    /// Send a `GuiCommand` to the worker task. Returns `Err` if the
+    /// backend is not yet ready or the worker has shut down — the
+    /// caller can surface the error to the user.
+    fn send_command(&self, cmd: GuiCommand) -> Result<(), String> {
+        let Some(tx) = self.backend.cmd_tx.as_ref() else {
+            return Err("Server is starting up; please wait.".to_string());
+        };
+        tx.send(cmd).map_err(|_| "Server worker has stopped".to_string())
+    }
+
+    /// Drain all pending `ServerEvent`s from the backend and apply
+    /// each to `GUI_STATE`. Returns `true` if any state changed (so
+    /// the caller knows to redraw).
+    fn drain_backend_events(&self) -> bool {
+        let Some(backend) = self.backend.backend.as_ref() else {
+            return false;
+        };
+        backend.poll(|ev| {
+            Self::apply_event(ev);
+        })
+    }
+
+    /// Apply a single `ServerEvent` to the global GUI state under a
+    /// write lock.
+    fn apply_event(ev: &ServerEvent) {
+        if let Ok(mut state) = GUI_STATE.write() {
+            state.apply_event(ev);
+        }
+    }
+
+    /// Drive the bootstrap handshake: once the worker has
+    /// `GuiBackend::start` complete, take the result and stash the
+    /// `Arc<GuiBackend>` in `self.backend.backend`. The worker also
+    /// sends the initial `Subscribe` + `GetHistory`, so the first
+    /// `ServerEvent::History` lands soon after init.
+    fn poll_backend_init(&mut self, cx: &mut Cx) {
+        // Take the receiver out so we can poll it without holding
+        // a borrow across the rest of the frame.
+        let Some(mut rx) = self.backend.backend_init_rx.take() else {
             return;
+        };
+        let result: Result<Result<Arc<GuiBackend>, anyhow::Error>, oneshot::error::TryRecvError> =
+            rx.try_recv();
+        match result {
+            Ok(Ok(backend)) => {
+                self.backend.backend = Some(backend);
+                self.update_header_labels(cx);
+                self.ui.redraw(cx);
+            }
+            Ok(Err(e)) => {
+                let msg = format!("{e:#}");
+                *self.last_error.lock().unwrap() = Some(msg.clone());
+                self.update_header_labels(cx);
+                self.ui.redraw(cx);
+            }
+            Err(oneshot::error::TryRecvError::Closed) => {
+                // The worker died before it could signal us.
+                *self.last_error.lock().unwrap() =
+                    Some("Server worker exited during startup".to_string());
+                self.update_header_labels(cx);
+                self.ui.redraw(cx);
+            }
+            Err(oneshot::error::TryRecvError::Empty) => {
+                // Not ready yet; put the receiver back.
+                self.backend.backend_init_rx = Some(rx);
+            }
         }
-
-        {
-            let mut state = GUI_STATE.write().unwrap();
-            let id = state.messages.len() as u64 + 1;
-            state.messages.push(GuiMessage {
-                id,
-                role: MessageRole::User,
-                content: text,
-                agent_id: None,
-                agent_name: None,
-                tool_calls: vec![],
-                tool_data: None,
-                duration_secs: None,
-            });
-            state.processing_status = ProcessingStatus::Thinking { elapsed_secs: 0.0 };
-            // Clear all suggestion state after sending.
-            state.slash_suggestions.clear();
-            state.slash_selected = 0;
-            state.file_suggestions.clear();
-            state.file_selected = 0;
-        }
-
-        input.set_text(cx, "");
-        self.ui.redraw(cx);
     }
 
-    /// Recompute slash/file suggestions from `text` and store them in `GUI_STATE`.
-    fn update_suggestions(&self, text: &str) {
-        const MAX: usize = 8;
-        let slash: Vec<(String, String)> = composer::slash_suggestions(text, MAX)
-            .into_iter()
-            .map(|(cmd, desc)| (cmd.to_string(), desc.to_string()))
-            .collect();
-
-        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-        let files = if let Some(query) = composer::at_file_query(text) {
-            composer::file_suggestions(&cwd, query, MAX)
-        } else {
-            Vec::new()
-        };
-
-        let mut state = GUI_STATE.write().unwrap();
-        if state.slash_selected >= slash.len() {
-            state.slash_selected = 0;
-        }
-        state.slash_suggestions = slash;
-
-        if state.file_selected >= files.len() {
-            state.file_selected = 0;
-        }
-        state.file_suggestions = files;
-    }
-
-    /// Accept the currently highlighted slash suggestion and insert it into the input.
-    fn accept_slash_suggestion(&mut self, cx: &mut Cx) -> bool {
-        let cmd = {
-            let state = GUI_STATE.read().unwrap();
-            state
-                .slash_suggestions
-                .get(state.slash_selected)
-                .map(|(c, _)| c.clone())
-        };
-        let Some(cmd) = cmd else {
-            return false;
-        };
-        let input = self.ui.text_input(cx, ids!(composer_input));
-        input.set_text(cx, &cmd);
-        {
-            let mut state = GUI_STATE.write().unwrap();
-            state.slash_suggestions.clear();
-            state.slash_selected = 0;
-        }
-        self.ui.redraw(cx);
-        true
-    }
-
-    /// Accept the currently highlighted file suggestion and append it after the `@`.
-    fn accept_file_suggestion(&mut self, cx: &mut Cx) -> bool {
-        let file_name = {
-            let state = GUI_STATE.read().unwrap();
-            state
-                .file_suggestions
-                .get(state.file_selected)
-                .cloned()
-        };
-        let Some(file_name) = file_name else {
-            return false;
-        };
-        let input = self.ui.text_input(cx, ids!(composer_input));
-        let current = input.text();
-        // Replace the text after the last '@' with the chosen file name.
-        if let Some(at_pos) = current.rfind('@') {
-            let prefix = &current[..at_pos];
-            let replacement = format!("{}@{}", prefix, file_name);
-            input.set_text(cx, &replacement);
-        }
-        {
-            let mut state = GUI_STATE.write().unwrap();
-            state.file_suggestions.clear();
-            state.file_selected = 0;
-        }
-        self.ui.redraw(cx);
-        true
-    }
-
-    /// Refresh dynamic header labels (status + token usage) from current GUI state.
     fn update_header_labels(&mut self, cx: &mut Cx) {
         let state = GUI_STATE.read().unwrap();
-        let status_text = state.header_status();
+        let status_text = {
+            let last_err = self.last_error.lock().unwrap().clone();
+            if let Some(err) = &last_err {
+                format!("Error: {}", err)
+            } else {
+                state.header_status()
+            }
+        };
         self.ui
             .label(cx, ids!(status_label))
             .set_text(cx, &status_text);
+        // We don't currently swap the label colour on error (no
+        // first-class set_text_color on LabelRef in this Makepad
+        // build); the "Error:" prefix is the visual cue.
 
         let usage_text = state.token_usage_label().unwrap_or_default();
         self.ui
@@ -1371,16 +1282,207 @@ impl App {
                 .set_text(cx, &session.title);
         }
     }
+
+    /// Submit a user message. Called by the Send button and the
+    /// Enter key on the composer. Routes through the InprocClient.
+    fn send_message(&mut self, cx: &mut Cx) {
+        let input = self.ui.text_input(cx, ids!(composer_input));
+        let text = input.text();
+        if text.trim().is_empty() {
+            return;
+        }
+        // Update local state immediately for snappy UI: push the
+        // user bubble, mark the model as thinking, clear
+        // suggestions. The server will eventually send the
+        // `TextDelta` for the assistant half.
+        Self::with_state_mut(|state| {
+            state.streaming_text.clear();
+            state.streaming_tool_calls.clear();
+            state.is_streaming = false;
+            state.processing_status = ProcessingStatus::Thinking { elapsed_secs: 0.0 };
+            state.slash_suggestions.clear();
+            state.slash_selected = 0;
+            state.file_suggestions.clear();
+            state.file_selected = 0;
+        });
+        let _ = self.send_command(GuiCommand::SendMessage(text));
+        input.set_text(cx, "");
+        self.update_header_labels(cx);
+    }
+
+    /// Accept the currently highlighted slash suggestion. If the
+    /// suggestion is a server-action slash command (e.g. `/clear`,
+    /// `/refresh`), dispatch it to the server. Otherwise paste the
+    /// command name into the composer.
+    fn accept_slash_suggestion(&mut self, cx: &mut Cx) -> bool {
+        let cmd = {
+            let state = GUI_STATE.read().unwrap();
+            state
+                .slash_suggestions
+                .get(state.slash_selected)
+                .map(|(c, _)| c.clone())
+        };
+        let Some(cmd) = cmd else {
+            return false;
+        };
+        // Map known server-action slashes to GuiCommands. Anything
+        // we don't recognise here stays as a chat-style message
+        // for the user to press Enter on.
+        let dispatched = match cmd.as_str() {
+            "/clear" => {
+                let _ = self.send_command(GuiCommand::Clear);
+                true
+            }
+            "/refresh" => {
+                let _ = self.send_command(GuiCommand::RefreshModels);
+                true
+            }
+            "/reload" => {
+                let _ = self.send_command(GuiCommand::Reload);
+                true
+            }
+            _ => false,
+        };
+        if dispatched {
+            Self::with_state_mut(|s| {
+                s.slash_suggestions.clear();
+                s.slash_selected = 0;
+            });
+            self.ui.redraw(cx);
+            return true;
+        }
+        // Not a server action — paste the command into the input
+        // and let the user press Enter to send it.
+        let input = self.ui.text_input(cx, ids!(composer_input));
+        input.set_text(cx, &cmd);
+        Self::with_state_mut(|s| {
+            s.slash_suggestions.clear();
+            s.slash_selected = 0;
+        });
+        self.ui.redraw(cx);
+        true
+    }
+
+    /// Accept the currently highlighted file suggestion and append
+    /// it after the `@` in the composer.
+    fn accept_file_suggestion(&mut self, cx: &mut Cx) -> bool {
+        let file_name = {
+            let state = GUI_STATE.read().unwrap();
+            state
+                .file_suggestions
+                .get(state.file_selected)
+                .cloned()
+        };
+        let Some(file_name) = file_name else {
+            return false;
+        };
+        let input = self.ui.text_input(cx, ids!(composer_input));
+        let current = input.text();
+        if let Some(at_pos) = current.rfind('@') {
+            let prefix = &current[..at_pos];
+            let replacement = format!("{}@{}", prefix, file_name);
+            input.set_text(cx, &replacement);
+        }
+        Self::with_state_mut(|s| {
+            s.file_suggestions.clear();
+            s.file_selected = 0;
+        });
+        self.ui.redraw(cx);
+        true
+    }
+
+    /// Recompute slash/file suggestions from `text` and store them
+    /// in `GUI_STATE`.
+    fn update_suggestions(&self, text: &str) {
+        const MAX: usize = 8;
+        let slash: Vec<(String, String)> = composer::slash_suggestions(text, MAX)
+            .into_iter()
+            .map(|(cmd, desc)| (cmd.to_string(), desc.to_string()))
+            .collect();
+
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let files = if let Some(query) = composer::at_file_query(text) {
+            composer::file_suggestions(&cwd, query, MAX)
+        } else {
+            Vec::new()
+        };
+
+        Self::with_state_mut(|state| {
+            if state.slash_selected >= slash.len() {
+                state.slash_selected = 0;
+            }
+            state.slash_suggestions = slash;
+
+            if state.file_selected >= files.len() {
+                state.file_selected = 0;
+            }
+            state.file_suggestions = files;
+        });
+    }
 }
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
-        App::populate_demo_state();
+        // The worker task drives the in-process server. It:
+        //   1. constructs the default provider;
+        //   2. boots `GuiBackend::start` (which spawns the server
+        //      worker thread and creates the InprocClient);
+        //   3. fires the initial Subscribe + GetHistory so the first
+        //      History event lands on the main thread;
+        //   4. drains `cmd_rx` for the lifetime of the GUI and
+        //      forwards each `GuiCommand` to the InprocClient.
+        let (init_tx, init_rx) = oneshot::channel::<Result<Arc<GuiBackend>, anyhow::Error>>();
+        let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<GuiCommand>();
+        let _ = cx.spawner().spawn(async move {
+            let provider = Self::default_provider();
+            let backend = match GuiBackend::start(provider).await {
+                Ok(b) => b,
+                Err(e) => {
+                    let _ = init_tx.send(Err(e));
+                    return;
+                }
+            };
+            // Send the initial Subscribe + GetHistory through the
+            // shared `Mutex<InprocClient>`.
+            {
+                let mut client = backend.client.lock().await;
+                if let Err(e) = client.subscribe().await {
+                    jcode_app_core::logging::warn(&format!(
+                        "jcode-gui: initial subscribe failed: {e}"
+                    ));
+                }
+                if let Err(e) = client.get_history_event().await {
+                    jcode_app_core::logging::warn(&format!(
+                        "jcode-gui: initial get_history failed: {e}"
+                    ));
+                }
+            }
+            let _ = init_tx.send(Ok(backend.clone()));
+            while let Some(cmd) = cmd_rx.recv().await {
+                let mut client = backend.client.lock().await;
+                if let Err(e) = dispatch_command(&mut client, cmd).await {
+                    jcode_app_core::logging::warn(&format!(
+                        "jcode-gui: command dispatch failed: {e}"
+                    ));
+                }
+            }
+        });
+
+        self.backend.cmd_tx = Some(cmd_tx);
+        self.backend.backend_init_rx = Some(init_rx);
+
         self.update_header_labels(cx);
         self.ui.redraw(cx);
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        // ── Pump backend events on every action dispatch ─────────────
+        self.poll_backend_init(cx);
+        if self.drain_backend_events() {
+            self.update_header_labels(cx);
+            self.ui.redraw(cx);
+        }
+
         // Send on button click
         if self.ui.button(cx, ids!(send_button)).clicked(actions) {
             self.send_message(cx);
@@ -1389,9 +1491,6 @@ impl MatchEvent for App {
 
         let composer = self.ui.text_input(cx, ids!(composer_input));
 
-        // ── Unhandled key events from the TextInput ───────────────────────────
-        // ArrowUp/ArrowDown in a single-line TextInput emit KeyDownUnhandled,
-        // which we intercept here to navigate the suggestion lists.
         if let Some(key_event) = composer.key_down_unhandled(actions) {
             let (has_slash, slash_len, has_file, file_len) = {
                 let state = GUI_STATE.read().unwrap();
@@ -1404,31 +1503,31 @@ impl MatchEvent for App {
             };
             match key_event.key_code {
                 KeyCode::ArrowUp if has_slash => {
-                    let mut state = GUI_STATE.write().unwrap();
-                    state.slash_selected = state
-                        .slash_selected
-                        .checked_sub(1)
-                        .unwrap_or(slash_len - 1);
-                    drop(state);
+                    Self::with_state_mut(|state| {
+                        state.slash_selected = state
+                            .slash_selected
+                            .checked_sub(1)
+                            .unwrap_or(slash_len - 1);
+                    });
                     self.ui.redraw(cx);
                 }
                 KeyCode::ArrowDown if has_slash => {
-                    let mut state = GUI_STATE.write().unwrap();
-                    state.slash_selected = (state.slash_selected + 1) % slash_len;
-                    drop(state);
+                    Self::with_state_mut(|state| {
+                        state.slash_selected = (state.slash_selected + 1) % slash_len;
+                    });
                     self.ui.redraw(cx);
                 }
                 KeyCode::ArrowUp if has_file => {
-                    let mut state = GUI_STATE.write().unwrap();
-                    state.file_selected =
-                        state.file_selected.checked_sub(1).unwrap_or(file_len - 1);
-                    drop(state);
+                    Self::with_state_mut(|state| {
+                        state.file_selected =
+                            state.file_selected.checked_sub(1).unwrap_or(file_len - 1);
+                    });
                     self.ui.redraw(cx);
                 }
                 KeyCode::ArrowDown if has_file => {
-                    let mut state = GUI_STATE.write().unwrap();
-                    state.file_selected = (state.file_selected + 1) % file_len;
-                    drop(state);
+                    Self::with_state_mut(|state| {
+                        state.file_selected = (state.file_selected + 1) % file_len;
+                    });
                     self.ui.redraw(cx);
                 }
                 KeyCode::Tab if has_slash => {
@@ -1438,45 +1537,41 @@ impl MatchEvent for App {
                     self.accept_file_suggestion(cx);
                 }
                 KeyCode::Escape => {
-                    let mut state = GUI_STATE.write().unwrap();
-                    state.slash_suggestions.clear();
-                    state.slash_selected = 0;
-                    state.file_suggestions.clear();
-                    state.file_selected = 0;
-                    drop(state);
+                    Self::with_state_mut(|s| {
+                        s.slash_suggestions.clear();
+                        s.slash_selected = 0;
+                        s.file_suggestions.clear();
+                        s.file_selected = 0;
+                    });
                     self.ui.redraw(cx);
                 }
                 _ => {}
             }
         }
 
-        // Escape from the TextInput widget itself
         if composer.escaped(actions) {
-            let mut state = GUI_STATE.write().unwrap();
-            state.slash_suggestions.clear();
-            state.slash_selected = 0;
-            state.file_suggestions.clear();
-            state.file_selected = 0;
-            drop(state);
+            Self::with_state_mut(|s| {
+                s.slash_suggestions.clear();
+                s.slash_selected = 0;
+                s.file_suggestions.clear();
+                s.file_selected = 0;
+            });
             self.ui.redraw(cx);
         }
 
-        // ── Enter: accept suggestion or send message ──────────────────────────
-        if let Some(_returned) = composer.returned(actions) {
-            // If a slash popup is open, accept it; otherwise send the message.
-            if !self.accept_slash_suggestion(cx) && !self.accept_file_suggestion(cx) {
-                self.send_message(cx);
-                self.update_header_labels(cx);
-            }
+        if composer.returned(actions).is_some()
+            && !self.accept_slash_suggestion(cx)
+            && !self.accept_file_suggestion(cx)
+        {
+            self.send_message(cx);
+            self.update_header_labels(cx);
         }
 
-        // ── Text change: update mode hint and suggestion lists ────────────────
         if let Some(text) = composer.changed(actions) {
             let mode = ComposerMode::detect(&text);
             self.ui
                 .label(cx, ids!(mode_label))
                 .set_text(cx, mode.mode_hint());
-
             self.update_suggestions(&text);
             self.ui.redraw(cx);
         }
@@ -1490,7 +1585,78 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // Pump backend state on every event (including non-input
+        // events like timer ticks) so the UI is always live.
+        self.poll_backend_init(cx);
+        if self.drain_backend_events() {
+            self.update_header_labels(cx);
+            self.ui.redraw(cx);
+        }
         self.match_event(cx, event);
         self.ui.handle_event(cx, event, &mut Scope::empty());
     }
+}
+
+// ── Free helpers ───────────────────────────────────────────────────────────
+
+/// Async dispatcher: take a `GuiCommand` and forward it to the right
+/// `InprocClient` method. Runs on the worker task that owns the
+/// shared `Mutex<InprocClient>` (so the `&mut client` is unique for
+/// the duration of the call).
+async fn dispatch_command(client: &mut InprocClient, cmd: GuiCommand) -> Result<(), String> {
+    match cmd {
+        GuiCommand::SendMessage(text) => client
+            .send_message(&text)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        GuiCommand::SoftInterrupt(content, urgent) => client
+            .soft_interrupt(&content, urgent)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        GuiCommand::Cancel(id) => client
+            .cancel(id)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        GuiCommand::Clear => client
+            .clear()
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        GuiCommand::SetModel(model) => client
+            .set_model(&model)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        GuiCommand::CycleModel(dir) => client
+            .cycle_model(dir)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        GuiCommand::RefreshModels => client
+            .refresh_models()
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        GuiCommand::ResumeSession(id) => client
+            .resume_session_with_options(&id, false, false)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        GuiCommand::Reload => client
+            .reload()
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+    }
+}
+
+/// Placeholder: kept for symmetry with future passes. The first
+/// implementation uses the synchronous `default_provider`; a later
+/// pass can wire the env-driven `provider_init` from the CLI.
+#[allow(dead_code)]
+async fn _self_build_provider_await_inline() -> Arc<dyn Provider> {
+    Arc::new(jcode_app_core::provider::jcode::JcodeProvider::new())
 }
