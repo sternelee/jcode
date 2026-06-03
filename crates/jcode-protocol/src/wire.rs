@@ -179,6 +179,23 @@ pub enum Request {
     #[serde(rename = "set_model")]
     SetModel { id: u64, model: String },
 
+    /// Set the active provider by short name (`"claude"`,
+    /// `"openai"`, `"gemini"`, `"ollama"`, etc.). The server
+    /// constructs a fresh `Provider` from the name and re-fetches
+    /// the model's available list. The response is a
+    /// `ProviderChanged` event with the new model name and the
+    /// refreshed `available_models` list.
+    #[serde(rename = "set_provider")]
+    SetProvider { id: u64, provider: String },
+
+    /// Ask the server for the list of models the active provider
+    /// supports. The response is a `ProviderChanged` event with
+    /// `provider` set to the current provider and `available_models`
+    /// populated. The GUI fires this on startup and after any
+    /// provider change.
+    #[serde(rename = "available_models")]
+    AvailableModels { id: u64 },
+
     /// Set the active model by structured route identity.
     #[serde(rename = "set_route")]
     SetRoute {
@@ -1010,6 +1027,28 @@ pub enum ServerEvent {
         model: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         provider_name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+
+    /// Provider / model catalogue changed (response to
+    /// `SetProvider` or `AvailableModels`). The GUI listens for
+    /// this to update the model pill and the picker popover.
+    #[serde(rename = "provider_changed")]
+    ProviderChanged {
+        id: u64,
+        /// Short provider name (e.g. `"claude"`, `"openai"`,
+        /// `"ollama"`). When `error` is `Some(_)`, this field is
+        /// the previous provider name and the switch failed.
+        provider: String,
+        /// Currently-active model id (e.g. `"claude-opus-4-8"`).
+        model: String,
+        /// Model ids the new provider reports via
+        /// `available_models_display()`. Empty when the switch
+        /// failed.
+        available_models: Vec<String>,
+        /// `Some(msg)` if the switch failed; the GUI surfaces
+        /// the message in the header status.
         #[serde(skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
