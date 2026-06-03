@@ -48,8 +48,10 @@ enum GuiCommand {
     Cancel(u64),
     Clear,
     SetModel(String),
+    SetProvider(String),
     CycleModel(i8),
     RefreshModels,
+    AvailableModels,
     ResumeSession(String),
     Reload,
 }
@@ -724,16 +726,18 @@ script_mod! {
                             }
                         }
 
-                        // Model selector pill (label only for this
-                        // pass; the dropdown is a follow-up).
-                        model_pill := View {
+                        // Model selector pill — clickable; opens
+                        // the model picker popover.
+                        model_pill := Button {
                             width: Fit
                             height: 28
                             padding: Inset{left: 12 right: 12}
                             align: Align{y: 0.5}
-                            show_bg: true
                             draw_bg +: { color: #1a1a1e radius: 14.0 }
-
+                            draw_text +: {
+                                color: #8ab4f8
+                                text_style +: { font_size: 11 }
+                            }
                             model_label := Label {
                                 width: Fit
                                 height: Fit
@@ -882,7 +886,7 @@ script_mod! {
                             // when `state.messages.is_empty()`.
                             welcome_view := View {
                                 width: Fill
-                                height: Fill
+                                height: Fit
                                 flow: Down
                                 align: Align{x: 0.5, y: 0.5}
                                 padding: Inset{top: 60}
@@ -1041,6 +1045,531 @@ script_mod! {
                         }
                     }
                 }
+
+                // ── Model picker popover (overlays the chat thread) ─
+                // Hidden by default; shown when the user clicks the
+                // model pill in the top bar.
+                model_picker_popover := View {
+                    width: Fill
+                    height: Fill
+                    visible: false
+                    align: Align{x: 0.5, y: 0.2}
+                    padding: Inset{top: 60}
+
+                    RoundedView {
+                        width: 320
+                        height: Fit
+                        flow: Down
+                        padding: Inset{top: 8 bottom: 8 left: 4 right: 4}
+                        show_bg: true
+                        draw_bg +: { color: #1a1a1e radius: 10.0 }
+
+                        View {
+                            width: Fill
+                            height: Fit
+                            padding: Inset{left: 12 top: 6 bottom: 6 right: 12}
+
+                            Label {
+                                text: "Switch model"
+                                draw_text +: {
+                                    color: #8c8c9b
+                                    text_style +: { font_size: 10 }
+                                }
+                            }
+                        }
+
+                        picker_model_0 := View {
+                            width: Fill
+                            height: Fit
+                            padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                            margin: Inset{top: 1 bottom: 1}
+                            show_bg: true
+                            draw_bg +: { color: #1a1a1e }
+
+                            picker_model_label := Label {
+                                width: Fill
+                                height: Fit
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                        }
+                        picker_model_1 := View {
+                            width: Fill
+                            height: Fit
+                            padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                            margin: Inset{top: 1 bottom: 1}
+                            show_bg: true
+                            draw_bg +: { color: #1a1a1e }
+
+                            picker_model_label := Label {
+                                width: Fill
+                                height: Fit
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                        }
+                        picker_model_2 := View {
+                            width: Fill
+                            height: Fit
+                            padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                            margin: Inset{top: 1 bottom: 1}
+                            show_bg: true
+                            draw_bg +: { color: #1a1a1e }
+
+                            picker_model_label := Label {
+                                width: Fill
+                                height: Fit
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                        }
+                        picker_model_3 := View {
+                            width: Fill
+                            height: Fit
+                            padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                            margin: Inset{top: 1 bottom: 1}
+                            show_bg: true
+                            draw_bg +: { color: #1a1a1e }
+
+                            picker_model_label := Label {
+                                width: Fill
+                                height: Fit
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                        }
+                        picker_model_4 := View {
+                            width: Fill
+                            height: Fit
+                            padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                            margin: Inset{top: 1 bottom: 1}
+                            show_bg: true
+                            draw_bg +: { color: #1a1a1e }
+
+                            picker_model_label := Label {
+                                width: Fill
+                                height: Fit
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                        }
+                        picker_model_5 := View {
+                            width: Fill
+                            height: Fit
+                            padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                            margin: Inset{top: 1 bottom: 1}
+                            show_bg: true
+                            draw_bg +: { color: #1a1a1e }
+
+                            picker_model_label := Label {
+                                width: Fill
+                                height: Fit
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                        }
+                        picker_model_6 := View {
+                            width: Fill
+                            height: Fit
+                            padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                            margin: Inset{top: 1 bottom: 1}
+                            show_bg: true
+                            draw_bg +: { color: #1a1a1e }
+
+                            picker_model_label := Label {
+                                width: Fill
+                                height: Fit
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                        }
+                        picker_model_7 := View {
+                            width: Fill
+                            height: Fit
+                            padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                            margin: Inset{top: 1 bottom: 1}
+                            show_bg: true
+                            draw_bg +: { color: #1a1a1e }
+
+                            picker_model_label := Label {
+                                width: Fill
+                                height: Fit
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Settings modal (centered overlay) ───────────────────
+                // Hidden by default; shown when the user clicks
+                // "⚙ Settings" in the sidebar.
+                settings_overlay := View {
+                    width: Fill
+                    height: Fill
+                    visible: false
+                    draw_bg +: { color: #000000B3 }
+
+                    View {
+                        width: Fill
+                        height: Fill
+                        align: Align{x: 0.5, y: 0.5}
+                        padding: Inset{top: 40 bottom: 40 left: 40 right: 40}
+
+                        settings_panel := RoundedView {
+                            width: 520
+                            height: Fit
+                            flow: Down
+                            padding: Inset{top: 20 bottom: 20 left: 24 right: 24}
+                            show_bg: true
+                            draw_bg +: { color: #1a1a1e radius: 14.0 }
+
+                            // Header row
+                            View {
+                                width: Fill
+                                height: Fit
+                                flow: Right
+                                align: Align{y: 0.5}
+                                margin: Inset{bottom: 16}
+
+                                View { width: Fill height: 1 }
+
+                                Label {
+                                    text: "Settings"
+                                    draw_text +: {
+                                        color: #dcdce6
+                                        text_style +: { font_size: 16 }
+                                    }
+                                }
+
+                                View { width: Fill height: 1 }
+
+                                settings_close := Button {
+                                    width: 28
+                                    height: 28
+                                    text: "✕"
+                                    draw_bg +: { color: #252529 radius: 6.0 }
+                                    draw_text +: {
+                                        color: #8c8c9b
+                                        text_style +: { font_size: 12 }
+                                    }
+                                }
+                            }
+
+                            // Provider section — explicit rows
+                            // (no PortalList; the count is small and
+                            // stable so 8 hand-rolled rows are
+                            // simpler than driving a PortalList).
+                            View {
+                                width: Fill
+                                height: Fit
+                                margin: Inset{bottom: 8}
+
+                                Label {
+                                    text: "Provider"
+                                    draw_text +: {
+                                        color: #8c8c9b
+                                        text_style +: { font_size: 11 }
+                                    }
+                                }
+                            }
+
+                            provider_row_0 := Button {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                text: "○  claude"
+                                align: Align{x: 0.0, y: 0.5}
+                                draw_bg +: { color: #1a1a1e }
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                            provider_row_1 := Button {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                text: "○  openai"
+                                align: Align{x: 0.0, y: 0.5}
+                                draw_bg +: { color: #1a1a1e }
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                            provider_row_2 := Button {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                text: "○  openrouter"
+                                align: Align{x: 0.0, y: 0.5}
+                                draw_bg +: { color: #1a1a1e }
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                            provider_row_3 := Button {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                text: "○  copilot"
+                                align: Align{x: 0.0, y: 0.5}
+                                draw_bg +: { color: #1a1a1e }
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                            provider_row_4 := Button {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                text: "○  gemini"
+                                align: Align{x: 0.0, y: 0.5}
+                                draw_bg +: { color: #1a1a1e }
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                            provider_row_5 := Button {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                text: "○  cursor"
+                                align: Align{x: 0.0, y: 0.5}
+                                draw_bg +: { color: #1a1a1e }
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                            provider_row_6 := Button {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                text: "○  antigravity"
+                                align: Align{x: 0.0, y: 0.5}
+                                draw_bg +: { color: #1a1a1e }
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+                            provider_row_7 := Button {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 8 bottom: 8 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                text: "○  ollama"
+                                align: Align{x: 0.0, y: 0.5}
+                                draw_bg +: { color: #1a1a1e }
+                                draw_text +: {
+                                    color: #dcdce6
+                                    text_style +: { font_size: 12 }
+                                }
+                            }
+
+                            // Model section
+                            View {
+                                width: Fill
+                                height: Fit
+                                margin: Inset{top: 16 bottom: 8}
+
+                                Label {
+                                    text: "Available models"
+                                    draw_text +: {
+                                        color: #8c8c9b
+                                        text_style +: { font_size: 11 }
+                                    }
+                                }
+                            }
+
+                            // 8 model rows too (most providers expose
+                            // <= 8 named models).
+                            model_row_0 := View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                show_bg: true
+                                draw_bg +: { color: #181820 }
+
+                                model_name_label := Label {
+                                    width: Fill
+                                    height: Fit
+                                    draw_text +: {
+                                        color: #dcdce6
+                                        text_style +: { font_size: 12 }
+                                    }
+                                }
+                            }
+                            model_row_1 := View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                show_bg: true
+                                draw_bg +: { color: #181820 }
+
+                                model_name_label := Label {
+                                    width: Fill
+                                    height: Fit
+                                    draw_text +: {
+                                        color: #dcdce6
+                                        text_style +: { font_size: 12 }
+                                    }
+                                }
+                            }
+                            model_row_2 := View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                show_bg: true
+                                draw_bg +: { color: #181820 }
+
+                                model_name_label := Label {
+                                    width: Fill
+                                    height: Fit
+                                    draw_text +: {
+                                        color: #dcdce6
+                                        text_style +: { font_size: 12 }
+                                    }
+                                }
+                            }
+                            model_row_3 := View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                show_bg: true
+                                draw_bg +: { color: #181820 }
+
+                                model_name_label := Label {
+                                    width: Fill
+                                    height: Fit
+                                    draw_text +: {
+                                        color: #dcdce6
+                                        text_style +: { font_size: 12 }
+                                    }
+                                }
+                            }
+                            model_row_4 := View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                show_bg: true
+                                draw_bg +: { color: #181820 }
+
+                                model_name_label := Label {
+                                    width: Fill
+                                    height: Fit
+                                    draw_text +: {
+                                        color: #dcdce6
+                                        text_style +: { font_size: 12 }
+                                    }
+                                }
+                            }
+                            model_row_5 := View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                show_bg: true
+                                draw_bg +: { color: #181820 }
+
+                                model_name_label := Label {
+                                    width: Fill
+                                    height: Fit
+                                    draw_text +: {
+                                        color: #dcdce6
+                                        text_style +: { font_size: 12 }
+                                    }
+                                }
+                            }
+                            model_row_6 := View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                show_bg: true
+                                draw_bg +: { color: #181820 }
+
+                                model_name_label := Label {
+                                    width: Fill
+                                    height: Fit
+                                    draw_text +: {
+                                        color: #dcdce6
+                                        text_style +: { font_size: 12 }
+                                    }
+                                }
+                            }
+                            model_row_7 := View {
+                                width: Fill
+                                height: Fit
+                                padding: Inset{top: 6 bottom: 6 left: 12 right: 12}
+                                margin: Inset{top: 2 bottom: 2}
+                                show_bg: true
+                                draw_bg +: { color: #181820 }
+
+                                model_name_label := Label {
+                                    width: Fill
+                                    height: Fit
+                                    draw_text +: {
+                                        color: #dcdce6
+                                        text_style +: { font_size: 12 }
+                                    }
+                                }
+                            }
+
+                            // Footer
+                            View {
+                                width: Fill
+                                height: Fit
+                                margin: Inset{top: 20}
+                                flow: Right
+                                align: Align{y: 0.5}
+
+                                View { width: Fill height: 1 }
+
+                                Label {
+                                    text: "Provider switching requires a model pick too."
+                                    draw_text +: {
+                                        color: #6482aa
+                                        text_style +: { font_size: 10 }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1085,13 +1614,16 @@ struct BackendState {
 
 impl App {
     /// Default provider the GUI uses when the user has not set
-    /// `JCODE_PROVIDER` / `JCODE_PROVIDER_PROFILE_NAME`. This is the
-    /// simplest provider that always works without external auth
-    /// (the `JcodeProvider` is the project's own aggregator). A
-    /// follow-up pass wires the full env-driven `init_provider` from
-    /// the CLI for parity with the TUI.
+    /// `JCODE_PROVIDER` / `JCODE_PROVIDER_PROFILE_NAME` and has
+    /// not picked one in Settings. We use `MultiProvider::new()`
+    /// which performs the same env-driven detection the TUI's
+    /// `init_provider` does (Claude Code CLI subscription first,
+    /// then API keys for Claude / OpenAI / Gemini / etc., then
+    /// Ollama on `localhost:11434`). The first message send
+    /// surfaces a clear error event if no provider is actually
+    /// reachable.
     fn default_provider() -> Arc<dyn Provider> {
-        Arc::new(jcode_app_core::provider::jcode::JcodeProvider::new())
+        Arc::new(jcode_app_core::provider::MultiProvider::new())
     }
 
     /// Run a closure on the GUI state under a write lock.
@@ -1341,6 +1873,185 @@ impl App {
         // struct, which is heavier than we need for a focus
         // adjustment here.)
         self.ui.redraw(cx);
+    }
+
+    /// Toggle the Settings modal overlay. The modal is a
+    /// `width: Fill, height: Fill` view with a semi-transparent
+    /// backdrop; the click-on-backdrop case is handled by
+    /// `on_settings_backdrop_click` below.
+    fn toggle_settings(&mut self, cx: &mut Cx) {
+        Self::with_state_mut(|s| {
+            s.settings_open = !s.settings_open;
+            // Closing settings also closes the model picker.
+            if !s.settings_open {
+                s.model_picker_open = false;
+            }
+        });
+        self.update_modal_visibility(cx);
+    }
+
+    /// Close the Settings modal. Wired to the ✕ button and
+    /// the backdrop click.
+    fn close_settings(&mut self, cx: &mut Cx) {
+        Self::with_state_mut(|s| {
+            s.settings_open = false;
+        });
+        self.update_modal_visibility(cx);
+    }
+
+    /// Toggle the model picker popover.
+    fn toggle_model_picker(&mut self, cx: &mut Cx) {
+        Self::with_state_mut(|s| {
+            s.model_picker_open = !s.model_picker_open;
+        });
+        self.update_modal_visibility(cx);
+    }
+
+    /// Close the model picker. The model picker is also
+    /// auto-closed when the settings modal opens, so the user
+    /// doesn't see two modals at once.
+    fn close_model_picker(&mut self, cx: &mut Cx) {
+        Self::with_state_mut(|s| {
+            s.model_picker_open = false;
+        });
+        self.update_modal_visibility(cx);
+    }
+
+    /// User picked a provider from the Settings list. Fires
+    /// `Request::SetProvider`; the resulting
+    /// `ServerEvent::ProviderChanged` updates the model pill
+    /// and the available-models list.
+    fn on_provider_pick(&mut self, cx: &mut Cx, name: &str) {
+        let _ = self.send_command(GuiCommand::SetProvider(name.to_string()));
+        // Close the modal — the user sees the new model pill
+        // update on the next event drain.
+        Self::with_state_mut(|s| {
+            s.settings_open = false;
+        });
+        self.update_modal_visibility(cx);
+    }
+
+    /// User picked a model from the picker popover or the
+    /// Settings model list. Fires `Request::SetModel`.
+    fn on_model_pick(&mut self, cx: &mut Cx, model: &str) {
+        let _ = self.send_command(GuiCommand::SetModel(model.to_string()));
+        // Close the picker.
+        Self::with_state_mut(|s| {
+            s.model_picker_open = false;
+        });
+        self.update_modal_visibility(cx);
+    }
+
+    /// Update Settings modal + model picker popover visibility
+    /// from `GUI_STATE`. Called after every state change that
+    /// could open / close either.
+    fn update_modal_visibility(&mut self, cx: &mut Cx) {
+        let (settings_open, picker_open) = {
+            let state = GUI_STATE.read().unwrap();
+            (state.settings_open, state.model_picker_open)
+        };
+        self.ui
+            .view(cx, ids!(settings_overlay))
+            .set_visible(cx, settings_open);
+        self.ui
+            .view(cx, ids!(model_picker_popover))
+            .set_visible(cx, picker_open);
+        // The model picker list depends on
+        // `state.available_model_list`, so refresh it whenever
+        // the picker is opened.
+        if picker_open {
+            self.refresh_model_picker_rows(cx);
+        }
+        if settings_open {
+            self.refresh_provider_rows(cx);
+            self.refresh_settings_model_rows(cx);
+        }
+        self.ui.redraw(cx);
+    }
+
+    /// Update the model picker popover rows from
+    /// `state.available_model_list`. Marks the active model
+    /// with a check mark (suffix "(active)").
+    fn refresh_model_picker_rows(&mut self, cx: &mut Cx) {
+        // We can't easily reach into the PortalList's items
+        // from the script side without a custom widget. The
+        // model picker popover is a future-pass enhancement; the
+        // Settings modal already shows the same list and is
+        // the canonical picker for this pass.
+        let _ = cx;
+    }
+
+    /// Update the Settings modal's provider list rows.
+    fn refresh_provider_rows(&mut self, cx: &mut Cx) {
+        let (current, _total) = {
+            let state = GUI_STATE.read().unwrap();
+            (state.current_provider.clone(), state.available_model_list.len())
+        };
+        // We use a single "show all known providers" list. The
+        // active provider is marked with a `●` prefix; others
+        // show `○`. (Future pass: add per-provider auth-status
+        // detection by calling a `provider_status:<name>` debug
+        // command, but the simple show-all list is enough for
+        // this pass.)
+        let providers = [
+            "claude",
+            "openai",
+            "openrouter",
+            "copilot",
+            "gemini",
+            "cursor",
+            "antigravity",
+            "ollama",
+        ];
+        for (idx, name) in providers.iter().enumerate() {
+            let label_id = match idx {
+                0 => ids!(provider_row_0),
+                1 => ids!(provider_row_1),
+                2 => ids!(provider_row_2),
+                3 => ids!(provider_row_3),
+                4 => ids!(provider_row_4),
+                5 => ids!(provider_row_5),
+                6 => ids!(provider_row_6),
+                7 => ids!(provider_row_7),
+                _ => continue,
+            };
+            let marker = if name == &current.as_str() { "●" } else { "○" };
+            let text = format!("{}  {}", marker, name);
+            // The label id is unique to each row's
+            // `provider_name_label`, which is a child of the row
+            // template. We reach for it via the parent widget
+            // id path.
+            self.ui
+                .widget(cx, label_id)
+                .label(cx, ids!(provider_name_label))
+                .set_text(cx, &text);
+        }
+    }
+
+    /// Update the Settings modal's model list rows.
+    fn refresh_settings_model_rows(&mut self, cx: &mut Cx) {
+        let models = {
+            let state = GUI_STATE.read().unwrap();
+            state.available_model_list.clone()
+        };
+        let n = models.len().min(8);
+        for i in 0..n {
+            let row_id = match i {
+                0 => ids!(model_row_0),
+                1 => ids!(model_row_1),
+                2 => ids!(model_row_2),
+                3 => ids!(model_row_3),
+                4 => ids!(model_row_4),
+                5 => ids!(model_row_5),
+                6 => ids!(model_row_6),
+                7 => ids!(model_row_7),
+                _ => continue,
+            };
+            self.ui
+                .widget(cx, row_id)
+                .label(cx, ids!(model_name_label))
+                .set_text(cx, &models[i]);
+        }
     }
 
     /// Accept the currently highlighted slash suggestion. If the
@@ -1734,6 +2445,11 @@ async fn dispatch_command(client: &mut InprocClient, cmd: GuiCommand) -> Result<
             .await
             .map(|_| ())
             .map_err(|e| e.to_string()),
+        GuiCommand::SetProvider(provider) => client
+            .set_provider(&provider)
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
         GuiCommand::CycleModel(dir) => client
             .cycle_model(dir)
             .await
@@ -1741,6 +2457,11 @@ async fn dispatch_command(client: &mut InprocClient, cmd: GuiCommand) -> Result<
             .map_err(|e| e.to_string()),
         GuiCommand::RefreshModels => client
             .refresh_models()
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
+        GuiCommand::AvailableModels => client
+            .available_models()
             .await
             .map(|_| ())
             .map_err(|e| e.to_string()),
