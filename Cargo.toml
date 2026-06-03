@@ -1,6 +1,6 @@
 [package]
 name = "jcode"
-version = "0.18.0"
+version = "0.18.4"
 description = "Possibly the greatest coding agent ever built — blazing-fast TUI, multi-model, swarm coordination, 30+ tools"
 edition = "2024"
 autobins = false
@@ -123,7 +123,15 @@ tokio = { version = "1", features = [
 ] }
 
 # HTTP client
-reqwest = { version = "0.12", features = ["blocking", "json", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "stream",
+  "blocking",
+  "charset",
+  "http2",
+  "system-proxy",
+  "rustls-tls",
+] }
 rustls = { version = "0.23", default-features = false, features = [
   "aws_lc_rs",
 ] }

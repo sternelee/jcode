@@ -327,6 +327,10 @@ impl OpenRouterTransportState {
             return Self::JcodeSubscription;
         }
 
+        if matches!(runtime_provider.as_deref(), Some("openrouter")) {
+            return Self::OpenRouterApiKey;
+        }
+
         if configured_allow_no_auth() {
             return Self::DirectNoAuth;
         }
@@ -948,6 +952,10 @@ pub struct OpenRouterProvider {
 
 impl OpenRouterProvider {
     fn profile_supports_reasoning_effort(profile_id: Option<&str>) -> bool {
+        matches!(profile_id, Some(id) if id.eq_ignore_ascii_case("deepseek"))
+    }
+
+    fn profile_rejects_image_input(profile_id: Option<&str>) -> bool {
         matches!(profile_id, Some(id) if id.eq_ignore_ascii_case("deepseek"))
     }
 

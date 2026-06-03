@@ -1156,7 +1156,7 @@ impl App {
                     seconds_left,
                 }
             }
-            Some(OnboardingPhase::ModelSelect) => OnboardingWelcomeKind::ModelSelect,
+            Some(OnboardingPhase::ModelSelect) => OnboardingWelcomeKind::Suggestions,
             Some(OnboardingPhase::ContinuePrompt {
                 cli,
                 yes_highlighted,
@@ -1175,7 +1175,7 @@ impl App {
     }
 
     /// Whether the guided onboarding flow is in a phase that should take over
-    /// the welcome screen body (model select or continue prompt). The
+    /// the welcome screen body (login, telemetry, or continue prompt). The
     /// transcript-pick phase uses the session-picker overlay instead, and the
     /// suggestions phase is the default welcome body.
     fn onboarding_flow_drives_welcome(&self) -> bool {
@@ -1184,7 +1184,6 @@ impl App {
             self.onboarding_phase(),
             Some(OnboardingPhase::Login { .. })
                 | Some(OnboardingPhase::TelemetryConsent { .. })
-                | Some(OnboardingPhase::ModelSelect)
                 | Some(OnboardingPhase::ContinuePrompt { .. })
         )
     }
@@ -1242,7 +1241,7 @@ impl App {
         ];
 
         prompts.push((
-            "Continue my last CLI agent session".to_string(),
+            "Continue my last Codex CLI / Claude Code session".to_string(),
             latest_external_cli_continuation_prompt().unwrap_or_else(|| {
                 "Find my recent Codex or Claude Code sessions, identify the latest useful one, summarize what was happening, and continue from there.".to_string()
             }),
