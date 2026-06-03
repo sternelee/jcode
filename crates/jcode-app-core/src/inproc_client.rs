@@ -347,6 +347,28 @@ impl InprocClient {
         Ok(id)
     }
 
+    /// Switch the active provider. Returns the request id; the
+    /// resulting `ServerEvent::ProviderChanged` is delivered
+    /// through the normal event stream.
+    pub async fn set_provider(&mut self, provider: &str) -> Result<u64> {
+        let id = self.next_id();
+        self.submit(Request::SetProvider {
+            id,
+            provider: provider.to_string(),
+        })
+        .await?;
+        Ok(id)
+    }
+
+    /// Ask the server for the active provider's model list. The
+    /// server emits a `ServerEvent::ProviderChanged` with the
+    /// list; the GUI can await that event after issuing this.
+    pub async fn available_models(&mut self) -> Result<u64> {
+        let id = self.next_id();
+        self.submit(Request::AvailableModels { id }).await?;
+        Ok(id)
+    }
+
     /// Notify the server that authentication state changed (e.g. after
     /// `/login` or `/logout`).
     pub async fn notify_auth_changed(&mut self) -> Result<u64> {

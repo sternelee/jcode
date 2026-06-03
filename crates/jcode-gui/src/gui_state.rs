@@ -47,6 +47,11 @@ pub static GUI_STATE: std::sync::LazyLock<std::sync::RwLock<GuiState>> =
             sidebar_collapsed: false,
             welcome_suggestions: default_welcome_suggestions(),
             hovered_message_id: None,
+            // ── UI-local state (mutated by `App`) ─────────
+            settings_open: false,
+            model_picker_open: false,
+            current_provider: String::new(),
+            available_model_list: Vec::new(),
             // ── internal counters (private) ──────────────────────
             next_msg_id: 0,
         })
@@ -380,6 +385,21 @@ pub struct GuiState {
     /// when `Some(_)`, the message list widget renders its hover
     /// action row. `None` when no row is hovered.
     pub hovered_message_id: Option<u64>,
+    // ── Settings + model-picker state (mutated by `App`) ─────────
+    /// Whether the Settings modal overlay is visible.
+    pub settings_open: bool,
+    /// Whether the model picker popover is visible.
+    pub model_picker_open: bool,
+    /// Short name of the active provider (`"claude"`, `"openai"`,
+    /// `"ollama"`, ...). Updated from
+    /// `ServerEvent::ProviderChanged::provider` and
+    /// `ServerEvent::History::provider_name`.
+    pub current_provider: String,
+    /// Catalogue of model ids the active provider reports.
+    /// Updated from `ServerEvent::ProviderChanged::available_models`.
+    /// Empty when the provider hasn't reported yet (callers should
+    /// trigger `Request::AvailableModels` on startup to populate).
+    pub available_model_list: Vec<String>,
     // ── Internal counter (used by `apply_event` for new bubbles) ─────────
     /// Monotonic id minted for every new `GuiMessage` we push. We
     /// keep it as a regular field (not private) so `apply_event`
@@ -477,6 +497,39 @@ impl GuiState {
             }
             ServerEvent::Done { .. } => {
                 self.seal_streaming_turn();
+            }
+            ServerEvent::ProviderChanged {
+                provider,
+                model,
+                available_models,
+                error,
+                ..
+            } => {
+                if error.is_none() {
+                    self.current_provider = provider.clone();
+                    self.provider_name = provider.clone();
+                    self.provider_model = model.clone();
+                    self.model_name = model.clone();
+                    self.available_model_list = available_models.clone();
+                } else {
+                    // Switch failed — surface the error in the
+                    // header status via the next event drain.
+                    let new_id = self.next_msg_id();
+                    self.messages.push(GuiMessage {
+                        id: new_id,
+                        role: MessageRole::Error,
+                        content: format!(
+                            "Could not switch to provider '{}': {}",
+                            provider,
+                            error.as_deref().unwrap_or("(unknown error)")
+                        ),
+                        agent_id: None,
+                        agent_name: None,
+                        tool_calls: vec![],
+                        tool_data: None,
+                        duration_secs: None,
+                    });
+                }
             }
             ServerEvent::Error { message, .. } => {
                 let new_msg_id = self.next_msg_id();
@@ -583,6 +636,7 @@ impl GuiState {
                 messages,
                 provider_name,
                 provider_model,
+                available_models: history_models,
                 mcp_servers,
                 skills,
                 all_sessions,
@@ -607,6 +661,13 @@ impl GuiState {
                 self.next_msg_id = self.messages.len() as u64;
                 if let Some(p) = provider_name {
                     self.provider_name = p.clone();
+                    // The `History` event's `provider_name` is the
+                    // short id we use everywhere (matches what
+                    // `ProviderChanged::provider` carries). The
+                    // server already lowers it before sending.
+                    if self.current_provider.is_empty() {
+                        self.current_provider = p.clone();
+                    }
                 }
                 if let Some(m) = provider_model {
                     self.provider_model = m.clone();
@@ -619,6 +680,9 @@ impl GuiState {
                 }
                 if !all_sessions.is_empty() {
                     self.all_sessions = all_sessions.clone();
+                }
+                if !history_models.is_empty() {
+                    self.available_model_list = history_models.clone();
                 }
                 // Rebuild the `sessions` left-panel from the
                 // discovered ids, merging in any titles we already
