@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct GraphNode {
     /// Stable node ID from memory graph (mem:*, tag:*, cluster:*)
     pub id: String,
@@ -16,7 +16,7 @@ pub struct GraphNode {
     pub degree: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct GraphEdge {
     /// Source index into MemoryInfo::graph_nodes
     pub source: usize,

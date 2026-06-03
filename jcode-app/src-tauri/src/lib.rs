@@ -710,6 +710,51 @@ fn get_memory_stats() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+fn get_memory_graph() -> Result<serde_json::Value, String> {
+    use jcode::memory::MemoryManager;
+    use jcode::tui::info_widget::build_graph_topology;
+
+    let manager = MemoryManager::new();
+
+    let project_graph = manager.load_project_graph().ok();
+    let global_graph = manager.load_global_graph().ok();
+
+    let (nodes, edges) = build_graph_topology(project_graph.as_ref(), global_graph.as_ref());
+
+    // GraphNode and GraphEdge already derive Serialize (see jcode-tui-core).
+    let node_values: Vec<serde_json::Value> = nodes
+        .into_iter()
+        .map(|n| {
+            serde_json::json!({
+                "id": n.id,
+                "label": n.label,
+                "kind": n.kind,
+                "is_memory": n.is_memory,
+                "is_active": n.is_active,
+                "confidence": n.confidence,
+                "degree": n.degree,
+            })
+        })
+        .collect();
+
+    let edge_values: Vec<serde_json::Value> = edges
+        .into_iter()
+        .map(|e| {
+            serde_json::json!({
+                "source": e.source,
+                "target": e.target,
+                "kind": e.kind,
+            })
+        })
+        .collect();
+
+    Ok(serde_json::json!({
+        "nodes": node_values,
+        "edges": edge_values,
+    }))
+}
+
+#[tauri::command]
 fn export_memories(path: String) -> Result<(), String> {
     use jcode::memory::MemoryManager;
     let manager = MemoryManager::new();
@@ -2398,6 +2443,7 @@ pub fn run() {
             get_memory_list,
             search_memories,
             get_memory_stats,
+            get_memory_graph,
             export_memories,
             import_memories,
             generate_pairing_code,

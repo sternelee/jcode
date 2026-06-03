@@ -70,6 +70,7 @@ export default function App() {
 		searchMemories,
 		getMemoryList,
 		getMemoryStats,
+		getMemoryGraph,
 		getUsageInfo,
 		getWorkspaceMemoryPreferences,
 		setWorkspaceMemoryPreference,
@@ -907,6 +908,7 @@ export default function App() {
 								onSearchMemories={searchMemories}
 								onGetMemoryList={getMemoryList}
 								onGetMemoryStats={getMemoryStats}
+								onGetMemoryGraph={getMemoryGraph}
 								onGetWorkspaceMemoryPreferences={getWorkspaceMemoryPreferences}
 								onSetWorkspaceMemoryPreference={setWorkspaceMemoryPreference}
 							/>

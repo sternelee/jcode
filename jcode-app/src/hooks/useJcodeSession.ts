@@ -896,6 +896,17 @@ export function useJcodeSession() {
 		}
 	}, []);
 
+	const getMemoryGraph = useCallback(async () => {
+		try {
+			return await invoke<import("@/types").MemoryGraphSnapshot>(
+				"get_memory_graph",
+			);
+		} catch (e) {
+			dispatch({ type: "SET_ERROR", message: String(e) });
+			return null;
+		}
+	}, []);
+
 	const getUsageInfo = useCallback(async () => {
 		try {
 			return (
@@ -1023,6 +1034,7 @@ export function useJcodeSession() {
 		searchMemories,
 		getMemoryList,
 		getMemoryStats,
+		getMemoryGraph,
 		getUsageInfo,
 		getVersionInfo,
 		getWorkspaceMemoryPreferences,

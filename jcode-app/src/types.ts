@@ -702,6 +702,27 @@ export interface MemoryStats {
 	categories: Record<string, number>;
 }
 
+export interface GraphNode {
+	id: string;
+	label: string;
+	kind: string;
+	is_memory: boolean;
+	is_active: boolean;
+	confidence: number;
+	degree: number;
+}
+
+export interface GraphEdge {
+	source: number;
+	target: number;
+	kind: string;
+}
+
+export interface MemoryGraphSnapshot {
+	nodes: GraphNode[];
+	edges: GraphEdge[];
+}
+
 export interface BackgroundTaskProgress {
 	kind: "determinate" | "indeterminate";
 	percent?: number;

@@ -5,9 +5,11 @@ import type {
 	VersionInfo,
 	MemoryEntry,
 	MemoryStats,
+	MemoryGraphSnapshot,
 	WorkspaceMemoryPreferences,
 } from "@/types";
 import { Badge } from "@/components/ui/badge";
+import { MemoryGraph } from "@/components/MemoryGraph";
 import { cn } from "@/lib/utils";
 import {
 	Moon,
@@ -26,6 +28,9 @@ import {
 	FolderOpen,
 	ToggleLeft,
 	ToggleRight,
+	Network,
+	ChevronDown,
+	ChevronRight,
 } from "lucide-react";
 
 interface SettingsPageProps {
@@ -44,6 +49,7 @@ interface SettingsPageProps {
 		tag?: string,
 	) => Promise<MemoryEntry[]>;
 	onGetMemoryStats?: () => Promise<MemoryStats | null>;
+	onGetMemoryGraph?: () => Promise<MemoryGraphSnapshot | null>;
 	onGetWorkspaceMemoryPreferences?: () => Promise<WorkspaceMemoryPreferences | null>;
 	onSetWorkspaceMemoryPreference?: (
 		workingDir: string | null,
@@ -59,6 +65,7 @@ export function SettingsPage({
 	onSearchMemories,
 	onGetMemoryList,
 	onGetMemoryStats,
+	onGetMemoryGraph,
 	onGetWorkspaceMemoryPreferences,
 	onSetWorkspaceMemoryPreference,
 }: SettingsPageProps) {
@@ -81,6 +88,11 @@ export function SettingsPage({
 	const [memoryTag, setMemoryTag] = useState("");
 	const [memoryLoading, setMemoryLoading] = useState(false);
 	const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
+	const [memoryGraph, setMemoryGraph] = useState<MemoryGraphSnapshot | null>(
+		null,
+	);
+	const [memoryGraphLoading, setMemoryGraphLoading] = useState(false);
+	const [graphViewOpen, setGraphViewOpen] = useState(false);
 	const [workspaceMemPrefs, setWorkspaceMemPrefs] =
 		useState<WorkspaceMemoryPreferences | null>(null);
 	const [workspaceMemLoading, setWorkspaceMemLoading] = useState(false);
@@ -91,6 +103,25 @@ export function SettingsPage({
 			.then(setMemoryStats)
 			.catch(() => {});
 	}, [onGetMemoryStats]);
+
+	const loadMemoryGraph = useCallback(async () => {
+		if (!onGetMemoryGraph) return;
+		setMemoryGraphLoading(true);
+		try {
+			const snapshot = await onGetMemoryGraph();
+			setMemoryGraph(snapshot);
+		} catch {
+			setMemoryGraph(null);
+		} finally {
+			setMemoryGraphLoading(false);
+		}
+	}, [onGetMemoryGraph]);
+
+	useEffect(() => {
+		if (graphViewOpen) {
+			void loadMemoryGraph();
+		}
+	}, [graphViewOpen, loadMemoryGraph]);
 
 	useEffect(() => {
 		if (!onGetWorkspaceMemoryPreferences) return;
@@ -545,6 +576,42 @@ export function SettingsPage({
 										);
 									})}
 								</div>
+
+								{/* Graph view toggle */}
+								{onGetMemoryGraph && (
+									<div className="pt-2 border-t border-border">
+										<button
+											type="button"
+											onClick={() => setGraphViewOpen((v) => !v)}
+											className="flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+										>
+											{graphViewOpen ? (
+												<ChevronDown className="w-3.5 h-3.5" />
+											) : (
+												<ChevronRight className="w-3.5 h-3.5" />
+											)}
+											<Network className="w-3.5 h-3.5" />
+											<span>Graph view</span>
+											{memoryGraph && (
+												<Badge
+													variant="outline"
+													className="text-[9px] h-[16px] ml-1"
+												>
+													{memoryGraph.nodes.length} nodes
+												</Badge>
+											)}
+										</button>
+										{graphViewOpen && (
+											<div className="mt-3">
+												<MemoryGraph
+													nodes={memoryGraph?.nodes ?? []}
+													edges={memoryGraph?.edges ?? []}
+													loading={memoryGraphLoading}
+												/>
+											</div>
+										)}
+									</div>
+								)}
 							</div>
 						</SettingsCard>
 					)}
