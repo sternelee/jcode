@@ -1,0 +1,38 @@
+[package]
+name = "jcode-gui"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Makepad-based GUI for jcode — Telegram-style agent chat platform with multi-agent swarm support"
+
+[[bin]]
+name = "jcode-gui"
+path = "src/main.rs"
+
+[dependencies]
+# Makepad GUI framework
+makepad-widgets = { git = "https://github.com/makepad/makepad.git", branch = "dev" }
+
+# jcode runtime — the GUI embeds the full server in-process (no child
+# `jcode serve` process). jcode-app-core re-exports jcode-base
+# (provider, auth, config, …) via `pub use jcode_base::*`, and the
+# GUI additionally re-exports it for `jcode_gui::jcode_app_core::*`
+# access to Server/InprocClient/Provider.
+jcode-app-core = { path = "../jcode-app-core" }
+
+# jcode data contracts — the GUI re-uses the same wire types the TUI
+# uses for sessions, swarm, plan, messages, etc. These are small,
+# serde-only crates; keeping the direct deps avoids the need to
+# rewrite every `use jcode_*` in the widget files.
+jcode-swarm-core    = { path = "../jcode-swarm-core" }
+jcode-protocol      = { path = "../jcode-protocol" }
+jcode-session-types = { path = "../jcode-session-types" }
+jcode-tui-messages  = { path = "../jcode-tui-messages" }
+jcode-message-types = { path = "../jcode-message-types" }
+jcode-plan          = { path = "../jcode-plan" }
+
+# Async runtime & serialization
+tokio  = { version = "1", features = ["full"] }
+serde  = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"

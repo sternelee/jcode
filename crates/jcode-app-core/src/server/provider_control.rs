@@ -504,6 +504,96 @@ pub(super) async fn handle_set_model(
     }
 }
 
+/// Switch the active provider by short name. The new
+/// provider's default model is selected; the resulting
+/// `ServerEvent::ProviderChanged` carries the new model +
+/// the refreshed `available_models` list. On failure, the
+/// event's `error` field is populated and the active provider
+/// is left unchanged.
+pub(super) async fn handle_set_provider(
+    id: u64,
+    provider: String,
+    agent: &Arc<Mutex<Agent>>,
+    client_event_tx: &mpsc::UnboundedSender<ServerEvent>,
+) {
+    let apply = {
+        let id = id;
+        let provider = provider.clone();
+        let client_event_tx = client_event_tx.clone();
+        move |agent_guard: &mut Agent, client_event_tx: &mpsc::UnboundedSender<ServerEvent>| {
+            let previous = (agent_guard.provider_name(), agent_guard.provider_model());
+            let result = agent_guard.set_provider(&provider);
+            match result {
+                Ok(new_model) => {
+                    agent_guard.reset_provider_session();
+                    let available = agent_guard.available_model_list();
+                    let _ = client_event_tx.send(ServerEvent::ProviderChanged {
+                        id,
+                        provider: provider.clone(),
+                        model: new_model,
+                        available_models: available,
+                        error: None,
+                    });
+                }
+                Err(e) => {
+                    let _ = client_event_tx.send(ServerEvent::ProviderChanged {
+                        id,
+                        provider: previous.0,
+                        model: previous.1,
+                        available_models: vec![],
+                        error: Some(format!("{e:#}")),
+                    });
+                }
+            }
+            // Keep the outer `client_event_tx` alive for the
+            // duration of the closure's existence; in practice
+            // they're the same channel.
+            let _ = &client_event_tx;
+        }
+    };
+    if let Ok(mut agent_guard) = agent.try_lock() {
+        apply(&mut agent_guard, client_event_tx);
+    } else {
+        spawn_deferred_agent_mutation(
+            "set_provider",
+            id,
+            Arc::clone(agent),
+            client_event_tx.clone(),
+            apply,
+        );
+    }
+}
+
+/// Ask the active provider for its current model list. The
+/// server emits a `ProviderChanged` event with the current
+/// provider name + the model list.
+pub(super) async fn handle_available_models(
+    id: u64,
+    agent: &Arc<Mutex<Agent>>,
+    client_event_tx: &mpsc::UnboundedSender<ServerEvent>,
+) {
+    let apply = move |agent_guard: &mut Agent, client_event_tx: &mpsc::UnboundedSender<ServerEvent>| {
+        let _ = client_event_tx.send(ServerEvent::ProviderChanged {
+            id,
+            provider: agent_guard.provider_name(),
+            model: agent_guard.provider_model(),
+            available_models: agent_guard.available_model_list(),
+            error: None,
+        });
+    };
+    if let Ok(mut agent_guard) = agent.try_lock() {
+        apply(&mut agent_guard, client_event_tx);
+    } else {
+        spawn_deferred_agent_mutation(
+            "available_models",
+            id,
+            Arc::clone(agent),
+            client_event_tx.clone(),
+            apply,
+        );
+    }
+}
+
 pub(super) async fn handle_set_route(
     id: u64,
     selection: crate::provider::RouteSelection,
