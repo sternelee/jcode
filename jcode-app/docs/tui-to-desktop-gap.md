@@ -27,7 +27,7 @@ Updated: 2026-06-03
 | Git branch indicator               | ✅  | ✅ Implemented               | —        | Shown next to workspace name                                  |
 | Code block copy                    | ✅  | ✅ Implemented               | —        | Streamdown controls enabled                                   |
 | Soft interrupt                     | ✅  | ✅ Implemented               | —        | Interrupt mode toggle in ChatArea                             |
-| Device pairing                     | ✅  | ❌ Missing                   | P3       | generate_pairing_code, list_paired_devices, revoke_device     |
+| Device pairing                     | ✅  | ✅ Implemented               | —        | generate_pairing_code, list_paired_devices, revoke_device     |
 | Ambient transcripts                | ✅  | ✅ Implemented               | —        | Shown in MonitorPage with visible cycle                       |
 | Workspace memory preference        | ✅  | ✅ Implemented               | —        | Toggle default + per-workspace in Settings                    |
 | Message regeneration               | ✅  | ✅ Implemented               | —        | RotateCcw button on assistant messages                        |

@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import type {
 	AmbientStatusInfo,
 	AmbientTranscript,
-	AttachedImage,
 	AuthDoctorReport,
 	AuthStatus,
 	ChatMessage,
@@ -14,7 +13,6 @@ import type {
 	PairedDeviceInfo,
 	SessionInfo,
 	StdinPrompt,
-	ToolExecution,
 	UsageInfo,
 	VersionInfo,
 } from "@/types";
@@ -25,20 +23,31 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { ToolCard } from "./ToolCard";
 import {
+	compactText,
+	imageSrc,
+	selectedMessageFacts,
+	systemFields,
+	formatJsonBlock,
+	buildSegments,
+	flattenTools,
+	buildTimeline,
+	buildTimelineEntries,
+	runtimeEventVariant,
+	buildRuntimeEvents,
+	turnStatusLabel,
+	boundaryIcon,
+	boundaryBadgeVariant,
+	SessionStatusSection,
+} from "./activity-panel";
+import {
 	Activity,
-	Archive,
 	ArrowUpRight,
 	BookOpen,
-	Brain,
-	Cable,
 	ChevronDown,
 	ChevronRight,
 	Clock3,
 	Copy,
 	ExternalLink,
-	History,
-	Keyboard,
-	ListTodo,
 	MessageSquareText,
 	Moon,
 	RotateCcw,
@@ -52,6 +61,8 @@ import {
 	Users,
 	Wrench,
 } from "lucide-react";
+
+import type { RuntimeEventItem } from "./activity-panel";
 
 interface ActivityPanelProps {
 	messages: ChatMessage[];
@@ -101,426 +112,6 @@ interface ActivityPanelProps {
 	) => Promise<boolean>;
 	getBrowserStatus?: () => Promise<import("@/types").BrowserStatus | null>;
 	setupBrowser?: () => Promise<string | null>;
-}
-
-type SegmentKind =
-	| "history"
-	| "compaction"
-	| "rewind"
-	| "runtime"
-	| "conversation";
-
-interface MessageSegment {
-	id: string;
-	messages: ChatMessage[];
-	kind: SegmentKind;
-}
-
-interface ToolActivityItem extends ToolExecution {
-	key: string;
-	timestamp: number;
-	messageId: string;
-	messagePreview: string;
-	turnLabel: string;
-}
-
-interface TurnActivity {
-	messageId: string;
-	turnNumber: number;
-	userPrompt: string;
-	assistantPreview: string;
-	tools: ToolExecution[];
-	runningToolCount: number;
-	totalToolCount: number;
-	tokenUsage?: {
-		input: number;
-		output: number;
-		cacheReadInput?: number;
-		cacheCreationInput?: number;
-	};
-	timestamp: number;
-	segmentId: string;
-}
-
-interface BoundaryEntry {
-	type: "boundary";
-	id: string;
-	segmentKind: Exclude<SegmentKind, "conversation">;
-	messageId: string;
-	title: string;
-	summary: string;
-}
-
-interface TurnEntry {
-	type: "turn";
-	id: string;
-	turn: TurnActivity;
-}
-
-type TimelineEntry = BoundaryEntry | TurnEntry;
-
-interface RuntimeEventItem {
-	messageId: string;
-	title: string;
-	detail: string;
-	kind:
-		| "queue"
-		| "stdin"
-		| "compaction"
-		| "memory"
-		| "connection"
-		| "reasoning"
-		| "rewind"
-		| "other";
-}
-
-function providerLabel(provider: string | null): string {
-	if (!provider) return "unknown";
-	const labels: Record<string, string> = {
-		anthropic: "Anthropic",
-		openai: "OpenAI",
-		gemini: "Google Gemini",
-		copilot: "GitHub Copilot",
-		openrouter: "OpenRouter",
-		bedrock: "AWS Bedrock",
-	};
-	return labels[provider] || provider;
-}
-
-function compactText(text: string | undefined, max = 120): string {
-	if (!text) return "";
-	const normalized = text.replace(/\s+/g, " ").trim();
-	if (normalized.length <= max) return normalized;
-	return `${normalized.slice(0, max - 1)}…`;
-}
-
-function imageSrc(image: AttachedImage) {
-	if (!image) return "";
-	if (image.filePath) return convertFileSrc(image.filePath);
-	if (image.base64Data)
-		return `data:${image.mediaType};base64,${image.base64Data}`;
-	return "";
-}
-
-function selectedMessageFacts(message: ChatMessage): string[] {
-	if (message.role !== "system") return [];
-	return systemFields(message).map((field) => `${field.label} ${field.value}`);
-}
-
-function systemFields(
-	message: ChatMessage,
-): Array<{ label: string; value: string }> {
-	if (message.role !== "system") return [];
-	const content = message.content;
-	const fields: Array<{ label: string; value: string }> = [];
-	const restored = content.match(/\((\d+) messages\)/)?.[1];
-	const model = content.match(/Model:\s*(.+)$/m)?.[1];
-	const tokens = content.match(/Tokens:\s*([^\n]+)/)?.[1];
-	const saved = content.match(/saved\s+(\d+)/)?.[1];
-	const rewind = content.match(/message\s+(\d+)/)?.[1];
-	const requestId = content.match(/\(([a-zA-Z0-9_-]+)\):/)?.[1];
-	if (restored)
-		fields.push({ label: "restored", value: `${restored} messages` });
-	if (model) fields.push({ label: "model", value: model });
-	if (tokens) fields.push({ label: "tokens", value: tokens });
-	if (saved) fields.push({ label: "saved", value: saved });
-	if (rewind) fields.push({ label: "rewind", value: `message ${rewind}` });
-	if (requestId) fields.push({ label: "request", value: requestId });
-	return fields;
-}
-
-function formatJsonBlock(text: string, pretty: boolean): string {
-	if (!text.trim()) return text;
-	try {
-		const parsed = JSON.parse(text);
-		return pretty ? JSON.stringify(parsed, null, 2) : JSON.stringify(parsed);
-	} catch {
-		return text;
-	}
-}
-
-function systemKind(message: ChatMessage): SegmentKind | null {
-	if (message.role !== "system") return null;
-	if (message.content.includes("Restored session history")) return "history";
-	if (
-		message.content.includes("Context compaction") ||
-		message.content.includes("compact")
-	) {
-		return "compaction";
-	}
-	if (message.content.includes("Rewound to message")) return "rewind";
-	return "runtime";
-}
-
-function buildSegments(messages: ChatMessage[]): MessageSegment[] {
-	const segments: MessageSegment[] = [];
-	let current: ChatMessage[] = [];
-	let index = 0;
-
-	const pushCurrent = () => {
-		if (current.length === 0) return;
-		segments.push({
-			id: `segment-${index++}`,
-			messages: current,
-			kind: "conversation",
-		});
-		current = [];
-	};
-
-	for (const message of messages) {
-		const kind = systemKind(message);
-		if (!kind) {
-			current.push(message);
-			continue;
-		}
-		pushCurrent();
-		segments.push({ id: `segment-${index++}`, messages: [message], kind });
-	}
-
-	pushCurrent();
-	return segments;
-}
-
-function flattenTools(messages: ChatMessage[]): ToolActivityItem[] {
-	let assistantTurn = 0;
-	return messages.flatMap((message) => {
-		if (message.role !== "assistant") return [];
-		assistantTurn += 1;
-		return message.toolExecutions.map((tool, index) => ({
-			...tool,
-			key: `${message.id}-${tool.id}-${index}`,
-			timestamp: (message.timestamp || 0) + index,
-			messageId: message.id,
-			messagePreview: compactText(message.content || "tool activity", 90),
-			turnLabel: `turn ${assistantTurn}`,
-		}));
-	});
-}
-
-function boundaryTitle(kind: Exclude<SegmentKind, "conversation">): string {
-	switch (kind) {
-		case "history":
-			return "Restored history boundary";
-		case "compaction":
-			return "Compaction boundary";
-		case "rewind":
-			return "Rewind boundary";
-		case "runtime":
-			return "Runtime boundary";
-	}
-}
-
-function boundarySummary(
-	kind: Exclude<SegmentKind, "conversation">,
-	content: string,
-): string {
-	if (kind === "history") {
-		const count = content.match(/\((\d+) messages\)/)?.[1];
-		return count
-			? `${count} restored messages below this marker`
-			: "older restored turns sit below this marker";
-	}
-	if (kind === "compaction") {
-		const tokenSummary = content.match(/Tokens:\s*([^\n]+)/)?.[1];
-		return tokenSummary
-			? `newer turns above · compacted context below · ${tokenSummary}`
-			: "newer turns above · compacted context below";
-	}
-	if (kind === "rewind") {
-		const target = content.match(/message\s+(\d+)/)?.[1];
-		return target
-			? `newer transcript resumes above · rewound to message ${target}`
-			: "rewind boundary between older and newer transcript";
-	}
-	return compactText(content, 120) || "runtime event boundary";
-}
-
-function buildTimeline(segments: MessageSegment[]): TurnActivity[] {
-	let assistantTurn = 0;
-	let lastUserPrompt = "";
-	const turns: TurnActivity[] = [];
-
-	for (const segment of segments) {
-		if (segment.kind !== "conversation") continue;
-		for (const message of segment.messages) {
-			if (message.role === "user") {
-				lastUserPrompt = message.content;
-				continue;
-			}
-			if (message.role !== "assistant") continue;
-			assistantTurn += 1;
-			const runningToolCount = message.toolExecutions.filter(
-				(tool) =>
-					tool.status === "starting" ||
-					tool.status === "collecting_input" ||
-					tool.status === "executing",
-			).length;
-			turns.push({
-				messageId: message.id,
-				turnNumber: assistantTurn,
-				userPrompt: compactText(lastUserPrompt, 140),
-				assistantPreview: compactText(
-					message.content || "(tool-only turn)",
-					180,
-				),
-				tools: message.toolExecutions,
-				runningToolCount,
-				totalToolCount: message.toolExecutions.length,
-				tokenUsage: message.tokenUsage,
-				timestamp: message.timestamp || 0,
-				segmentId: segment.id,
-			});
-		}
-	}
-
-	return turns;
-}
-
-function buildTimelineEntries(
-	segments: MessageSegment[],
-	turns: TurnActivity[],
-): TimelineEntry[] {
-	const turnsBySegment = new Map<string, TurnActivity[]>();
-	for (const turn of turns) {
-		const bucket = turnsBySegment.get(turn.segmentId) || [];
-		bucket.push(turn);
-		turnsBySegment.set(turn.segmentId, bucket);
-	}
-
-	const entries: TimelineEntry[] = [];
-	for (const segment of segments) {
-		if (segment.kind !== "conversation") {
-			const first = segment.messages[0];
-			if (first) {
-				entries.push({
-					type: "boundary",
-					id: `boundary-${segment.id}`,
-					segmentKind: segment.kind,
-					messageId: first.id,
-					title: boundaryTitle(segment.kind),
-					summary: boundarySummary(segment.kind, first.content),
-				});
-			}
-			continue;
-		}
-		for (const turn of turnsBySegment.get(segment.id) || []) {
-			entries.push({ type: "turn", id: `turn-${turn.messageId}`, turn });
-		}
-	}
-	return entries;
-}
-
-function classifyRuntimeEvent(content: string): RuntimeEventItem["kind"] {
-	if (content.includes("Queued prompt") || content.includes("queued prompt"))
-		return "queue";
-	if (content.includes("Sending queued prompt")) return "queue";
-	if (content.includes("Interactive") || content.includes("interactive input"))
-		return "stdin";
-	if (content.includes("Context compaction") || content.includes("compact"))
-		return "compaction";
-	if (content.includes("memory") || content.includes("Memory")) return "memory";
-	if (content.includes("Connection type")) return "connection";
-	if (content.includes("Reasoning effort")) return "reasoning";
-	if (content.includes("Rewound to message")) return "rewind";
-	return "other";
-}
-
-function runtimeEventTitle(kind: RuntimeEventItem["kind"]): string {
-	switch (kind) {
-		case "queue":
-			return "Queued drafts";
-		case "stdin":
-			return "Interactive input";
-		case "compaction":
-			return "Compaction";
-		case "memory":
-			return "Memory";
-		case "connection":
-			return "Connection";
-		case "reasoning":
-			return "Reasoning";
-		case "rewind":
-			return "Rewind";
-		default:
-			return "Runtime notice";
-	}
-}
-
-function runtimeEventVariant(
-	kind: RuntimeEventItem["kind"],
-): "default" | "secondary" | "outline" {
-	switch (kind) {
-		case "stdin":
-		case "compaction":
-			return "default";
-		case "queue":
-		case "memory":
-			return "secondary";
-		default:
-			return "outline";
-	}
-}
-
-function buildRuntimeEvents(messages: ChatMessage[]): RuntimeEventItem[] {
-	return messages
-		.filter((message) => message.role === "system")
-		.slice(-10)
-		.reverse()
-		.map((message) => {
-			const kind = classifyRuntimeEvent(message.content);
-			return {
-				messageId: message.id,
-				kind,
-				title: runtimeEventTitle(kind),
-				detail: compactText(message.content, 180),
-			};
-		});
-}
-
-function turnStatusLabel(
-	turn: TurnActivity,
-	isLatest: boolean,
-	isProcessing: boolean,
-	stdinPrompt: StdinPrompt | null,
-): { label: string; variant: "default" | "secondary" | "outline" } {
-	if (isLatest && stdinPrompt)
-		return { label: "waiting input", variant: "default" };
-	if (turn.runningToolCount > 0)
-		return { label: "running tools", variant: "default" };
-	if (isLatest && isProcessing)
-		return { label: "streaming", variant: "default" };
-	if (turn.tools.some((tool) => tool.status === "error")) {
-		return { label: "tool error", variant: "outline" };
-	}
-	if (turn.totalToolCount > 0)
-		return { label: "complete", variant: "secondary" };
-	return { label: "reply", variant: "outline" };
-}
-
-function boundaryIcon(kind: Exclude<SegmentKind, "conversation">) {
-	switch (kind) {
-		case "history":
-			return History;
-		case "compaction":
-			return Archive;
-		case "rewind":
-			return RotateCcw;
-		case "runtime":
-			return Clock3;
-	}
-}
-
-function boundaryBadgeVariant(
-	kind: Exclude<SegmentKind, "conversation">,
-): "default" | "secondary" | "outline" {
-	switch (kind) {
-		case "compaction":
-			return "default";
-		case "history":
-			return "secondary";
-		default:
-			return "outline";
-	}
 }
 
 export function ActivityPanel({
@@ -730,17 +321,6 @@ export function ActivityPanel({
 		};
 	}, [latestTurn]);
 
-	const currentRoute = useMemo(
-		() =>
-			availableModelRoutes.find(
-				(route) =>
-					route.model === providerModel &&
-					(!providerName || route.provider === providerName),
-			) ||
-			availableModelRoutes.find((route) => route.model === providerModel) ||
-			null,
-		[availableModelRoutes, providerModel, providerName],
-	);
 
 	const filteredTimelineEntries = useMemo(() => {
 		const query = turnSearch.trim().toLowerCase();
@@ -1112,160 +692,19 @@ export function ActivityPanel({
 
 			<ScrollArea className="flex-1 overflow-auto">
 				<div className="p-4 space-y-4">
-					<section className="space-y-2">
-						<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-							Session status
-						</div>
-						<div className="grid grid-cols-1 gap-2">
-							<div className="rounded-lg border bg-card p-3 space-y-2">
-								<div className="flex items-center gap-2 text-xs text-muted-foreground">
-									<Sparkles className="w-3.5 h-3.5" />
-									Model
-								</div>
-								<div className="text-sm font-medium break-all">
-									{providerModel || "unknown"}
-								</div>
-								<div className="text-[11px] text-muted-foreground">
-									{providerLabel(providerName)}
-								</div>
-								<div className="flex flex-wrap gap-1.5 pt-1">
-									{sessionId && (
-										<Badge variant="outline" className="text-[10px] font-mono">
-											session {sessionId.slice(-8)}
-										</Badge>
-									)}
-									{availableModels.length > 0 && (
-										<Badge variant="secondary" className="text-[10px]">
-											{availableModels.length} switchable models
-										</Badge>
-									)}
-									{availableModelRoutes.length > 0 && (
-										<Badge variant="secondary" className="text-[10px]">
-											{
-												availableModelRoutes.filter(
-													(route) => route.context_window,
-												).length
-											}{" "}
-											context-known
-										</Badge>
-									)}
-								</div>
-							</div>
-
-							<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
-								<div className="flex items-center justify-between gap-2">
-									<span className="inline-flex items-center gap-1.5 text-muted-foreground">
-										<Brain className="w-3.5 h-3.5" />
-										Reasoning
-									</span>
-									<span className="font-mono">
-										{reasoningEffort || "default"}
-									</span>
-								</div>
-								<div className="flex items-center justify-between gap-2">
-									<span className="inline-flex items-center gap-1.5 text-muted-foreground">
-										<Cable className="w-3.5 h-3.5" />
-										Connection
-									</span>
-									<span className="font-mono text-right">
-										{connectionType || "unknown"}
-									</span>
-								</div>
-								<div className="flex items-center justify-between gap-2">
-									<span className="inline-flex items-center gap-1.5 text-muted-foreground">
-										<ListTodo className="w-3.5 h-3.5" />
-										Queued drafts
-									</span>
-									<span className="font-mono">{queuedDraftCount}</span>
-								</div>
-								<div className="flex items-center justify-between gap-2">
-									<span className="inline-flex items-center gap-1.5 text-muted-foreground">
-										<Keyboard className="w-3.5 h-3.5" />
-										Interactive input
-									</span>
-									<span className="font-mono">
-										{stdinPrompt ? "pending" : "none"}
-									</span>
-								</div>
-								{totalTokens && (
-									<div className="flex items-center justify-between gap-2">
-										<span className="inline-flex items-center gap-1.5 text-muted-foreground">
-											<Clock3 className="w-3.5 h-3.5" />
-											Tokens
-										</span>
-										<span className="font-mono">
-											↑{totalTokens[0]} ↓{totalTokens[1]}
-										</span>
-									</div>
-								)}
-								{statusDetail && (
-									<div className="rounded border bg-secondary px-2 py-1.5 text-[11px] text-muted-foreground">
-										{statusDetail}
-									</div>
-								)}
-								{availableModelRoutes.length > 0 && (
-									<div className="rounded border bg-secondary px-2 py-2 space-y-1.5">
-										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-											Runtime capabilities
-										</div>
-										<div className="flex flex-wrap gap-1.5">
-											{availableModelRoutes.some(
-												(route) =>
-													route.context_window &&
-													route.context_window >= 100000,
-											) && (
-												<Badge variant="outline" className="text-[10px]">
-													long-context
-												</Badge>
-											)}
-											{availableModelRoutes.some((route) =>
-												Boolean(route.display_name),
-											) && (
-												<Badge variant="outline" className="text-[10px]">
-													rich-catalog
-												</Badge>
-											)}
-											{availableModelRoutes.length > 1 && (
-												<Badge variant="outline" className="text-[10px]">
-													multi-route
-												</Badge>
-											)}
-											{availableModels.length > 1 && (
-												<Badge variant="outline" className="text-[10px]">
-													hot-switch
-												</Badge>
-											)}
-										</div>
-									</div>
-								)}
-								{currentRoute && (
-									<div className="rounded border bg-secondary px-2 py-2 space-y-1.5">
-										<div className="flex items-center justify-between gap-2">
-											<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-												Current route metadata
-											</div>
-											<Button
-												variant="ghost"
-												size="sm"
-												className="h-6 px-2 text-[10px]"
-												onClick={() =>
-													navigator.clipboard.writeText(
-														JSON.stringify(currentRoute, null, 2),
-													)
-												}
-											>
-												<Copy className="w-3 h-3 mr-1" />
-												copy
-											</Button>
-										</div>
-										<pre className="rounded border bg-background/60 px-2 py-2 max-h-28 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[10px] text-muted-foreground leading-relaxed">
-											{JSON.stringify(currentRoute, null, 2)}
-										</pre>
-									</div>
-								)}
-							</div>
-						</div>
-					</section>
+					<SessionStatusSection
+						providerModel={providerModel}
+						providerName={providerName}
+						sessionId={sessionId}
+						availableModels={availableModels}
+						availableModelRoutes={availableModelRoutes}
+						reasoningEffort={reasoningEffort}
+						connectionType={connectionType}
+						queuedDraftCount={queuedDraftCount}
+						stdinPrompt={stdinPrompt}
+						totalTokens={totalTokens}
+						statusDetail={statusDetail}
+					/>
 
 					<Separator />
 
