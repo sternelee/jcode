@@ -1001,7 +1001,11 @@ pub fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Va
         "provider": provider,
         "status": effective_status,
         "working_dir": working_dir,
-        "role_name": string_field(&value, "custom_title"),
+        "role_name": if swarm_plan.is_some() || swarm_status.is_some() {
+            string_field(&value, "custom_title")
+        } else {
+            None
+        },
     });
 
     if let Some(swarm_plan) = swarm_plan.clone() {
