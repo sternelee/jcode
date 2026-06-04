@@ -5,3 +5,6 @@ export { RuntimeEventsSection } from "./RuntimeEventsSection";
 export { UsageSection } from "./UsageSection";
 export { AuthDoctorSection } from "./AuthDoctorSection";
 export { PermissionsSection } from "./PermissionsSection";
+export { DevicePairingSection } from "./DevicePairingSection";
+export { AmbientSection } from "./AmbientSection";
+export { BackgroundTasksSection } from "./BackgroundTasksSection";

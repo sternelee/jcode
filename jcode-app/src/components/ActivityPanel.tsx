@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import type {
-	AmbientStatusInfo,
-	AmbientTranscript,
 	AuthDoctorReport,
 	AuthStatus,
 	ChatMessage,
@@ -41,6 +39,9 @@ import {
 	UsageSection,
 	AuthDoctorSection,
 	PermissionsSection,
+	DevicePairingSection,
+	AmbientSection,
+	BackgroundTasksSection,
 } from "./activity-panel";
 import {
 	Activity,
@@ -48,18 +49,13 @@ import {
 	BookOpen,
 	ChevronDown,
 	ChevronRight,
-	Clock3,
 	Copy,
 	ExternalLink,
-	Moon,
-	RotateCcw,
-	Search,
+		Search,
 	Shield,
 	ShieldCheck,
-	Smartphone,
 	Sparkles,
-	Timer,
-	TriangleAlert,
+		TriangleAlert,
 	Users,
 	Wrench,
 } from "lucide-react";
@@ -196,17 +192,7 @@ export function ActivityPanel({
 	const [pairedDevices, setPairedDevices] = useState<PairedDeviceInfo[] | null>(
 		null,
 	);
-	const [pairingCode, setPairingCode] = useState<string | null>(null);
-	const [backgroundTasks, setBackgroundTasks] = useState<
-		import("@/types").BackgroundTask[] | null
-	>(null);
 	const [authDoctor, setAuthDoctor] = useState<AuthDoctorReport | null>(null);
-	const [ambientStatus, setAmbientStatus] = useState<AmbientStatusInfo | null>(
-		null,
-	);
-	const [ambientTranscripts, setAmbientTranscripts] = useState<
-		AmbientTranscript[] | null
-	>(null);
 	const [permissionRequests, setPermissionRequests] = useState<
 		import("@/types").PermissionRequest[] | null
 	>(null);
@@ -620,26 +606,6 @@ export function ActivityPanel({
 		}
 	};
 
-	const refreshAmbient = async () => {
-		try {
-			const status = await invoke<AmbientStatusInfo>("get_ambient_status");
-			setAmbientStatus(status);
-		} catch {
-			// ignore
-		}
-	};
-
-	const refreshAmbientTranscripts = async () => {
-		try {
-			const result = await invoke<{ transcripts: AmbientTranscript[] }>(
-				"get_ambient_transcripts",
-			);
-			setAmbientTranscripts(result.transcripts);
-		} catch {
-			// ignore
-		}
-	};
-
 	const refreshBrowserStatus = async () => {
 		if (!getBrowserStatus) return;
 		try {
@@ -652,11 +618,6 @@ export function ActivityPanel({
 
 	useEffect(() => {
 		void refreshDevices();
-	}, []);
-
-	useEffect(() => {
-		void refreshAmbient();
-		void refreshAmbientTranscripts();
 	}, []);
 
 	useEffect(() => {
@@ -3010,453 +2971,31 @@ export function ActivityPanel({
 
 					<Separator />
 
-					<section className="space-y-2">
-						<div className="flex items-center justify-between">
-							<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-								<Smartphone className="w-3.5 h-3.5 text-muted-foreground" />
-								Devices
-							</div>
-							<Badge variant="outline" className="text-[10px]">
-								{pairedDevices?.length ?? "—"}
-							</Badge>
-						</div>
-						<div className="flex items-center gap-2">
-							<Button
-								variant="outline"
-								size="sm"
-								className="h-7 text-[10px]"
-								onClick={async () => {
-									try {
-										const code = await invoke<string>("generate_pairing_code");
-										setPairingCode(code);
-										void refreshDevices();
-									} catch {
-										// ignore
-									}
-								}}
-							>
-								Generate pairing code
-							</Button>
-							<Button
-								variant="ghost"
-								size="sm"
-								className="h-7 text-[10px]"
-								onClick={() => void refreshDevices()}
-							>
-								Refresh
-							</Button>
-						</div>
-						{pairingCode && (
-							<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
-								<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-									Pairing code
-								</div>
-								<div className="text-2xl font-mono font-bold tracking-widest text-center">
-									{pairingCode}
-								</div>
-								<div className="text-[10px] text-muted-foreground text-center">
-									Valid for 5 minutes
-								</div>
-							</div>
-						)}
-						{pairedDevices && pairedDevices.length > 0 ? (
-							<div className="space-y-2">
-								{pairedDevices.map((device) => (
-									<div
-										key={device.id}
-										className="rounded border bg-secondary px-2 py-2 space-y-1 text-xs"
-									>
-										<div className="flex items-start justify-between gap-2">
-											<div className="font-medium">{device.name}</div>
-											<Button
-												variant="ghost"
-												size="sm"
-												className="h-5 px-1.5 text-[10px] text-destructive"
-												onClick={async () => {
-													try {
-														await invoke("revoke_device", {
-															deviceId: device.id,
-														});
-														void refreshDevices();
-													} catch {
-														// ignore
-													}
-												}}
-											>
-												Revoke
-											</Button>
-										</div>
-										<div className="text-[10px] text-muted-foreground font-mono">
-											{device.id}
-										</div>
-										<div className="text-[10px] text-muted-foreground">
-											Last seen {device.last_seen}
-										</div>
-									</div>
-								))}
-							</div>
-						) : (
-							<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
-								No paired devices.
-							</div>
-						)}
-					</section>
+					<DevicePairingSection
+						pairedDevices={pairedDevices}
+						refreshDevices={refreshDevices}
+					/>
 
 					<Separator />
 					<Separator />
 
-					<section className="space-y-2">
-						<div className="flex items-center justify-between">
-							<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-								<Clock3 className="w-3.5 h-3.5 text-muted-foreground" />
-								Background tasks
-							</div>
-							<Badge variant="outline" className="text-[10px]">
-								{backgroundTasks?.length ?? "—"}
-							</Badge>
-						</div>
-						<div className="flex items-center gap-2">
-							<Button
-								variant="outline"
-								size="sm"
-								className="h-7 text-[10px]"
-								onClick={async () => {
-									if (!listBackgroundTasks) return;
-									try {
-										const tasks = await listBackgroundTasks();
-										setBackgroundTasks(tasks);
-									} catch {
-										// ignore
-									}
-								}}
-							>
-								Refresh
-							</Button>
-						</div>
-						{backgroundTasks && backgroundTasks.length > 0 ? (
-							<div className="space-y-2">
-								{backgroundTasks.slice(0, 10).map((task) => (
-									<div
-										key={task.task_id}
-										className="rounded border bg-secondary px-2 py-2 space-y-1 text-xs"
-									>
-										<div className="flex items-start justify-between gap-2">
-											<div className="min-w-0">
-												<div className="font-medium">
-													{task.display_name || task.tool_name}
-												</div>
-												<div className="text-[10px] text-muted-foreground font-mono">
-													{task.task_id}
-												</div>
-											</div>
-											<div className="flex flex-wrap gap-1">
-												<Badge
-													variant={
-														task.status === "running"
-															? "default"
-															: task.status === "completed"
-																? "secondary"
-																: "outline"
-													}
-													className="text-[10px] uppercase"
-												>
-													{task.status}
-												</Badge>
-												{task.detached && (
-													<Badge variant="outline" className="text-[10px]">
-														detached
-													</Badge>
-												)}
-											</div>
-										</div>
-										{task.progress && (
-											<div className="space-y-1">
-												{task.progress.percent !== undefined && (
-													<div className="h-1.5 rounded-full bg-muted overflow-hidden">
-														<div
-															className="h-full bg-primary transition-all"
-															style={{
-																width: `${Math.min(task.progress.percent, 100)}%`,
-															}}
-														/>
-													</div>
-												)}
-												<div className="text-[10px] text-muted-foreground">
-													{task.progress.message || ""}
-													{task.progress.current !== undefined &&
-													task.progress.total !== undefined
-														? ` (${task.progress.current}/${task.progress.total})`
-														: ""}
-												</div>
-											</div>
-										)}
-										{task.status === "running" && cancelBackgroundTask && (
-											<Button
-												variant="ghost"
-												size="sm"
-												className="h-5 px-1.5 text-[10px] text-destructive"
-												onClick={async () => {
-													try {
-														await cancelBackgroundTask(task.task_id);
-														if (listBackgroundTasks) {
-															const tasks = await listBackgroundTasks();
-															setBackgroundTasks(tasks);
-														}
-													} catch {
-														// ignore
-													}
-												}}
-											>
-												Cancel
-											</Button>
-										)}
-									</div>
-								))}
-							</div>
-						) : (
-							<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
-								No background tasks found.
-							</div>
-						)}
-					</section>
+					<Separator />
+					<Separator />
+
+					<BackgroundTasksSection
+						listBackgroundTasks={listBackgroundTasks}
+						cancelBackgroundTask={cancelBackgroundTask}
+					/>
 
 					<Separator />
 
-					<section className="space-y-2">
-						<div className="flex items-center justify-between">
-							<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-								Ambient
-							</div>
-							<div className="flex items-center gap-2">
-								<Badge variant="outline" className="text-[10px]">
-									{ambientStatus?.scheduled_count ?? "–"}
-								</Badge>
-								<Button
-									variant="ghost"
-									size="sm"
-									className="h-6 px-2 text-[10px]"
-									onClick={() => {
-										void refreshAmbient();
-										void refreshAmbientTranscripts();
-									}}
-								>
-									<RotateCcw className="w-3 h-3 mr-1" />
-									Refresh
-								</Button>
-								{triggerAmbient && (
-									<Button
-										variant="secondary"
-										size="sm"
-										className="h-6 px-2 text-[10px]"
-										disabled={
-											ambientStatus?.status === "running" ||
-											ambientStatus?.status === "disabled"
-										}
-										onClick={() => {
-											void triggerAmbient().then((ok: boolean) => {
-												if (ok) {
-													void refreshAmbient();
-													void refreshAmbientTranscripts();
-												}
-											});
-										}}
-									>
-										Trigger
-									</Button>
-								)}
-								{stopAmbient && (
-									<Button
-										variant="outline"
-										size="sm"
-										className="h-6 px-2 text-[10px] text-destructive hover:text-destructive"
-										disabled={ambientStatus?.status === "disabled"}
-										onClick={() => {
-											void stopAmbient().then((ok: boolean) => {
-												if (ok) {
-													void refreshAmbient();
-													void refreshAmbientTranscripts();
-												}
-											});
-										}}
-									>
-										Stop
-									</Button>
-								)}
-							</div>
-						</div>
-						{ambientStatus ? (
-							<div className="space-y-2">
-								<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
-									<div className="flex items-center justify-between gap-2">
-										<div className="flex items-center gap-1.5">
-											<Moon className="w-3.5 h-3.5 text-muted-foreground" />
-											<span className="font-medium">Status</span>
-										</div>
-										<Badge
-											variant={
-												ambientStatus.status === "running"
-													? "default"
-													: ambientStatus.status === "scheduled"
-														? "secondary"
-														: "outline"
-											}
-											className="text-[10px] uppercase"
-										>
-											{ambientStatus.status}
-										</Badge>
-									</div>
-									{!ambientStatus.enabled && (
-										<div className="text-[11px] text-muted-foreground">
-											Ambient mode is disabled in configuration.
-										</div>
-									)}
-									{ambientStatus.last_run && (
-										<div className="flex items-center justify-between gap-2">
-											<span className="text-muted-foreground">Last run</span>
-											<span className="font-mono">
-												{new Date(ambientStatus.last_run).toLocaleString()}
-											</span>
-										</div>
-									)}
-									{ambientStatus.total_cycles > 0 && (
-										<div className="flex items-center justify-between gap-2">
-											<span className="text-muted-foreground">
-												Total cycles
-											</span>
-											<span className="font-mono">
-												{ambientStatus.total_cycles}
-											</span>
-										</div>
-									)}
-									{ambientStatus.last_summary && (
-										<div className="rounded border bg-secondary px-2 py-1.5 text-[11px] text-muted-foreground">
-											{ambientStatus.last_summary}
-										</div>
-									)}
-									{ambientStatus.next_wake && (
-										<div className="flex items-center justify-between gap-2">
-											<span className="inline-flex items-center gap-1.5 text-muted-foreground">
-												<Timer className="w-3.5 h-3.5" />
-												Next wake
-											</span>
-											<span className="font-mono">
-												{new Date(ambientStatus.next_wake).toLocaleString()}
-											</span>
-										</div>
-									)}
-									<div className="flex flex-wrap gap-1 pt-1">
-										{ambientStatus.last_compactions !== undefined && (
-											<Badge variant="outline" className="text-[10px]">
-												compactions {ambientStatus.last_compactions}
-											</Badge>
-										)}
-										{ambientStatus.last_memories_modified !== undefined && (
-											<Badge variant="outline" className="text-[10px]">
-												memories {ambientStatus.last_memories_modified}
-											</Badge>
-										)}
-									</div>
-								</div>
-								{ambientStatus.scheduled_items.length > 0 && (
-									<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
-										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-											Scheduled items
-										</div>
-										<div className="space-y-2">
-											{ambientStatus.scheduled_items.map((item) => (
-												<div
-													key={item.id}
-													className="rounded border bg-secondary px-2 py-2 space-y-1"
-												>
-													<div className="flex items-start justify-between gap-2">
-														<div className="min-w-0">
-															<div className="font-medium break-words">
-																{item.task_description || item.context}
-															</div>
-															<div className="text-[10px] text-muted-foreground font-mono">
-																{item.id}
-															</div>
-														</div>
-														<div className="flex flex-wrap gap-1">
-															<Badge
-																variant="outline"
-																className="text-[10px] uppercase"
-															>
-																{item.priority}
-															</Badge>
-															<Badge variant="outline" className="text-[10px]">
-																{item.target.kind}
-															</Badge>
-														</div>
-													</div>
-													<div className="text-[10px] text-muted-foreground">
-														{new Date(item.scheduled_for).toLocaleString()}
-													</div>
-												</div>
-											))}
-										</div>
-									</div>
-								)}
-								{ambientTranscripts && ambientTranscripts.length > 0 && (
-									<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
-										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-											Recent transcripts
-										</div>
-										<div className="space-y-2">
-											{ambientTranscripts.slice(0, 5).map((tx) => (
-												<div
-													key={tx.session_id + tx.started_at}
-													className="rounded border bg-secondary px-2 py-2 space-y-1"
-												>
-													<div className="flex items-center justify-between gap-2">
-														<span className="font-medium">
-															{tx.provider} · {tx.model}
-														</span>
-														<Badge
-															variant={
-																tx.status === "complete"
-																	? "secondary"
-																	: "outline"
-															}
-															className="text-[10px]"
-														>
-															{tx.status}
-														</Badge>
-													</div>
-													<div className="text-[10px] text-muted-foreground">
-														{new Date(tx.started_at).toLocaleString()}
-														{tx.ended_at
-															? ` – ${new Date(tx.ended_at).toLocaleString()}`
-															: ""}
-													</div>
-													{tx.summary && (
-														<div className="text-[11px] text-muted-foreground break-words">
-															{tx.summary}
-														</div>
-													)}
-													<div className="flex flex-wrap gap-1">
-														<Badge variant="outline" className="text-[10px]">
-															{tx.compactions} compactions
-														</Badge>
-														<Badge variant="outline" className="text-[10px]">
-															{tx.memories_modified} memories
-														</Badge>
-														<Badge variant="outline" className="text-[10px]">
-															{tx.pending_permissions} pending permissions
-														</Badge>
-													</div>
-												</div>
-											))}
-										</div>
-									</div>
-								)}
-							</div>
-						) : (
-							<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
-								Ambient status unavailable.
-							</div>
-						)}
-					</section>
+					<Separator />
+					<AmbientSection
+						triggerAmbient={triggerAmbient}
+						stopAmbient={stopAmbient}
+					/>
+
+					<Separator />
 
 					<RuntimeEventsSection
 						filteredRuntimeEvents={filteredRuntimeEvents}
