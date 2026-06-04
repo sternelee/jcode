@@ -8,6 +8,7 @@ import {
 	Settings,
 	ChevronUp,
 	ChevronDown,
+	ArrowDown,
 	X,
 	Plus,
 	Play,
@@ -165,6 +166,7 @@ export function ChatArea({
 		sessionId: string;
 		draft: string;
 	} | null>(null);
+	const [showScrollButton, setShowScrollButton] = useState(false);
 
 	const feedRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -236,15 +238,47 @@ export function ChatArea({
 		[text],
 	);
 
-	// ── Auto-scroll ───────────────────────────────────────────────────────
+	// ── Scroll position & auto-scroll ─────────────────────────────────────
+	const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+		const el = feedRef.current;
+		if (!el) return;
+		el.scrollTo({ top: el.scrollHeight, behavior });
+	}, []);
+
+	const checkScrollPosition = useCallback(() => {
+		const el = feedRef.current;
+		if (!el) return;
+		const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+		setShowScrollButton(!nearBottom);
+	}, []);
+
+	useEffect(() => {
+		const el = feedRef.current;
+		if (!el) return;
+		const onScroll = () => checkScrollPosition();
+		el.addEventListener("scroll", onScroll, { passive: true });
+		return () => el.removeEventListener("scroll", onScroll);
+	}, [checkScrollPosition]);
+
+	// Auto-scroll when new messages arrive or content streams in
 	useEffect(() => {
 		const el = feedRef.current;
 		if (!el) return;
 		const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 200;
 		if (nearBottom || messages.length <= 2) {
-			el.scrollTop = el.scrollHeight;
+			// Use requestAnimationFrame to ensure DOM has updated
+			requestAnimationFrame(() => {
+				scrollToBottom("auto");
+				setShowScrollButton(false);
+			});
 		}
-	}, [messages.length]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [
+		messages.length,
+		messages[messages.length - 1]?.content,
+		messages[messages.length - 1]?.isStreaming,
+		scrollToBottom,
+	]);
 
 	// ── Search ────────────────────────────────────────────────────────────
 	const searchMatchIds = useMemo(() => {
@@ -849,7 +883,7 @@ export function ChatArea({
 				)}
 
 				{/* ── Message Feed ── */}
-				<div ref={feedRef} className="flex-1 overflow-y-auto px-5 py-4">
+				<div ref={feedRef} className="flex-1 overflow-y-auto px-5 py-4 relative">
 					{isLoading && messages.length === 0 && (
 						<div className="space-y-5 pt-2 max-w-3xl mx-auto">
 							{[0.6, 0.85, 0.4, 0.7].map((w, i) => (
@@ -1085,6 +1119,18 @@ export function ChatArea({
 							</div>
 						)}
 					</div>
+
+					{/* ── Scroll-to-bottom button ── */}
+					{showScrollButton && messages.length > 0 && (
+						<button
+							onClick={() => scrollToBottom("smooth")}
+							className="absolute bottom-4 right-4 z-20 flex items-center gap-1.5 px-3 py-2 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all duration-200 animate-fade-in"
+							title="Scroll to bottom"
+						>
+							<ArrowDown className="w-3.5 h-3.5" />
+							<span className="text-[12px] font-medium">New</span>
+						</button>
+					)}
 				</div>
 
 				{/* ── Input Area ── */}
