@@ -1,6 +1,7 @@
 use jcode::agent::Agent;
 use jcode::agent::InterruptSignal;
 use jcode::provider::MultiProvider;
+use jcode::provider::Provider;
 use jcode::session::Session;
 use jcode::tool::Registry;
 use jcode::tool::StdinInputRequest;
@@ -202,7 +203,7 @@ pub async fn create_provider() -> Result<Arc<MultiProvider>, String> {
 }
 
 pub async fn create_agent(
-    provider: Arc<MultiProvider>,
+    provider: Arc<dyn Provider>,
     working_dir: Option<&str>,
 ) -> Result<Agent, String> {
     let registry = Registry::new(provider.clone()).await;
@@ -217,7 +218,7 @@ pub async fn create_agent(
 }
 
 pub async fn create_agent_with_session(
-    provider: Arc<MultiProvider>,
+    provider: Arc<dyn Provider>,
     session: Session,
     working_dir: Option<&str>,
 ) -> Result<Agent, String> {

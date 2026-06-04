@@ -1,5 +1,6 @@
 use crate::commands::{create_agent_with_session, setup_stdin_channel, AppState, SessionRuntime};
 use jcode::message::{ContentBlock, Role, ToolCall};
+use jcode::provider::Provider;
 use jcode::session::{Session, StoredDisplayRole, StoredMessage};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -1234,7 +1235,7 @@ pub async fn load_session_runtime_silently(
     eprintln!("[load_silently] loading session={} from disk", session_id);
     let session = Session::load(session_id)
         .map_err(|e| format!("Session not found and cannot be auto-loaded: {session_id}: {e}"))?;
-	let provider = state.get_provider().await?;
+	let provider = state.get_provider().await?.fork();
 	if let Some(ref saved_model) = session.model {
 		let model_arg = if let Some(ref pk) = session.provider_key {
 			format!("{}:{}", pk, saved_model)

@@ -28,7 +28,7 @@ async fn begin_session(
     role_name: Option<String>,
     profile_id: Option<String>,
 ) -> Result<String, String> {
-    let provider = state.get_provider().await?;
+    let provider = state.get_provider().await?.fork();
     if let Some(ref model_name) = model {
         let model_arg = if let Some(pid) = profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
             format!("{}:{}", pid, model_name)
@@ -80,13 +80,14 @@ async fn begin_swarm(
     let provider = state.get_provider().await?;
 
     // -- Coordinator --
+    let coordinator_provider = provider.fork();
     if let Some(ref model_name) = coordinator_model {
         let model_arg = if let Some(pid) = coordinator_profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
             format!("{}:{}", pid, model_name)
         } else {
             model_name.clone()
         };
-        jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg)
+        jcode::provider::set_model_with_auth_refresh(coordinator_provider.as_ref(), &model_arg)
             .map_err(|e| format!("Failed to set coordinator model: {e}"))?;
     }
 
@@ -95,7 +96,7 @@ async fn begin_swarm(
     coordinator_session.model = Some(provider.model());
     coordinator_session.provider_key = jcode::session::derive_session_provider_key(provider.name());
 
-    let mut coordinator_agent = create_agent_with_session(provider.clone(), coordinator_session, working_dir.as_deref()).await?;
+    let mut coordinator_agent = create_agent_with_session(coordinator_provider, coordinator_session, working_dir.as_deref()).await?;
     let resolved_memory_enabled = memory_enabled.unwrap_or_else(|| {
         jcode::config::Config::resolve_workspace_memory_enabled(working_dir.as_deref())
     });
@@ -204,7 +205,7 @@ async fn resume_session(
 
     let session = Session::load(&session_id)
         .map_err(|e| format!("Failed to load session {}: {e}", &session_id))?;
-	let provider = state.get_provider().await?;
+	let provider = state.get_provider().await?.fork();
 	if let Some(ref saved_model) = session.model {
 		let model_arg = if let Some(ref pk) = session.provider_key {
 			format!("{}:{}", pk, saved_model)
