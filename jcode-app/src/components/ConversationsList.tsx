@@ -41,6 +41,8 @@ interface ConversationsListProps {
 	onSelectSession?: (session: SessionInfo) => void;
 	onCreateSession: () => void;
 	onRemoveSession?: (sessionId: string) => void;
+	workspaceModes?: Record<string, "normal" | "swarm">;
+	onToggleSwarmMode?: (workspaceId: string) => void;
 }
 
 const DEFAULT_WORKSPACE_ID = "default";
@@ -159,6 +161,8 @@ export function ConversationsList({
 	onSelectSession,
 	onCreateSession,
 	onRemoveSession,
+	workspaceModes,
+	onToggleSwarmMode,
 	sessionPreviewMap = {},
 	sessionData = {},
 	gitBranches = {},
@@ -353,6 +357,28 @@ export function ConversationsList({
 										</div>
 									</button>
 
+									{onToggleSwarmMode && isSwarmWorkspace(sessions, wsId) && (
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												onToggleSwarmMode(wsId);
+											}}
+											className={cn(
+												"text-[10px] px-1.5 py-0.5 rounded transition-colors shrink-0",
+												workspaceModes?.[wsId] === "swarm"
+													? "bg-sidebar-primary/20 text-sidebar-primary hover:bg-sidebar-primary/30"
+													: "bg-sidebar-accent text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/80",
+											)}
+											title={
+												workspaceModes?.[wsId] === "swarm"
+													? "Switch to normal mode"
+													: "Switch to swarm mode"
+											}
+										>
+											{workspaceModes?.[wsId] === "swarm" ? "Swarm" : "Normal"}
+										</button>
+									)}
 									<span className="text-[11px] text-sidebar-foreground/40 mr-1">
 										{items.length}
 									</span>

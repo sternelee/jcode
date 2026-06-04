@@ -86,7 +86,7 @@ export default function App() {
 	// Pre-seed createDialog in swarm mode when adding an agent to existing workspace
 	const [createDialogInitMode, setCreateDialogInitMode] = useState<
 		"normal" | "swarm"
-	>("swarm");
+	>("normal");
 	const [preferredModel] = useState("");
 	const [selectedConvId, setSelectedConvId] = useState<string | undefined>();
 	const { effectiveTheme, setTheme } = useTheme();
@@ -131,12 +131,23 @@ export default function App() {
 	const openWorkspaceConversation = async (
 		workspaceId: string,
 		preferredSessionId?: string,
+		forceMode?: "normal" | "swarm",
 	) => {
 		const workingDir = workingDirFromWorkspaceId(workspaceId);
 		setActiveWorkspace(workspaceId);
 		setWorkingDir(workingDir);
-		const history = await loadWorkspaceThreadHistory(workingDir);
-		setWorkspaceMode(workspaceId, "swarm", history);
+
+		const existingMode = state.workspaceModes[workspaceId];
+		const sessions = getWorkspaceSessions(workspaceId);
+		const hasSwarm = sessions.filter((s) => s.roleName).length >= 2;
+		const mode = forceMode ?? existingMode ?? (hasSwarm ? "swarm" : "normal");
+
+		if (mode === "swarm") {
+			const history = await loadWorkspaceThreadHistory(workingDir);
+			setWorkspaceMode(workspaceId, "swarm", history);
+		} else {
+			setWorkspaceMode(workspaceId, "normal");
+		}
 		setSelectedConvId(`workspace:${workspaceId}`);
 
 		const targetSessionId =
@@ -162,10 +173,8 @@ export default function App() {
 		setActiveWorkspace(workspaceId);
 		setWorkingDir(workingDir);
 
-		const sessions = getWorkspaceSessions(workspaceId);
-		const hasSwarmThread =
-			sessions.filter((session) => session.roleName).length >= 2;
-		if (hasSwarmThread) {
+		const currentMode = state.workspaceModes[workspaceId];
+		if (currentMode === "swarm") {
 			await openWorkspaceConversation(workspaceId);
 			return;
 		}
@@ -364,6 +373,7 @@ export default function App() {
 		await openWorkspaceConversation(
 			workspaceId,
 			createdSessionIds[0] || undefined,
+			"swarm",
 		);
 		setPendingSwarmMembers([]);
 	};
@@ -389,6 +399,21 @@ export default function App() {
 	const handleAddAgentToWorkspace = () => {
 		setCreateDialogInitMode("swarm");
 		setCreateDialogOpen(true);
+	};
+
+	/** Toggle swarm mode for a workspace. */
+	const handleToggleSwarmMode = async (workspaceId: string) => {
+		const currentMode = state.workspaceModes[workspaceId];
+		const newMode = currentMode === "swarm" ? "normal" : "swarm";
+		if (newMode === "swarm") {
+			const workingDir = workingDirFromWorkspaceId(workspaceId);
+			const history = await loadWorkspaceThreadHistory(workingDir);
+			setWorkspaceMode(workspaceId, "swarm", history);
+		} else {
+			setWorkspaceMode(workspaceId, "normal");
+		}
+		// Re-select the workspace to reflect mode change
+		setSelectedConvId(`workspace:${workspaceId}`);
 	};
 
 	/** Remove an individual agent session from the workspace after confirmation. */
@@ -785,6 +810,8 @@ export default function App() {
 									handleNewSession();
 								}}
 								onRemoveSession={handleRemoveAgentSession}
+								workspaceModes={state.workspaceModes}
+								onToggleSwarmMode={handleToggleSwarmMode}
 							/>
 						</div>
 						{/* Mobile sidebar overlay */}
@@ -819,6 +846,8 @@ export default function App() {
 											handleNewSession();
 										}}
 										onRemoveSession={handleRemoveAgentSession}
+												workspaceModes={state.workspaceModes}
+												onToggleSwarmMode={handleToggleSwarmMode}
 									/>
 								</div>
 							</>
