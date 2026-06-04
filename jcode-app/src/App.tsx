@@ -646,6 +646,15 @@ export default function App() {
 		await sendMessage(newContent, images, targetSessionId);
 	};
 
+	const handleQuoteMessage = (content: string, role: string) => {
+		const quoted = `> **${role === "user" ? "You" : "Assistant"}**:\n> ${content.split("\n").join("\n> ")}\n\n`;
+		// Pre-fill the input area with the quote
+		// We need to access the ChatArea's textarea — use a custom event
+		window.dispatchEvent(
+			new CustomEvent("jcode:prefill-input", { detail: quoted }),
+		);
+	};
+
 	const handleResume = (session: SessionInfo) => {
 		setActiveWorkspace(workspaceIdFromDir(session.workingDir));
 		setWorkingDir(session.workingDir || null);
@@ -948,6 +957,7 @@ export default function App() {
 							}}
 							onRegenerateMessage={handleRegenerateMessage}
 							onEditMessage={handleEditMessage}
+							onQuoteMessage={handleQuoteMessage}
 						/>
 						<SidePanel
 							snapshot={

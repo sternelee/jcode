@@ -21,6 +21,7 @@ import {
 	TriangleAlert,
 	X,
 	Check,
+	Quote,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -82,6 +83,28 @@ function imageSrc(image: AttachedImage): string {
 	if (image.base64Data)
 		return `data:${image.mediaType};base64,${image.base64Data}`;
 	return "";
+}
+
+function formatTimestamp(ts?: number): string {
+	if (!ts) return "";
+	const date = new Date(ts);
+	const now = new Date();
+	const diffMs = now.getTime() - date.getTime();
+	const diffMins = Math.floor(diffMs / 60000);
+	const diffHours = Math.floor(diffMs / 3600000);
+	const diffDays = Math.floor(diffMs / 86400000);
+
+	if (diffMins < 1) return "just now";
+	if (diffMins < 60) return `${diffMins}m ago`;
+	if (diffHours < 24) return `${diffHours}h ago`;
+	if (diffDays < 7) return `${diffDays}d ago`;
+
+	return date.toLocaleDateString(undefined, {
+		month: "short",
+		day: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+	});
 }
 
 // ── System message types ─────────────────────────────────────────────────
@@ -188,6 +211,7 @@ interface MessageBubbleProps {
 	hideHeader?: boolean;
 	onRegenerate?: () => void;
 	onEdit?: (newContent: string) => void;
+	onQuote?: (content: string, role: string) => void;
 }
 
 export function MessageBubble({
@@ -197,6 +221,7 @@ export function MessageBubble({
 	hideHeader = false,
 	onRegenerate,
 	onEdit,
+	onQuote,
 }: MessageBubbleProps) {
 	const [isEditing, setIsEditing] = useState(false);
 	const [editDraft, setEditDraft] = useState(message.content);
@@ -473,6 +498,11 @@ export function MessageBubble({
 							) : (
 								<MessageResponse>{message.content}</MessageResponse>
 							)}
+							{message.timestamp && !isEditing && (
+								<div className="text-[10px] text-muted-foreground/50 mt-0.5">
+									{formatTimestamp(message.timestamp)}
+								</div>
+							)}
 							{!isEditing && onEdit && (
 								<MessageActions>
 									<MessageAction
@@ -490,17 +520,30 @@ export function MessageBubble({
 										>
 											<CopyIcon className="size-3" />
 										</MessageAction>
+										{onQuote && (
+											<MessageAction
+												onClick={() => onQuote(message.content, message.role)}
+												label="Quote"
+											>
+												<Quote className="size-3" />
+											</MessageAction>
+										)}
 									</MessageActions>
 								)}
 						</>
 					) : (
 						<>
-							<div className="flex flex-row items-center justify-between mb-1">
-								<div className="flex items-center gap-2">
-									<span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-										{message.roleName || "JCode"}
-									</span>
-								</div>
+								<div className="flex flex-row items-center justify-between mb-1">
+									<div className="flex items-center gap-2">
+										<span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+											{message.roleName || "JCode"}
+										</span>
+										{message.timestamp && (
+											<span className="text-[10px] text-muted-foreground/60">
+												{formatTimestamp(message.timestamp)}
+											</span>
+										)}
+									</div>
 								{message.tokenUsage && (
 									<Badge variant="outline" className="text-[10px] font-mono">
 										↑{message.tokenUsage.input} ↓{message.tokenUsage.output}
@@ -540,6 +583,11 @@ export function MessageBubble({
 									))}
 								</div>
 							)}
+							{message.timestamp && (
+								<div className="text-[10px] text-muted-foreground/50 mt-0.5">
+									{formatTimestamp(message.timestamp)}
+								</div>
+							)}
 							<MessageActions>
 								{onRegenerate && (
 									<MessageAction onClick={onRegenerate} label="Regenerate">
@@ -552,6 +600,14 @@ export function MessageBubble({
 								>
 									<CopyIcon className="size-3" />
 								</MessageAction>
+								{onQuote && (
+									<MessageAction
+										onClick={() => onQuote(message.content, message.role)}
+										label="Quote"
+									>
+										<Quote className="size-3" />
+									</MessageAction>
+								)}
 							</MessageActions>
 						</>
 					)}

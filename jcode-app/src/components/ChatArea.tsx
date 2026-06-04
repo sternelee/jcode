@@ -62,6 +62,7 @@ interface ChatAreaProps {
 	onSendSoftInterrupt?: (content: string) => Promise<void>;
 	onRegenerateMessage?: (messageIndex: number) => void;
 	onEditMessage?: (messageIndex: number, newContent: string) => void;
+	onQuoteMessage?: (content: string, role: string) => void;
 }
 
 // ── Member role color map ────────────────────────────────────────────────
@@ -136,6 +137,7 @@ export function ChatArea({
 	onSendSoftInterrupt,
 	onRegenerateMessage,
 	onEditMessage,
+	onQuoteMessage,
 }: ChatAreaProps) {
 	const [text, setText] = useState("");
 	const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -168,6 +170,19 @@ export function ChatArea({
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const searchInputRef = useRef<HTMLInputElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
+
+	// Listen for quote-to-input prefills from MessageBubble actions
+	useEffect(() => {
+		const handler = (e: Event) => {
+			const detail = (e as CustomEvent).detail as string;
+			if (typeof detail === "string") {
+				setText((prev) => (prev ? prev + "\n" + detail : detail));
+				textareaRef.current?.focus();
+			}
+		};
+		window.addEventListener("jcode:prefill-input", handler);
+		return () => window.removeEventListener("jcode:prefill-input", handler);
+	}, []);
 
 	const channelMembers = useMemo(() => {
 		if (_channelMembers) return _channelMembers;
@@ -986,6 +1001,7 @@ export function ChatArea({
 													hideHeader
 													onRegenerate={() => onRegenerateMessage?.(idx)}
 														onEdit={(newContent) => onEditMessage?.(idx, newContent)}
+														onQuote={(content, role) => onQuoteMessage?.(content, role)}
 												/>
 											</div>
 										</div>
@@ -1026,6 +1042,7 @@ export function ChatArea({
 												hideHeader
 												onRegenerate={() => onRegenerateMessage?.(idx)}
 														onEdit={(newContent) => onEditMessage?.(idx, newContent)}
+														onQuote={(content, role) => onQuoteMessage?.(content, role)}
 											/>
 										</div>
 									</div>
