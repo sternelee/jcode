@@ -2330,21 +2330,47 @@ async fn run_dictation() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-async fn list_workspace_files(working_dir: String) -> Result<Vec<String>, String> {
+async fn list_workspace_files(working_dir: Option<String>) -> Result<Vec<String>, String> {
+    let root = working_dir.as_deref().unwrap_or(".");
     let mut files = Vec::new();
-    let mut entries = tokio::fs::read_dir(&working_dir).await
-        .map_err(|e| format!("Failed to read directory: {e}"))?;
-    while let Some(entry) = entries.next_entry().await.map_err(|e| format!("{e}"))? {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') || name.starts_with("target") || name == "node_modules" {
-            continue;
+
+    fn should_ignore(name: &str) -> bool {
+        name.starts_with('.')
+            || name == "node_modules"
+            || name == "target"
+            || name == "dist"
+            || name == "build"
+            || name == "__pycache__"
+            || name == "venv"
+            || name == ".venv"
+            || name == "vendor"
+    }
+
+    fn collect_files(path: &std::path::Path, prefix: &str, depth: usize, out: &mut Vec<String>) {
+        if depth > 4 {
+            return;
         }
-        if let Ok(metadata) = entry.metadata().await {
-            if metadata.is_file() {
-                files.push(name);
+        let Ok(entries) = std::fs::read_dir(path) else { return };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if should_ignore(&name) {
+                continue;
+            }
+            let full = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{}/{}", prefix, name)
+            };
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.is_file() {
+                out.push(full);
+            } else if meta.is_dir() {
+                collect_files(&entry.path(), &full, depth + 1, out);
             }
         }
     }
+
+    collect_files(std::path::Path::new(root), "", 0, &mut files);
     files.sort();
     Ok(files)
 }

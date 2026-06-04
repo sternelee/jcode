@@ -958,6 +958,7 @@ export default function App() {
 							onRegenerateMessage={handleRegenerateMessage}
 							onEditMessage={handleEditMessage}
 							onQuoteMessage={handleQuoteMessage}
+							currentWorkingDir={state.workingDir}
 						/>
 						<SidePanel
 							snapshot={

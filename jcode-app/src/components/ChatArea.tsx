@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import type { ChatMessage, SessionInfo } from "@/types";
 import { MessageBubble } from "./MessageBubble";
@@ -18,6 +19,7 @@ import {
 	SendHorizonal,
 	Mic,
 	Loader2,
+	FileText,
 } from "lucide-react";
 import {
 	SlashCommandPalette,
@@ -64,6 +66,7 @@ interface ChatAreaProps {
 	onRegenerateMessage?: (messageIndex: number) => void;
 	onEditMessage?: (messageIndex: number, newContent: string) => void;
 	onQuoteMessage?: (content: string, role: string) => void;
+	currentWorkingDir?: string | null;
 }
 
 // ── Member role color map ────────────────────────────────────────────────
@@ -139,10 +142,13 @@ export function ChatArea({
 	onRegenerateMessage,
 	onEditMessage,
 	onQuoteMessage,
+	currentWorkingDir,
 }: ChatAreaProps) {
 	const [text, setText] = useState("");
 	const [mentionQuery, setMentionQuery] = useState<string | null>(null);
 	const [mentionIndex, setMentionIndex] = useState(0);
+	const [fileList, setFileList] = useState<string[]>([]);
+	const [fileMatches, setFileMatches] = useState<string[]>([]);
 	const [slashQuery, setSlashQuery] = useState<string | null>(null);
 	const [slashIndex, setSlashIndex] = useState(0);
 	const [convening, setConvening] = useState(false);
@@ -202,11 +208,36 @@ export function ChatArea({
 	}, [workspaceSessions]);
 
 	// ── @mention ──────────────────────────────────────────────────────────
-	const mentionMatches = useMemo(() => {
+	const mentionAgentMatches = useMemo(() => {
 		if (mentionQuery === null) return [] as string[];
 		const q = mentionQuery.toLowerCase();
 		return channelMembers.filter((name) => name.toLowerCase().startsWith(q));
 	}, [mentionQuery, channelMembers]);
+
+	// Load file list when @ is triggered
+	useEffect(() => {
+		if (mentionQuery === null) {
+			setFileMatches([]);
+			return;
+		}
+		const q = mentionQuery.toLowerCase();
+		if (fileList.length > 0) {
+			setFileMatches(
+				fileList.filter((f) => f.toLowerCase().includes(q)).slice(0, 50),
+			);
+		} else if (currentWorkingDir) {
+			invoke<string[]>("list_workspace_files", { workingDir: currentWorkingDir })
+				.then((files) => {
+					setFileList(files);
+					setFileMatches(
+						files.filter((f) => f.toLowerCase().includes(q)).slice(0, 50),
+					);
+				})
+				.catch(() => setFileMatches([]));
+		}
+	}, [mentionQuery, fileList, currentWorkingDir]);
+
+	const totalMentionMatches = mentionAgentMatches.length + fileMatches.length;
 
 	const detectMention = useCallback((value: string, cursorPos: number) => {
 		const beforeCursor = value.slice(0, cursorPos);
@@ -469,10 +500,10 @@ export function ChatArea({
 				return;
 			}
 		}
-		if (mentionQuery !== null && mentionMatches.length > 0) {
+		if (mentionQuery !== null && totalMentionMatches > 0) {
 			if (e.key === "ArrowDown") {
 				e.preventDefault();
-				setMentionIndex((i) => Math.min(i + 1, mentionMatches.length - 1));
+				setMentionIndex((i) => Math.min(i + 1, totalMentionMatches - 1));
 				return;
 			}
 			if (e.key === "ArrowUp") {
@@ -482,8 +513,13 @@ export function ChatArea({
 			}
 			if (e.key === "Enter") {
 				e.preventDefault();
-				const n = mentionMatches[mentionIndex];
-				if (n) insertMention(n);
+				if (mentionIndex < mentionAgentMatches.length) {
+					const n = mentionAgentMatches[mentionIndex];
+					if (n) insertMention(n);
+				} else {
+					const f = fileMatches[mentionIndex - mentionAgentMatches.length];
+					if (f) insertMention(f);
+				}
 				return;
 			}
 			if (e.key === "Escape") {
@@ -1147,59 +1183,103 @@ export function ChatArea({
 						)}
 
 						{/* @mention dropdown */}
-						{mentionQuery !== null && mentionMatches.length > 0 && (
-							<div className="absolute bottom-full left-0 right-0 mb-2 bg-card border border-border rounded-xl shadow-lg overflow-hidden z-50 animate-fade-in">
-								<div className="px-3 py-1.5 border-b border-border text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-									Agents — ↑↓ Enter
+						{mentionQuery !== null && totalMentionMatches > 0 && (
+							<div className="absolute bottom-full left-0 right-0 mb-2 bg-card border border-border rounded-xl shadow-lg overflow-hidden z-50 animate-fade-in max-h-80 flex flex-col">
+								<div className="overflow-y-auto">
+									{mentionAgentMatches.length > 0 && (
+										<>
+											<div className="px-3 py-1.5 border-b border-border text-[10px] font-medium text-muted-foreground uppercase tracking-wider sticky top-0 bg-card">
+												Agents — ↑↓ Enter
+											</div>
+											{mentionAgentMatches.map((name, i) => {
+												const mr = memberRole(name);
+												const as = sessionByRoleName.get(name);
+												return (
+													<button
+														key={`agent-${name}`}
+														type="button"
+														onMouseDown={(e) => {
+															e.preventDefault();
+															insertMention(name);
+														}}
+														className={cn(
+															"w-full text-left px-3 py-2 flex items-center gap-2.5 text-[13px] transition-colors",
+															i === mentionIndex ? "bg-primary/10" : "hover:bg-muted",
+														)}
+													>
+														<div className="relative shrink-0">
+															<AgentAvatar name={name} size="sm" />
+															<span
+																className={cn(
+																	"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-card",
+																	as?.liveProcessing
+																		? "bg-primary animate-pulse"
+																		: "bg-emerald-500",
+																)}
+															/>
+														</div>
+														<div className="flex-1 min-w-0">
+															<span
+																className={cn(
+																	"font-medium",
+																	i === mentionIndex
+																		? "text-primary"
+																		: "text-foreground",
+																)}
+															>
+																{name}
+															</span>
+														</div>
+														<span
+															className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white shrink-0 leading-none"
+															style={{ backgroundColor: mr.tagColor }}
+														>
+															{mr.tag}
+														</span>
+													</button>
+												);
+											})}
+										</>
+									)}
+									{fileMatches.length > 0 && (
+										<>
+											<div className="px-3 py-1.5 border-b border-border text-[10px] font-medium text-muted-foreground uppercase tracking-wider sticky top-0 bg-card">
+												Files — ↑↓ Enter
+											</div>
+											{fileMatches.map((fpath, i) => {
+												const globalIndex = mentionAgentMatches.length + i;
+												return (
+													<button
+														key={`file-${fpath}`}
+														type="button"
+														onMouseDown={(e) => {
+															e.preventDefault();
+															insertMention(fpath);
+														}}
+														className={cn(
+															"w-full text-left px-3 py-2 flex items-center gap-2.5 text-[13px] transition-colors",
+															globalIndex === mentionIndex ? "bg-primary/10" : "hover:bg-muted",
+														)}
+													>
+														<FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+														<div className="flex-1 min-w-0">
+															<span
+																className={cn(
+																	"font-medium truncate block",
+																	globalIndex === mentionIndex
+																		? "text-primary"
+																		: "text-foreground",
+																)}
+															>
+																{fpath}
+															</span>
+														</div>
+													</button>
+												);
+											})}
+										</>
+									)}
 								</div>
-								{mentionMatches.map((name, i) => {
-									const mr = memberRole(name);
-									const as = sessionByRoleName.get(name);
-									return (
-										<button
-											key={name}
-											type="button"
-											onMouseDown={(e) => {
-												e.preventDefault();
-												insertMention(name);
-											}}
-											className={cn(
-												"w-full text-left px-3 py-2 flex items-center gap-2.5 text-[13px] transition-colors",
-												i === mentionIndex ? "bg-primary/10" : "hover:bg-muted",
-											)}
-										>
-											<div className="relative shrink-0">
-												<AgentAvatar name={name} size="sm" />
-												<span
-													className={cn(
-														"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-card",
-														as?.liveProcessing
-															? "bg-primary animate-pulse"
-															: "bg-emerald-500",
-													)}
-												/>
-											</div>
-											<div className="flex-1 min-w-0">
-												<span
-													className={cn(
-														"font-medium",
-														i === mentionIndex
-															? "text-primary"
-															: "text-foreground",
-													)}
-												>
-													{name}
-												</span>
-											</div>
-											<span
-												className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-white shrink-0 leading-none"
-												style={{ backgroundColor: mr.tagColor }}
-											>
-												{mr.tag}
-											</span>
-										</button>
-									);
-								})}
 							</div>
 						)}
 
