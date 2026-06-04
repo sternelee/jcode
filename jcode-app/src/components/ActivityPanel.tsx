@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { save, open } from "@tauri-apps/plugin-dialog";
+
 import type {
 	AuthDoctorReport,
 	AuthStatus,
 	ChatMessage,
-	MemoryEntry,
-	MemoryStats,
 	ModelRoute,
 	PairedDeviceInfo,
 	SessionInfo,
@@ -42,11 +40,12 @@ import {
 	DevicePairingSection,
 	AmbientSection,
 	BackgroundTasksSection,
+	BrowserSection,
+	MemorySection,
 } from "./activity-panel";
 import {
 	Activity,
 	ArrowUpRight,
-	BookOpen,
 	ChevronDown,
 	ChevronRight,
 	Copy,
@@ -182,13 +181,6 @@ export function ActivityPanel({
 	const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
 	const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
 	const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null);
-	const [memoryStats, setMemoryStats] = useState<MemoryStats | null>(null);
-	const [memoryEntries, setMemoryEntries] = useState<MemoryEntry[] | null>(
-		null,
-	);
-	const [memoryScope, setMemoryScope] = useState<"all" | "project" | "global">(
-		"all",
-	);
 	const [pairedDevices, setPairedDevices] = useState<PairedDeviceInfo[] | null>(
 		null,
 	);
@@ -213,10 +205,6 @@ export function ActivityPanel({
 	const [transcriptMode, setTranscriptMode] =
 		useState<import("@/types").TranscriptMode>("send");
 	const [transcriptBusy, setTranscriptBusy] = useState(false);
-	const [browserStatus, setBrowserStatus] = useState<
-		import("@/types").BrowserStatus | null
-	>(null);
-	const [browserBusy, setBrowserBusy] = useState(false);
 
 	const segments = useMemo(() => buildSegments(messages), [messages]);
 	const turns = useMemo(() => buildTimeline(segments), [segments]);
@@ -550,30 +538,6 @@ export function ActivityPanel({
 		})();
 	}, []);
 
-	useEffect(() => {
-		void (async () => {
-			try {
-				const stats = await invoke<MemoryStats>("get_memory_stats");
-				setMemoryStats(stats);
-			} catch {
-				// ignore
-			}
-		})();
-	}, []);
-
-	useEffect(() => {
-		void (async () => {
-			try {
-				const result = await invoke<{ memories: MemoryEntry[] }>(
-					"get_memory_list",
-					{ scope: memoryScope },
-				);
-				setMemoryEntries(result.memories.slice(0, 20));
-			} catch {
-				// ignore
-			}
-		})();
-	}, [memoryScope]);
 
 	const refreshDevices = async () => {
 		try {
@@ -606,22 +570,8 @@ export function ActivityPanel({
 		}
 	};
 
-	const refreshBrowserStatus = async () => {
-		if (!getBrowserStatus) return;
-		try {
-			const status = await getBrowserStatus();
-			setBrowserStatus(status);
-		} catch {
-			// ignore
-		}
-	};
-
 	useEffect(() => {
 		void refreshDevices();
-	}, []);
-
-	useEffect(() => {
-		void refreshBrowserStatus();
 	}, []);
 
 	const toggleTurn = (messageId: string) => {
@@ -2710,264 +2660,20 @@ export function ActivityPanel({
 							</div>
 						</div>
 
-						<section className="space-y-2">
-							<div className="flex items-center justify-between">
-								<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-									Browser
-								</div>
-								{browserBusy && (
-									<Badge variant="secondary" className="text-[10px]">
-										setting up…
-									</Badge>
-								)}
-							</div>
-							{browserStatus ? (
-								<div className="rounded-lg border bg-card p-3 space-y-2 text-xs">
-									<div className="flex items-center justify-between gap-2">
-										<span className="inline-flex items-center gap-1.5 text-muted-foreground">
-											<Wrench className="w-3.5 h-3.5" />
-											Status
-										</span>
-										<Badge
-											variant={browserStatus.ready ? "default" : "destructive"}
-											className="text-[10px]"
-										>
-											{browserStatus.ready ? "ready" : "not ready"}
-										</Badge>
-									</div>
-									<div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
-										<div className="text-muted-foreground">Backend</div>
-										<div className="font-mono">{browserStatus.backend}</div>
-										<div className="text-muted-foreground">Browser</div>
-										<div className="font-mono">{browserStatus.browser}</div>
-										<div className="text-muted-foreground">Setup</div>
-										<div className="font-mono">
-											{browserStatus.setup_complete ? "complete" : "incomplete"}
-										</div>
-										<div className="text-muted-foreground">Binary</div>
-										<div className="font-mono">
-											{browserStatus.binary_installed ? "installed" : "missing"}
-										</div>
-										<div className="text-muted-foreground">Responding</div>
-										<div className="font-mono">
-											{browserStatus.responding ? "yes" : "no"}
-										</div>
-										<div className="text-muted-foreground">Compatible</div>
-										<div className="font-mono">
-											{browserStatus.compatible ? "yes" : "no"}
-										</div>
-									</div>
-									{browserStatus.missing_actions.length > 0 && (
-										<div className="rounded border bg-secondary px-2 py-1.5 text-[11px] text-muted-foreground">
-											Missing: {browserStatus.missing_actions.join(", ")}
-										</div>
-									)}
-									{!browserStatus.ready && setupBrowser && (
-										<Button
-											variant="default"
-											size="sm"
-											className="h-7 px-3 text-[11px]"
-											disabled={browserBusy}
-											onClick={() => {
-												setBrowserBusy(true);
-												void setupBrowser().then((log) => {
-													setBrowserBusy(false);
-													if (log) {
-														void refreshBrowserStatus();
-													}
-												});
-											}}
-										>
-											Setup Browser
-										</Button>
-									)}
-								</div>
-							) : (
-								<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
-									No browser status available. Click refresh or check the
-									backend logs.
-								</div>
-							)}
-						</section>
+						<BrowserSection
+							getBrowserStatus={getBrowserStatus}
+							setupBrowser={setupBrowser}
+						/>
 					</section>
 
 					<UsageSection usageInfo={usageInfo} />
 
 					<Separator />
 
-					<section className="space-y-2">
-						<div className="flex items-center justify-between">
-							<div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-2">
-								<BookOpen className="w-3.5 h-3.5 text-muted-foreground" />
-								Memory
-							</div>
-							<Badge variant="outline" className="text-[10px]">
-								{memoryStats?.total ?? "—"}
-							</Badge>
-						</div>
-						<div className="flex flex-wrap gap-1">
-							{(["all", "project", "global"] as const).map((scope) => (
-								<button
-									key={scope}
-									className={cn(
-										"px-2.5 py-1 rounded-full text-[10px] font-medium transition-colors",
-										memoryScope === scope
-											? "bg-primary text-primary-foreground"
-											: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-									)}
-									onClick={() => setMemoryScope(scope)}
-								>
-									{scope}
-								</button>
-							))}
-						</div>
-						<div className="flex items-center gap-2">
-							<Button
-								variant="outline"
-								size="sm"
-								className="h-7 text-[10px]"
-								onClick={async () => {
-									try {
-										const path = await save({
-											filters: [{ name: "JSON", extensions: ["json"] }],
-											defaultPath: "jcode-memories.json",
-										});
-										if (path && exportMemories) {
-											await exportMemories(path);
-										}
-									} catch {
-										// ignore
-									}
-								}}
-							>
-								Export
-							</Button>
-							<Button
-								variant="outline"
-								size="sm"
-								className="h-7 text-[10px]"
-								onClick={async () => {
-									try {
-										const selected = await open({
-											filters: [{ name: "JSON", extensions: ["json"] }],
-											multiple: false,
-										});
-										if (
-											selected &&
-											typeof selected === "string" &&
-											importMemories
-										) {
-											const result = await importMemories(selected);
-											if (result) {
-												// Refresh stats and entries after import
-												const stats =
-													await invoke<MemoryStats>("get_memory_stats");
-												setMemoryStats(stats);
-												const list = await invoke<{ memories: MemoryEntry[] }>(
-													"get_memory_list",
-													{ scope: memoryScope },
-												);
-												setMemoryEntries(list.memories.slice(0, 20));
-											}
-										}
-									} catch {
-										// ignore
-									}
-								}}
-							>
-								Import
-							</Button>
-						</div>
-						{memoryStats ? (
-							<div className="space-y-2">
-								<div className="grid grid-cols-3 gap-2">
-									<div className="rounded border bg-secondary px-2 py-2">
-										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-											Project
-										</div>
-										<div className="text-sm font-medium">
-											{memoryStats.project_count}
-										</div>
-									</div>
-									<div className="rounded border bg-secondary px-2 py-2">
-										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-											Global
-										</div>
-										<div className="text-sm font-medium">
-											{memoryStats.global_count}
-										</div>
-									</div>
-									<div className="rounded border bg-secondary px-2 py-2">
-										<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-											Tags
-										</div>
-										<div className="text-sm font-medium">
-											{memoryStats.unique_tags}
-										</div>
-									</div>
-								</div>
-								{Object.entries(memoryStats.categories).length > 0 && (
-									<div className="flex flex-wrap gap-1.5">
-										{Object.entries(memoryStats.categories).map(
-											([cat, count]) => (
-												<Badge
-													key={cat}
-													variant="outline"
-													className="text-[10px]"
-												>
-													{cat}: {count}
-												</Badge>
-											),
-										)}
-									</div>
-								)}
-							</div>
-						) : (
-							<div className="rounded-lg border border p-3 text-xs text-muted-foreground">
-								Memory stats unavailable.
-							</div>
-						)}
-						{memoryEntries && memoryEntries.length > 0 && (
-							<div className="space-y-2">
-								<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-									Recent entries ({memoryEntries.length})
-								</div>
-								{memoryEntries.map((entry) => (
-									<div
-										key={entry.id}
-										className="rounded border bg-secondary px-2 py-2 space-y-1 text-xs"
-									>
-										<div className="flex items-start justify-between gap-2">
-											<div className="font-medium break-words">
-												{compactText(entry.content, 80)}
-											</div>
-											<Badge variant="outline" className="text-[10px] shrink-0">
-												{entry.category}
-											</Badge>
-										</div>
-										<div className="flex flex-wrap gap-1">
-											{entry.tags.map((tag) => (
-												<Badge
-													key={tag}
-													variant="secondary"
-													className="text-[10px]"
-												>
-													{tag}
-												</Badge>
-											))}
-										</div>
-										<div className="flex items-center justify-between text-[10px] text-muted-foreground">
-											<span>
-												trust {entry.trust} · conf{" "}
-												{Math.round(entry.effective_confidence * 100)}%
-											</span>
-											<span>{entry.access_count} reads</span>
-										</div>
-									</div>
-								))}
-							</div>
-						)}
-					</section>
+					<MemorySection
+						exportMemories={exportMemories}
+						importMemories={importMemories}
+					/>
 
 					<Separator />
 
