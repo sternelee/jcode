@@ -614,6 +614,38 @@ export default function App() {
 		await sendMessage(userMsg.content, images, targetSessionId);
 	};
 
+	const handleEditMessage = async (frontendIndex: number, newContent: string) => {
+		if (selectedConvId?.startsWith("workspace:")) {
+			// Workspace threads are merged from multiple sessions;
+			// editing is not supported yet.
+			return;
+		}
+		const targetSessionId = resolveTargetSessionId();
+		if (!targetSessionId) return;
+
+		const sessionMsgs = state.sessionData[targetSessionId]?.messages || [];
+		const userMsg = sessionMsgs[frontendIndex];
+		if (!userMsg || userMsg.role !== "user") return;
+
+		// Compute 1-based visible conversation count up to the user message
+		let visibleCount = 0;
+		for (let i = 0; i < frontendIndex; i++) {
+			const role = sessionMsgs[i]?.role;
+			if (role === "user" || role === "assistant") {
+				visibleCount += 1;
+			}
+		}
+
+		// Rewind to remove the user message and everything after it
+		await rewindChat(visibleCount, targetSessionId);
+
+		// Send the edited content
+		const images: [string, string][] | undefined = userMsg.images?.map(
+			(img) => [img.mediaType, img.base64Data || ""],
+		);
+		await sendMessage(newContent, images, targetSessionId);
+	};
+
 	const handleResume = (session: SessionInfo) => {
 		setActiveWorkspace(workspaceIdFromDir(session.workingDir));
 		setWorkingDir(session.workingDir || null);
@@ -915,6 +947,7 @@ export default function App() {
 								if (sid) await sendSoftInterrupt(content, sid);
 							}}
 							onRegenerateMessage={handleRegenerateMessage}
+							onEditMessage={handleEditMessage}
 						/>
 						<SidePanel
 							snapshot={

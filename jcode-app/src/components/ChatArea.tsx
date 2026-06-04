@@ -61,6 +61,7 @@ interface ChatAreaProps {
 	onRunDictation?: () => Promise<{ text: string; mode: string } | null>;
 	onSendSoftInterrupt?: (content: string) => Promise<void>;
 	onRegenerateMessage?: (messageIndex: number) => void;
+	onEditMessage?: (messageIndex: number, newContent: string) => void;
 }
 
 // ── Member role color map ────────────────────────────────────────────────
@@ -134,6 +135,7 @@ export function ChatArea({
 	onRunDictation,
 	onSendSoftInterrupt,
 	onRegenerateMessage,
+	onEditMessage,
 }: ChatAreaProps) {
 	const [text, setText] = useState("");
 	const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -983,6 +985,7 @@ export function ChatArea({
 													isStreaming={msg.isStreaming}
 													hideHeader
 													onRegenerate={() => onRegenerateMessage?.(idx)}
+														onEdit={(newContent) => onEditMessage?.(idx, newContent)}
 												/>
 											</div>
 										</div>
@@ -1022,6 +1025,7 @@ export function ChatArea({
 												isStreaming={msg.isStreaming}
 												hideHeader
 												onRegenerate={() => onRegenerateMessage?.(idx)}
+														onEdit={(newContent) => onEditMessage?.(idx, newContent)}
 											/>
 										</div>
 									</div>

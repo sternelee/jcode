@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import type { AttachedImage, ChatMessage } from "@/types";
 import {
 	Message,
@@ -16,8 +16,11 @@ import {
 	History,
 	Keyboard,
 	Layers3,
+	Pencil,
 	RotateCcw,
 	TriangleAlert,
+	X,
+	Check,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -184,6 +187,7 @@ interface MessageBubbleProps {
 	isHighlighted?: boolean;
 	hideHeader?: boolean;
 	onRegenerate?: () => void;
+	onEdit?: (newContent: string) => void;
 }
 
 export function MessageBubble({
@@ -192,7 +196,10 @@ export function MessageBubble({
 	isHighlighted,
 	hideHeader = false,
 	onRegenerate,
+	onEdit,
 }: MessageBubbleProps) {
+	const [isEditing, setIsEditing] = useState(false);
+	const [editDraft, setEditDraft] = useState(message.content);
 	// ── System message ──
 	if (message.role === "system") {
 		const meta = classifySystem(message.content);
@@ -418,7 +425,73 @@ export function MessageBubble({
 									))}
 								</div>
 							)}
-							<MessageResponse>{message.content}</MessageResponse>
+							{isEditing ? (
+								<div className="space-y-2">
+									<textarea
+										value={editDraft}
+										onChange={(e) => setEditDraft(e.target.value)}
+										className="w-full min-h-[60px] px-3 py-2 rounded-lg bg-background border border-border text-sm text-foreground resize-y focus:outline-none focus:ring-1 focus:ring-primary/30"
+										autoFocus
+										onKeyDown={(e) => {
+											if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+												e.preventDefault();
+												onEdit?.(editDraft);
+												setIsEditing(false);
+											}
+											if (e.key === "Escape") {
+												e.preventDefault();
+												setIsEditing(false);
+												setEditDraft(message.content);
+											}
+										}}
+									/>
+									<div className="flex items-center gap-2">
+										<button
+											type="button"
+											onClick={() => {
+												onEdit?.(editDraft);
+												setIsEditing(false);
+											}}
+											className="h-7 px-2.5 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-1"
+										>
+											<Check className="w-3 h-3" />
+											Save
+										</button>
+										<button
+											type="button"
+											onClick={() => {
+												setIsEditing(false);
+												setEditDraft(message.content);
+											}}
+											className="h-7 px-2.5 rounded-lg text-[11px] font-medium bg-muted text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+										>
+											<X className="w-3 h-3" />
+											Cancel
+										</button>
+									</div>
+								</div>
+							) : (
+								<MessageResponse>{message.content}</MessageResponse>
+							)}
+							{!isEditing && onEdit && (
+								<MessageActions>
+									<MessageAction
+										onClick={() => {
+											setIsEditing(true);
+											setEditDraft(message.content);
+										}}
+										label="Edit"
+									>
+											<Pencil className="size-3" />
+										</MessageAction>
+										<MessageAction
+											onClick={() => navigator.clipboard.writeText(message.content)}
+											label="Copy"
+										>
+											<CopyIcon className="size-3" />
+										</MessageAction>
+									</MessageActions>
+								)}
 						</>
 					) : (
 						<>
