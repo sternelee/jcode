@@ -1472,6 +1472,17 @@ impl OpenRouterProvider {
     pub(crate) fn load_usable_model_disk_cache_entry(
         &self,
     ) -> Option<jcode_provider_openrouter::DiskCache> {
+        // For direct OpenAI-compatible profiles (e.g. DeepSeek), try the
+        // profile-specific namespace first so we don't fall through to a
+        // blocking fetch_models_from_api call every time.
+        if let Some(profile_id) = self.profile_id.as_deref() {
+            if let Some(entry) =
+                jcode_provider_openrouter::load_disk_cache_entry_for_namespace(profile_id)
+                && self.model_disk_cache_source_matches(&entry)
+            {
+                return Some(entry);
+            }
+        }
         load_disk_cache_entry().filter(|entry| self.model_disk_cache_source_matches(entry))
     }
 

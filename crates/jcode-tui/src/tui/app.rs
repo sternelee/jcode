@@ -693,8 +693,13 @@ pub struct App {
     thought_line_inserted: bool,
     // Buffer for accumulating thinking content during a thinking session
     thinking_buffer: String,
-    // Whether we've emitted the 💭 prefix for the current thinking session
+    // Whether the legacy single-line thought prefix was emitted this session
     thinking_prefix_emitted: bool,
+    // Whether we are currently streaming reasoning (dim+italic) text
+    reasoning_streaming: bool,
+    // Incomplete trailing reasoning line awaiting a newline before it is emitted as
+    // a complete italic+dim line (reasoning is wrapped per whole line).
+    reasoning_pending_line: String,
     // Hot-reload: if set, exec into new binary with this session ID (no rebuild)
     reload_requested: Option<String>,
     // Hot-rebuild: if set, do full git pull + cargo build + tests then exec
@@ -745,6 +750,10 @@ pub struct App {
     copy_selection_pending_anchor: Option<crate::tui::CopySelectionPoint>,
     copy_selection_dragging: bool,
     copy_selection_goal_column: Option<usize>,
+    /// While drag-selecting with the mouse held at the top/bottom edge of a pane,
+    /// keep auto-scrolling on every tick (browser-style) until the drag leaves the
+    /// edge or ends. Stores the pane and whether to scroll upward.
+    copy_selection_edge_autoscroll: Option<(crate::tui::CopySelectionPane, bool)>,
     // Debug socket broadcast channel (if enabled)
     debug_tx: Option<tokio::sync::broadcast::Sender<super::backend::DebugEvent>>,
     // Remote provider info (set when running in remote mode)
@@ -937,6 +946,14 @@ pub struct App {
     // the model switch and use stale provider/model state.
     remote_model_switch_in_flight: bool,
     pending_prompt_after_model_switch: Option<input::PreparedInput>,
+    // A manually submitted prompt that arrived before the remote session's
+    // bootstrap History payload was applied. Submitting in that window is racy:
+    // the locally-echoed user message is wiped by the `session_changed`
+    // `clear_display_messages()` in the History handler (the prompt "vanishes"
+    // while the server still streams a reply). Hold it until history loads and
+    // let `process_remote_followups` dispatch it, exactly like a staged startup
+    // prompt.
+    pending_prompt_before_history: Option<input::PreparedInput>,
     // Pending account switch from inline picker (for remote mode async processing)
     pending_account_picker_action: Option<crate::tui::AccountPickerAction>,
     // Keybindings for model switching
@@ -1030,6 +1047,10 @@ pub struct App {
     rate_limit_pending_message: Option<PendingRemoteMessage>,
     // Last turn-level stream error (used by /fix to choose recovery actions)
     last_stream_error: Option<String>,
+    // Raw text of the most recent user prompt that started a turn. Restored to the
+    // input box if the turn fails (e.g. "token refresh needed") so the user does not
+    // lose what they typed and can resend after recovering.
+    last_submitted_input: Option<String>,
     // Store reload info to pass to agent after reconnection (remote mode)
     reload_info: Vec<String>,
     // Debug trace for scripted testing

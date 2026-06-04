@@ -2345,6 +2345,80 @@ impl App {
         }
     }
 
+    /// Begin a reasoning region. Reasoning renders as dim, italic text (no
+    /// blockquote gutter, no header, no footer). Idempotent while open.
+    pub(super) fn open_reasoning_region(&mut self) {
+        if self.reasoning_streaming {
+            return;
+        }
+        // Separate the reasoning block from any prior content with a blank line.
+        if !self.streaming_text.is_empty() {
+            if self.streaming_text.ends_with("\n\n") {
+                // already separated
+            } else if self.streaming_text.ends_with('\n') {
+                self.append_streaming_text("\n");
+            } else {
+                self.append_streaming_text("\n\n");
+            }
+        }
+        self.reasoning_streaming = true;
+        self.reasoning_pending_line.clear();
+    }
+
+    /// Wrap one complete reasoning line as dim+italic markdown: an invisible
+    /// sentinel inside `*…*` that the renderer strips and styles dim, with no
+    /// gutter. Embedded markdown is escaped so the styling covers the whole line.
+    /// Empty lines are emitted as a bare newline (no empty emphasis run). Shared
+    /// with the server formatter via `jcode-tui-markdown`.
+    fn reasoning_line_markup(line: &str) -> String {
+        jcode_tui_markdown::reasoning_line_markup(line)
+    }
+
+    /// Append streamed reasoning text. Complete lines are emitted immediately as
+    /// dim+italic markdown; a trailing partial line is buffered until its newline
+    /// arrives so emphasis markers always wrap a whole line.
+    pub(super) fn append_reasoning_text(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let mut out = String::new();
+        for ch in text.chars() {
+            if ch == '\n' {
+                let line = std::mem::take(&mut self.reasoning_pending_line);
+                out.push_str(&Self::reasoning_line_markup(&line));
+            } else {
+                self.reasoning_pending_line.push(ch);
+            }
+        }
+        if !out.is_empty() {
+            self.append_streaming_text(&out);
+        }
+    }
+
+    /// Flush any buffered partial reasoning line, then end the region. The
+    /// `_footer` argument is ignored (the "Thought for Xs" footer was removed);
+    /// it is kept for call-site compatibility.
+    pub(super) fn close_reasoning_region(&mut self, _footer: Option<String>) {
+        if !self.reasoning_streaming {
+            return;
+        }
+        let pending = std::mem::take(&mut self.reasoning_pending_line);
+        if !pending.is_empty() {
+            let markup = Self::reasoning_line_markup(&pending);
+            self.append_streaming_text(&markup);
+        }
+        self.reasoning_streaming = false;
+        // Terminate the reasoning block with a blank line so following output
+        // renders as a normal paragraph.
+        if !self.streaming_text.ends_with("\n\n") {
+            if self.streaming_text.ends_with('\n') {
+                self.append_streaming_text("\n");
+            } else {
+                self.append_streaming_text("\n\n");
+            }
+        }
+    }
+
     pub(super) fn append_streaming_text(&mut self, text: &str) {
         if text.is_empty() {
             return;
@@ -2361,6 +2435,8 @@ impl App {
     pub(super) fn clear_streaming_render_state(&mut self) {
         self.streaming_text.clear();
         self.stream_message_ended = false;
+        self.reasoning_streaming = false;
+        self.reasoning_pending_line.clear();
         self.refresh_split_view_if_needed();
         self.streaming_md_renderer.borrow_mut().reset();
         crate::tui::mermaid::clear_streaming_preview_diagram();
@@ -2369,6 +2445,8 @@ impl App {
     pub(super) fn take_streaming_text(&mut self) -> String {
         let content = std::mem::take(&mut self.streaming_text);
         self.stream_message_ended = false;
+        self.reasoning_streaming = false;
+        self.reasoning_pending_line.clear();
         self.refresh_split_view_if_needed();
         self.streaming_md_renderer.borrow_mut().reset();
         crate::tui::mermaid::clear_streaming_preview_diagram();
@@ -2559,6 +2637,9 @@ impl App {
         self.onboarding_preview_mode = false;
 
         // Add user message to display (show placeholder to user, not full paste)
+        // Remember the typed prompt so we can restore it to the input box if this
+        // turn fails (e.g. "token refresh needed"), instead of dropping it.
+        self.last_submitted_input = Some(raw_input.clone());
         self.push_display_message(DisplayMessage {
             role: "user".to_string(),
             content: raw_input, // Show placeholder to user (condensed view)
@@ -2713,6 +2794,7 @@ impl App {
             {
                 Ok(()) => {
                     self.last_stream_error = None;
+                    self.last_submitted_input = None;
                 }
                 Err(e) => {
                     let err_str = crate::util::format_error_chain(&e);

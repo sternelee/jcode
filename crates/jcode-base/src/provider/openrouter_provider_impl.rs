@@ -21,7 +21,8 @@ impl Provider for OpenRouterProvider {
                 None
             }
         });
-        let allow_reasoning = self.supports_provider_features && thinking_enabled != Some(false);
+        let allow_reasoning = (self.supports_provider_features || thinking_enabled == Some(true))
+            && thinking_enabled != Some(false);
         let include_reasoning_content =
             thinking_enabled == Some(true) || (allow_reasoning && Self::is_kimi_model(&model));
 
