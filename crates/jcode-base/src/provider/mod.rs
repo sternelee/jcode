@@ -698,7 +698,9 @@ impl MultiProvider {
         };
         provider.set_model(model)?;
         registry.set_active_compatible_profile(profile_id);
-        self.set_active_provider(ActiveProvider::OpenRouter);
+        // NOTE: Do NOT call set_active_provider(ActiveProvider::OpenRouter) here
+        // because it clears the active compatible profile we just set above.
+        // The compatible profile mechanism handles routing independently.
         Ok(())
     }
 
