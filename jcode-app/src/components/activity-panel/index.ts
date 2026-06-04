@@ -11,3 +11,4 @@ export { BackgroundTasksSection } from "./BackgroundTasksSection";
 export { BrowserSection } from "./BrowserSection";
 export { MemorySection } from "./MemorySection";
 export { TimelineSection } from "./TimelineSection";
+export { ProviderAddSection } from "./ProviderAddSection";
