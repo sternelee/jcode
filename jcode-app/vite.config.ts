@@ -1,5 +1,5 @@
 import { defineConfig } from "vite";
-import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import react from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { visualizer } from "rollup-plugin-visualizer";
@@ -10,9 +10,10 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [
     tailwindcss(),
-    react(),
-    babel({
-      presets: [reactCompilerPreset()],
+    react({
+      babel: {
+        plugins: ["babel-plugin-react-compiler"],
+      },
     }),
     process.env.ANALYZE === "1" &&
       visualizer({
