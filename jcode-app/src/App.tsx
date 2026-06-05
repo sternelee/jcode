@@ -1036,7 +1036,7 @@ export default function App() {
 						) : activeNavTab === "monitor" ? (
 							<MonitorPage />
 						) : activeNavTab === "team" ? (
-							<TeamPage sessions={state.sessions} />
+							<TeamPage sessions={state.sessions} availableModels={state.availableModels} />
 						) : activeNavTab === "media" ? (
 							<MediaPage sessionData={state.sessionData} />
 						) : activeNavTab === "mcp" ? (

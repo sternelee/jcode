@@ -58,7 +58,7 @@ async fn begin_session(
 }
 
 #[derive(serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 struct SwarmMemberRequest {
     role_name: String,
     model: Option<String>,

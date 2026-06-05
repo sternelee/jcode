@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ModelPickerModal } from "@/components/SlashCommands";
-import { ROLE_PRESETS, memberProvider } from "@/rolePresets";
+import { getAllPresets, memberProvider } from "@/rolePresets";
 
-const DEFAULT_MODEL = ROLE_PRESETS[0]?.model || "claude-sonnet-4-20250514";
-const DEFAULT_PROVIDER = memberProvider(ROLE_PRESETS[0]) ?? "anthropic";
+const DEFAULT_MODEL = getAllPresets()[0]?.model || "claude-sonnet-4-20250514";
+const DEFAULT_PROVIDER = memberProvider(getAllPresets()[0]) ?? "anthropic";
 
 interface CreateSessionDialogProps {
 	open: boolean;
@@ -455,7 +455,7 @@ export function CreateSessionDialog({
 
 									{/* Role presets */}
 									<div className="grid grid-cols-2 gap-2 mb-3">
-										{ROLE_PRESETS.map((role) => {
+										{getAllPresets().map((role) => {
 											const alreadyAdded = swarmMembers.includes(role.name);
 											const provider = memberProvider(role);
 											return (
