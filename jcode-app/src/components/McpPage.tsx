@@ -28,20 +28,25 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface McpFormData {
 	name: string;
+	transport: "stdio" | "sse";
 	command: string;
 	args: string;
 	env: string;
+	url: string;
 	shared: boolean;
 }
 
 function serverToForm(server: McpServerInfo): McpFormData {
+	const isSse = !!server.url;
 	return {
 		name: server.name,
-		command: server.command,
-		args: server.args.join("\n"),
-		env: Object.entries(server.env)
+		transport: isSse ? "sse" : "stdio",
+		command: server.command ?? "",
+		args: server.args?.join("\n") ?? "",
+		env: Object.entries(server.env ?? {})
 			.map(([k, v]) => `${k}=${v}`)
 			.join("\n"),
+		url: server.url ?? "",
 		shared: server.shared,
 	};
 }
@@ -55,6 +60,13 @@ function formToServer(form: McpFormData): McpServerInfo {
 		if (eq > 0) {
 			env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
 		}
+	}
+	if (form.transport === "sse") {
+		return {
+			name: form.name.trim(),
+			url: form.url.trim(),
+			shared: form.shared,
+		};
 	}
 	return {
 		name: form.name.trim(),
@@ -78,9 +90,11 @@ export function McpPage() {
 	const [editingServer, setEditingServer] = useState<McpServerInfo | null>(null);
 	const [form, setForm] = useState<McpFormData>({
 		name: "",
+		transport: "stdio",
 		command: "",
 		args: "",
 		env: "",
+		url: "",
 		shared: true,
 	});
 	const [saving, setSaving] = useState(false);
@@ -120,7 +134,7 @@ export function McpPage() {
 
 	const openAdd = () => {
 		setEditingServer(null);
-		setForm({ name: "", command: "", args: "", env: "", shared: true });
+		setForm({ name: "", transport: "stdio", command: "", args: "", env: "", url: "", shared: true });
 		setDialogOpen(true);
 	};
 
@@ -131,15 +145,18 @@ export function McpPage() {
 	};
 
 	const handleSave = async () => {
-		if (!form.name.trim() || !form.command.trim()) return;
+		if (!form.name.trim()) return;
+		if (form.transport === "stdio" && !form.command.trim()) return;
+		if (form.transport === "sse" && !form.url.trim()) return;
 		setSaving(true);
 		try {
 			const server = formToServer(form);
 			await invoke("save_mcp_server", {
 				name: server.name,
-				command: server.command,
-				args: server.args,
-				env: server.env,
+				command: server.command ?? null,
+				args: server.args ?? null,
+				env: server.env ?? null,
+				url: server.url ?? null,
 				shared: server.shared,
 			});
 			setDialogOpen(false);
@@ -257,8 +274,7 @@ export function McpPage() {
 											)}
 										</div>
 										<p className="text-[11px] text-muted-foreground truncate">
-											{server.command}{" "}
-											{server.args.join(" ")}
+											{server.url ?? `${server.command} ${server.args?.join(" ") ?? ""}`}
 										</p>
 									</div>
 									<div className="flex items-center gap-1">
@@ -305,13 +321,13 @@ export function McpPage() {
 													{server.command}
 												</code>
 											</div>
-											{server.args.length > 0 && (
+											{server.args && server.args.length > 0 && (
 												<div className="flex gap-2">
 													<span className="text-muted-foreground shrink-0 w-16">
 														Args:
 													</span>
 													<div className="flex flex-wrap gap-1">
-														{server.args.map((arg, i) => (
+														{server.args?.map((arg, i) => (
 															<code
 																key={i}
 																className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono"
@@ -322,7 +338,7 @@ export function McpPage() {
 													</div>
 												</div>
 											)}
-											{Object.keys(server.env).length > 0 && (
+											{server.env && Object.keys(server.env).length > 0 && (
 												<div className="flex gap-2">
 													<span className="text-muted-foreground shrink-0 w-16">
 														Env:
@@ -447,7 +463,7 @@ export function McpPage() {
 						</Button>
 						<Button
 							onClick={handleSave}
-							disabled={saving || !form.name.trim() || !form.command.trim()}
+							disabled={saving || !form.name.trim() || (form.transport === "stdio" ? !form.command.trim() : !form.url.trim())}
 							size="sm"
 						>
 							{saving ? "Saving..." : editingServer ? "Update" : "Save"}

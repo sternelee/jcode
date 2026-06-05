@@ -2448,6 +2448,7 @@ fn load_mcp_from_value(value: &serde_json::Value) -> Vec<serde_json::Value> {
 
     let mut servers = Vec::new();
     for (name, server_value) in servers_obj {
+        let url = server_value.get("url").and_then(|v| v.as_str()).map(String::from);
         let command = server_value
             .get("command")
             .and_then(|v| v.as_str())
@@ -2475,13 +2476,20 @@ fn load_mcp_from_value(value: &serde_json::Value) -> Vec<serde_json::Value> {
             .get("shared")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
-        servers.push(serde_json::json!({
+        let mut out = serde_json::json!({
             "name": name,
-            "command": command,
-            "args": args,
-            "env": env,
             "shared": shared,
-        }));
+        });
+        if let Some(url) = url {
+            out["url"] = serde_json::json!(url);
+        } else {
+            out["command"] = serde_json::json!(command);
+            out["args"] = serde_json::json!(args);
+            if !env.is_empty() {
+                out["env"] = serde_json::json!(env);
+            }
+        }
+        servers.push(out);
     }
     servers
 }
@@ -2604,9 +2612,10 @@ async fn reload_skills() -> Result<usize, String> {
 #[tauri::command]
 async fn save_mcp_server(
     name: String,
-    command: String,
-    args: Vec<String>,
-    env: std::collections::HashMap<String, String>,
+    command: Option<String>,
+    args: Option<Vec<String>>,
+    env: Option<std::collections::HashMap<String, String>>,
+    url: Option<String>,
     shared: bool,
 ) -> Result<(), String> {
     let jcode_dir = user_jcode_dir().ok_or("Cannot resolve home directory")?;
@@ -2638,14 +2647,24 @@ async fn save_mcp_server(
         .as_object_mut()
         .ok_or("Invalid servers object")?;
 
-    let mut server_val = serde_json::json!({
-        "command": command,
-        "args": args,
-        "shared": shared,
-    });
-    if !env.is_empty() {
-        server_val["env"] = serde_json::json!(env);
-    }
+    let server_val = if let Some(url) = url {
+        serde_json::json!({
+            "url": url,
+            "shared": shared,
+        })
+    } else {
+        let mut val = serde_json::json!({
+            "command": command.unwrap_or_default(),
+            "args": args.unwrap_or_default(),
+            "shared": shared,
+        });
+        if let Some(env) = env {
+            if !env.is_empty() {
+                val["env"] = serde_json::json!(env);
+            }
+        }
+        val
+    };
 
     servers.insert(name, server_val);
 

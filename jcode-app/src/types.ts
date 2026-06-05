@@ -904,9 +904,10 @@ export interface WorkspaceMemoryPreferences {
 
 export interface McpServerInfo {
 	name: string;
-	command: string;
-	args: string[];
-	env: Record<string, string>;
+	command?: string;
+	args?: string[];
+	env?: Record<string, string>;
+	url?: string;
 	shared: boolean;
 }
 
