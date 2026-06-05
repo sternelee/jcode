@@ -338,6 +338,12 @@ export function ModelPickerModal({
 	const [routes, setRoutes] = useState<ModelRoute[]>([]);
 	const [providers, setProviders] = useState<ProviderCatalogEntry[]>([]);
 	const [loading, setLoading] = useState(false);
+	// Cache get_models result to avoid refetching every time modal opens
+	const cachedModelsRef = useRef<{
+		routes: ModelRoute[];
+		providers: ProviderCatalogEntry[];
+		timestamp: number;
+	} | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const [collapsedProfiles, setCollapsedProfiles] = useState<
 		Record<string, boolean>
@@ -359,15 +365,30 @@ export function ModelPickerModal({
 		Record<string, ProviderAuthPrompt | null>
 	>({});
 
-	const loadModels = useCallback(async () => {
+	const loadModels = useCallback(async (force = false) => {
+		// Use cached result if available and not forcing refresh (cache for 30s)
+		const now = Date.now();
+		const cache = cachedModelsRef.current;
+		if (!force && cache && now - cache.timestamp < 30000) {
+			setRoutes(cache.routes);
+			setProviders(cache.providers);
+			return;
+		}
 		setLoading(true);
 		try {
 			const data = await invoke<{
 				routes: ModelRoute[];
 				providers: ProviderCatalogEntry[];
 			}>("get_models");
-			setRoutes(data.routes || []);
-			setProviders(data.providers || []);
+			const newRoutes = data.routes || [];
+			const newProviders = data.providers || [];
+			setRoutes(newRoutes);
+			setProviders(newProviders);
+			cachedModelsRef.current = {
+				routes: newRoutes,
+				providers: newProviders,
+				timestamp: Date.now(),
+			};
 		} catch {
 			// fallback to prop if backend call fails
 		} finally {
@@ -669,15 +690,27 @@ export function ModelPickerModal({
 						<h2 className="text-[16px] font-bold text-foreground">
 							Switch Model
 						</h2>
-						<button
-							type="button"
-							onClick={onClose}
-							className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-						>
-							<svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
-								<path d="M2.22 2.22a.75.75 0 011.06 0L6 4.94l2.72-2.72a.75.75 0 111.06 1.06L7.06 6l2.72 2.72a.75.75 0 11-1.06 1.06L6 7.06l-2.72 2.72a.75.75 0 01-1.06-1.06L4.94 6 2.22 3.28a.75.75 0 010-1.06z" />
-							</svg>
-						</button>
+						<div className="flex items-center gap-1">
+							<button
+								type="button"
+								onClick={() => void loadModels(true)}
+								className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+								title="Refresh models"
+							>
+								<svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+									<path fillRule="evenodd" d="M15.312 11.424a5 5 0 00-9.424-2.136.75.75 0 11-1.403-.497 6.5 6.5 0 0112.26 2.778.75.75 0 01-.433 1.278zM4.688 8.576a5 5 0 009.424 2.136.75.75 0 011.403.497 6.5 6.5 0 01-12.26-2.778.75.75 0 01.433-1.278z" clipRule="evenodd" />
+								</svg>
+							</button>
+							<button
+								type="button"
+								onClick={onClose}
+								className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+							>
+								<svg viewBox="0 0 12 12" fill="currentColor" className="w-3 h-3">
+									<path d="M2.22 2.22a.75.75 0 011.06 0L6 4.94l2.72-2.72a.75.75 0 111.06 1.06L7.06 6l2.72 2.72a.75.75 0 11-1.06 1.06L6 7.06l-2.72 2.72a.75.75 0 01-1.06-1.06L4.94 6 2.22 3.28a.75.75 0 010-1.06z" />
+								</svg>
+							</button>
+						</div>
 					</div>
 					<div className="relative">
 						<svg
