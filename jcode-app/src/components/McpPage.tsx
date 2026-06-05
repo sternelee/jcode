@@ -10,13 +10,82 @@ import {
 	Share2,
 	X,
 	AlertCircle,
+	Plus,
+	Pencil,
+	Trash2,
 } from "lucide-react";
+import {
+	Dialog,
+	DialogContent,
+	DialogHeader,
+	DialogTitle,
+	DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+
+interface McpFormData {
+	name: string;
+	command: string;
+	args: string;
+	env: string;
+	shared: boolean;
+}
+
+function serverToForm(server: McpServerInfo): McpFormData {
+	return {
+		name: server.name,
+		command: server.command,
+		args: server.args.join("\n"),
+		env: Object.entries(server.env)
+			.map(([k, v]) => `${k}=${v}`)
+			.join("\n"),
+		shared: server.shared,
+	};
+}
+
+function formToServer(form: McpFormData): McpServerInfo {
+	const env: Record<string, string> = {};
+	for (const line of form.env.split("\n")) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		const eq = trimmed.indexOf("=");
+		if (eq > 0) {
+			env[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+		}
+	}
+	return {
+		name: form.name.trim(),
+		command: form.command.trim(),
+		args: form.args
+			.split("\n")
+			.map((a) => a.trim())
+			.filter(Boolean),
+		env,
+		shared: form.shared,
+	};
+}
 
 export function McpPage() {
 	const [servers, setServers] = useState<McpServerInfo[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+	const [dialogOpen, setDialogOpen] = useState(false);
+	const [editingServer, setEditingServer] = useState<McpServerInfo | null>(null);
+	const [form, setForm] = useState<McpFormData>({
+		name: "",
+		command: "",
+		args: "",
+		env: "",
+		shared: true,
+	});
+	const [saving, setSaving] = useState(false);
+
+	const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
 	const fetchServers = useCallback(async () => {
 		setLoading(true);
@@ -49,6 +118,49 @@ export function McpPage() {
 		});
 	};
 
+	const openAdd = () => {
+		setEditingServer(null);
+		setForm({ name: "", command: "", args: "", env: "", shared: true });
+		setDialogOpen(true);
+	};
+
+	const openEdit = (server: McpServerInfo) => {
+		setEditingServer(server);
+		setForm(serverToForm(server));
+		setDialogOpen(true);
+	};
+
+	const handleSave = async () => {
+		if (!form.name.trim() || !form.command.trim()) return;
+		setSaving(true);
+		try {
+			const server = formToServer(form);
+			await invoke("save_mcp_server", {
+				name: server.name,
+				command: server.command,
+				args: server.args,
+				env: server.env,
+				shared: server.shared,
+			});
+			setDialogOpen(false);
+			await fetchServers();
+		} catch (e) {
+			setError(String(e));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const handleDelete = async (name: string) => {
+		try {
+			await invoke("delete_mcp_server", { name });
+			setDeleteTarget(null);
+			await fetchServers();
+		} catch (e) {
+			setError(String(e));
+		}
+	};
+
 	return (
 		<div className="flex-1 flex flex-col bg-card overflow-hidden">
 			{/* Header */}
@@ -65,17 +177,27 @@ export function McpPage() {
 						{servers.length !== 1 ? "s" : ""}
 					</p>
 				</div>
-				<button
-					type="button"
-					onClick={fetchServers}
-					disabled={loading}
-					className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-muted hover:bg-muted/80 text-foreground transition-colors disabled:opacity-50"
-				>
-					<RefreshCw
-						className={cn("w-3.5 h-3.5", loading && "animate-spin")}
-					/>
-					Refresh
-				</button>
+				<div className="flex items-center gap-2">
+					<button
+						type="button"
+						onClick={openAdd}
+						className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+					>
+						<Plus className="w-3.5 h-3.5" />
+						Add
+					</button>
+					<button
+						type="button"
+						onClick={fetchServers}
+						disabled={loading}
+						className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-muted hover:bg-muted/80 text-foreground transition-colors disabled:opacity-50"
+					>
+						<RefreshCw
+							className={cn("w-3.5 h-3.5", loading && "animate-spin")}
+						/>
+						Refresh
+					</button>
+				</div>
 			</div>
 
 			{/* Content */}
@@ -139,13 +261,37 @@ export function McpPage() {
 											{server.args.join(" ")}
 										</p>
 									</div>
-									{isExpanded ? (
-										<X className="w-4 h-4 text-muted-foreground" />
-									) : (
-										<span className="text-[11px] text-muted-foreground">
-											Details
-										</span>
-									)}
+									<div className="flex items-center gap-1">
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												openEdit(server);
+											}}
+											className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+											title="Edit"
+										>
+											<Pencil className="w-3.5 h-3.5" />
+										</button>
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												setDeleteTarget(server.name);
+											}}
+											className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+											title="Delete"
+										>
+											<Trash2 className="w-3.5 h-3.5" />
+										</button>
+										{isExpanded ? (
+											<X className="w-4 h-4 text-muted-foreground ml-1" />
+										) : (
+											<span className="text-[11px] text-muted-foreground ml-1">
+												Details
+											</span>
+										)}
+									</div>
 								</button>
 
 								{isExpanded && (
@@ -223,6 +369,103 @@ export function McpPage() {
 					})}
 				</div>
 			</div>
+
+			{/* Add/Edit Dialog */}
+			<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+				<DialogContent className="sm:max-w-lg">
+					<DialogHeader>
+						<DialogTitle className="text-[15px]">
+							{editingServer ? "Edit MCP Server" : "Add MCP Server"}
+						</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-3 py-2">
+						<div className="space-y-1">
+							<label className="text-[12px] font-medium text-muted-foreground">
+								Name
+							</label>
+							<Input
+								value={form.name}
+								onChange={(e) => setForm({ ...form, name: e.target.value })}
+								placeholder="e.g. filesystem"
+								className="text-sm"
+								disabled={!!editingServer}
+							/>
+						</div>
+						<div className="space-y-1">
+							<label className="text-[12px] font-medium text-muted-foreground">
+								Command
+							</label>
+							<Input
+								value={form.command}
+								onChange={(e) => setForm({ ...form, command: e.target.value })}
+								placeholder="e.g. npx"
+								className="text-sm"
+							/>
+						</div>
+						<div className="space-y-1">
+							<label className="text-[12px] font-medium text-muted-foreground">
+								Args (one per line)
+							</label>
+							<Textarea
+								value={form.args}
+								onChange={(e) => setForm({ ...form, args: e.target.value })}
+								placeholder="-y&#10;@modelcontextprotocol/server-filesystem"
+								className="min-h-[60px] resize-y text-sm"
+							/>
+						</div>
+						<div className="space-y-1">
+							<label className="text-[12px] font-medium text-muted-foreground">
+								Env (KEY=VALUE, one per line)
+							</label>
+							<Textarea
+								value={form.env}
+								onChange={(e) => setForm({ ...form, env: e.target.value })}
+								placeholder="HOME=/Users/me"
+								className="min-h-[60px] resize-y text-sm"
+							/>
+						</div>
+						<div className="flex items-center gap-2">
+							<input
+								type="checkbox"
+								id="shared"
+								checked={form.shared}
+								onChange={(e) => setForm({ ...form, shared: e.target.checked })}
+								className="rounded border-border"
+							/>
+							<label htmlFor="shared" className="text-[13px] text-foreground">
+								Shared across sessions
+							</label>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button
+							variant="outline"
+							onClick={() => setDialogOpen(false)}
+							size="sm"
+						>
+							Cancel
+						</Button>
+						<Button
+							onClick={handleSave}
+							disabled={saving || !form.name.trim() || !form.command.trim()}
+							size="sm"
+						>
+							{saving ? "Saving..." : editingServer ? "Update" : "Save"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Delete Confirm */}
+			<ConfirmDialog
+				open={!!deleteTarget}
+				title="Delete MCP Server"
+				message={`Are you sure you want to delete "${deleteTarget}"?`}
+				confirmLabel="Delete"
+				variant="destructive"
+				onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+				onCancel={() => setDeleteTarget(null)}
+			/>
 		</div>
 	);
 }

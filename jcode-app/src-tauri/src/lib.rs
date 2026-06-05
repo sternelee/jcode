@@ -2602,6 +2602,144 @@ async fn reload_skills() -> Result<usize, String> {
 }
 
 #[tauri::command]
+async fn save_mcp_server(
+    name: String,
+    command: String,
+    args: Vec<String>,
+    env: std::collections::HashMap<String, String>,
+    shared: bool,
+) -> Result<(), String> {
+    let jcode_dir = user_jcode_dir().ok_or("Cannot resolve home directory")?;
+    let mcp_path = jcode_dir.join("mcp.json");
+
+    let mut value = if mcp_path.exists() {
+        std::fs::read_to_string(&mcp_path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+            .unwrap_or_else(|| serde_json::json!({"servers": {}}))
+    } else {
+        serde_json::json!({"servers": {}})
+    };
+
+    let obj = value
+        .as_object_mut()
+        .ok_or("Invalid mcp.json root")?;
+
+    // Determine which key to use (preserve existing)
+    let key = if obj.contains_key("mcpServers") && !obj.contains_key("servers") {
+        "mcpServers"
+    } else {
+        "servers"
+    };
+
+    let servers = obj
+        .entry(key)
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or("Invalid servers object")?;
+
+    let mut server_val = serde_json::json!({
+        "command": command,
+        "args": args,
+        "shared": shared,
+    });
+    if !env.is_empty() {
+        server_val["env"] = serde_json::json!(env);
+    }
+
+    servers.insert(name, server_val);
+
+    let content = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    std::fs::write(&mcp_path, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_mcp_server(name: String) -> Result<(), String> {
+    let jcode_dir = user_jcode_dir().ok_or("Cannot resolve home directory")?;
+    let mcp_path = jcode_dir.join("mcp.json");
+
+    if !mcp_path.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&mcp_path).map_err(|e| e.to_string())?;
+    let mut value: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+
+    let obj = value.as_object_mut().ok_or("Invalid mcp.json root")?;
+    for key in &["servers", "mcpServers"] {
+        if let Some(serde_json::Value::Object(servers)) = obj.get_mut(*key) {
+            servers.remove(&name);
+        }
+    }
+
+    let content = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    std::fs::write(&mcp_path, content).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn save_skill(
+    name: String,
+    description: String,
+    allowed_tools: Option<Vec<String>>,
+    content: String,
+) -> Result<(), String> {
+    let jcode_dir = user_jcode_dir().ok_or("Cannot resolve home directory")?;
+    let skills_dir = jcode_dir.join("skills");
+    let skill_dir = skills_dir.join(&name);
+    std::fs::create_dir_all(&skill_dir).map_err(|e| e.to_string())?;
+
+    let file_path = skill_dir.join("SKILL.md");
+    let mut file_content = String::new();
+    file_content.push_str("---\n");
+    file_content.push_str(&format!("name: {}\n", name));
+    file_content.push_str(&format!("description: {}\n", description));
+    if let Some(tools) = allowed_tools {
+        file_content.push_str(&format!("allowed-tools: {}\n", tools.join(", ")));
+    }
+    file_content.push_str("---\n\n");
+    file_content.push_str(&content);
+
+    std::fs::write(&file_path, file_content).map_err(|e| e.to_string())?;
+
+    // Reload shared registry so changes are visible immediately
+    let registry = jcode::skill::SkillRegistry::shared_registry();
+    let mut guard = registry.write().await;
+    let _ = guard.reload_all();
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_skill(name: String) -> Result<(), String> {
+    let jcode_dir = user_jcode_dir().ok_or("Cannot resolve home directory")?;
+    let skills_dir = jcode_dir.join("skills");
+
+    // Try deleting the directory first, then a direct .md file
+    let skill_dir = skills_dir.join(&name);
+    let skill_file = skills_dir.join(format!("{}.md", name));
+
+    let removed = if skill_dir.exists() {
+        std::fs::remove_dir_all(&skill_dir).map_err(|e| e.to_string())?;
+        true
+    } else if skill_file.exists() {
+        std::fs::remove_file(&skill_file).map_err(|e| e.to_string())?;
+        true
+    } else {
+        false
+    };
+
+    if removed {
+        let registry = jcode::skill::SkillRegistry::shared_registry();
+        let mut guard = registry.write().await;
+        guard.reload_all().map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn trigger_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     if matches!(
@@ -2694,7 +2832,11 @@ pub fn run() {
             run_dictation,
             list_workspace_files,
             list_mcp_servers,
+            save_mcp_server,
+            delete_mcp_server,
             list_skills,
+            save_skill,
+            delete_skill,
             reload_skills,
             git_status,
             save_session_state,

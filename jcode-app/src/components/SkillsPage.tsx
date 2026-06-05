@@ -12,7 +12,37 @@ import {
 	AlertCircle,
 	CheckCircle2,
 	Tag,
+	Plus,
+	Pencil,
+	Trash2,
 } from "lucide-react";
+import {
+	Dialog,
+	DialogContent,
+	DialogHeader,
+	DialogTitle,
+	DialogFooter,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+
+interface SkillFormData {
+	name: string;
+	description: string;
+	allowed_tools: string;
+	content: string;
+}
+
+function skillToForm(skill: SkillInfo): SkillFormData {
+	return {
+		name: skill.name,
+		description: skill.description,
+		allowed_tools: skill.allowed_tools?.join(", ") ?? "",
+		content: "",
+	};
+}
 
 export function SkillsPage() {
 	const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -21,6 +51,18 @@ export function SkillsPage() {
 	const [search, setSearch] = useState("");
 	const [reloading, setReloading] = useState(false);
 	const [reloadMsg, setReloadMsg] = useState<string | null>(null);
+
+	const [dialogOpen, setDialogOpen] = useState(false);
+	const [editingSkill, setEditingSkill] = useState<SkillInfo | null>(null);
+	const [form, setForm] = useState<SkillFormData>({
+		name: "",
+		description: "",
+		allowed_tools: "",
+		content: "",
+	});
+	const [saving, setSaving] = useState(false);
+
+	const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
 	const fetchSkills = useCallback(async () => {
 		setLoading(true);
@@ -56,6 +98,51 @@ export function SkillsPage() {
 		}
 	};
 
+	const openAdd = () => {
+		setEditingSkill(null);
+		setForm({ name: "", description: "", allowed_tools: "", content: "" });
+		setDialogOpen(true);
+	};
+
+	const openEdit = (skill: SkillInfo) => {
+		setEditingSkill(skill);
+		setForm(skillToForm(skill));
+		setDialogOpen(true);
+	};
+
+	const handleSave = async () => {
+		if (!form.name.trim() || !form.description.trim()) return;
+		setSaving(true);
+		try {
+			const tools = form.allowed_tools
+				.split(",")
+				.map((t) => t.trim())
+				.filter(Boolean);
+			await invoke("save_skill", {
+				name: form.name.trim(),
+				description: form.description.trim(),
+				allowed_tools: tools.length > 0 ? tools : null,
+				content: form.content.trim(),
+			});
+			setDialogOpen(false);
+			await fetchSkills();
+		} catch (e) {
+			setError(String(e));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const handleDelete = async (name: string) => {
+		try {
+			await invoke("delete_skill", { name });
+			setDeleteTarget(null);
+			await fetchSkills();
+		} catch (e) {
+			setError(String(e));
+		}
+	};
+
 	const filtered = skills.filter((s) => {
 		const q = search.toLowerCase();
 		return (
@@ -77,17 +164,27 @@ export function SkillsPage() {
 						{skills.length} skill{skills.length !== 1 ? "s" : ""} available
 					</p>
 				</div>
-				<button
-					type="button"
-					onClick={handleReload}
-					disabled={reloading}
-					className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-				>
-					<RefreshCw
-						className={cn("w-3.5 h-3.5", reloading && "animate-spin")}
-					/>
-					Reload All
-				</button>
+				<div className="flex items-center gap-2">
+					<button
+						type="button"
+						onClick={openAdd}
+						className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+					>
+						<Plus className="w-3.5 h-3.5" />
+						Add
+					</button>
+					<button
+						type="button"
+						onClick={handleReload}
+						disabled={reloading}
+						className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-muted hover:bg-muted/80 text-foreground transition-colors disabled:opacity-50"
+					>
+						<RefreshCw
+							className={cn("w-3.5 h-3.5", reloading && "animate-spin")}
+						/>
+						Reload All
+					</button>
+				</div>
 			</div>
 
 			{/* Search */}
@@ -159,7 +256,7 @@ export function SkillsPage() {
 					{filtered.map((skill) => (
 						<div
 							key={skill.name}
-							className="rounded-xl border border-border bg-card p-4 hover:border-primary/20 transition-colors"
+							className="rounded-xl border border-border bg-card p-4 hover:border-primary/20 transition-colors group"
 						>
 							<div className="flex items-start gap-3">
 								<div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
@@ -170,6 +267,24 @@ export function SkillsPage() {
 										<span className="font-medium text-[13px] text-foreground">
 											{skill.name}
 										</span>
+										<div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+											<button
+												type="button"
+												onClick={() => openEdit(skill)}
+												className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+												title="Edit"
+											>
+												<Pencil className="w-3.5 h-3.5" />
+											</button>
+											<button
+												type="button"
+												onClick={() => setDeleteTarget(skill.name)}
+												className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+												title="Delete"
+											>
+												<Trash2 className="w-3.5 h-3.5" />
+											</button>
+										</div>
 									</div>
 									<p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">
 										{skill.description}
@@ -197,6 +312,99 @@ export function SkillsPage() {
 					))}
 				</div>
 			</div>
+
+			{/* Add/Edit Dialog */}
+			<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+				<DialogContent className="sm:max-w-lg">
+					<DialogHeader>
+						<DialogTitle className="text-[15px]">
+							{editingSkill ? "Edit Skill" : "Add Skill"}
+						</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-3 py-2">
+						<div className="space-y-1">
+							<label className="text-[12px] font-medium text-muted-foreground">
+								Name
+							</label>
+							<Input
+								value={form.name}
+								onChange={(e) => setForm({ ...form, name: e.target.value })}
+								placeholder="e.g. my-skill"
+								className="text-sm"
+								disabled={!!editingSkill}
+							/>
+						</div>
+						<div className="space-y-1">
+							<label className="text-[12px] font-medium text-muted-foreground">
+								Description
+							</label>
+							<Input
+								value={form.description}
+								onChange={(e) =>
+									setForm({ ...form, description: e.target.value })
+								}
+								placeholder="Short description of what this skill does"
+								className="text-sm"
+							/>
+						</div>
+						<div className="space-y-1">
+							<label className="text-[12px] font-medium text-muted-foreground">
+								Allowed Tools (comma-separated)
+							</label>
+							<Input
+								value={form.allowed_tools}
+								onChange={(e) =>
+									setForm({ ...form, allowed_tools: e.target.value })
+								}
+								placeholder="bash, webfetch, grep"
+								className="text-sm"
+							/>
+						</div>
+						<div className="space-y-1">
+							<label className="text-[12px] font-medium text-muted-foreground">
+								Content (Markdown)
+							</label>
+							<Textarea
+								value={form.content}
+								onChange={(e) =>
+									setForm({ ...form, content: e.target.value })
+								}
+								placeholder="# Instructions\n\nDescribe what this skill does..."
+								className="min-h-[120px] resize-y text-sm"
+							/>
+						</div>
+					</div>
+					<DialogFooter>
+						<Button
+							variant="outline"
+							onClick={() => setDialogOpen(false)}
+							size="sm"
+						>
+							Cancel
+						</Button>
+						<Button
+							onClick={handleSave}
+							disabled={
+								saving || !form.name.trim() || !form.description.trim()
+							}
+							size="sm"
+						>
+							{saving ? "Saving..." : editingSkill ? "Update" : "Save"}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			{/* Delete Confirm */}
+			<ConfirmDialog
+				open={!!deleteTarget}
+				title="Delete Skill"
+				message={`Are you sure you want to delete "${deleteTarget}"?`}
+				confirmLabel="Delete"
+				variant="destructive"
+				onConfirm={() => deleteTarget && handleDelete(deleteTarget)}
+				onCancel={() => setDeleteTarget(null)}
+			/>
 		</div>
 	);
 }
