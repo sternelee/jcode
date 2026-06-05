@@ -23,8 +23,10 @@ export function McpPage() {
 		setError(null);
 		try {
 			const result = await invoke<McpServerInfo[]>("list_mcp_servers");
+			console.log("[McpPage] list_mcp_servers result:", result);
 			setServers(result || []);
 		} catch (e) {
+			console.error("[McpPage] list_mcp_servers error:", e);
 			setError(String(e));
 		} finally {
 			setLoading(false);

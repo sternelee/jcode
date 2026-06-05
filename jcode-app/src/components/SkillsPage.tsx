@@ -27,8 +27,10 @@ export function SkillsPage() {
 		setError(null);
 		try {
 			const result = await invoke<SkillInfo[]>("list_skills");
+			console.log("[SkillsPage] list_skills result:", result);
 			setSkills(result || []);
 		} catch (e) {
+			console.error("[SkillsPage] list_skills error:", e);
 			setError(String(e));
 		} finally {
 			setLoading(false);

@@ -2438,22 +2438,7 @@ async fn git_status(working_dir: Option<String>) -> Result<String, String> {
     })
 }
 
-#[tauri::command]
-async fn list_mcp_servers() -> Result<Vec<serde_json::Value>, String> {
-    let jcode_dir = jcode::storage::jcode_dir().map_err(|e| e.to_string())?;
-    let mcp_path = jcode_dir.join("mcp.json");
-
-    if !mcp_path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let content = std::fs::read_to_string(&mcp_path)
-        .map_err(|e| format!("Failed to read {}: {}", mcp_path.display(), e))?;
-
-    let value: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse {}: {}", mcp_path.display(), e))?;
-
-    // Support both jcode native `servers` and Claude Desktop `mcpServers` keys
+fn load_mcp_from_value(value: &serde_json::Value) -> Vec<serde_json::Value> {
     let servers_obj = value
         .get("servers")
         .or_else(|| value.get("mcpServers"))
@@ -2498,25 +2483,212 @@ async fn list_mcp_servers() -> Result<Vec<serde_json::Value>, String> {
             "shared": shared,
         }));
     }
-    Ok(servers)
+    servers
+}
+
+#[tauri::command]
+async fn list_mcp_servers() -> Result<Vec<serde_json::Value>, String> {
+    let mut diagnostics = Vec::new();
+    let mut all_servers = Vec::new();
+
+    let jcode_dir = jcode::storage::jcode_dir().map_err(|e| e.to_string())?;
+    let mcp_path = jcode_dir.join("mcp.json");
+
+    if mcp_path.exists() {
+        match std::fs::read_to_string(&mcp_path) {
+            Ok(content) => {
+                match serde_json::from_str::<serde_json::Value>(&content) {
+                    Ok(value) => {
+                        let servers = load_mcp_from_value(&value);
+                        if servers.is_empty() {
+                            diagnostics.push(format!(
+                                "{} parsed OK but no servers/mcpServers entries found (top-level keys: {:?})",
+                                mcp_path.display(),
+                                value.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default()
+                            ));
+                        }
+                        all_servers.extend(servers);
+                    }
+                    Err(e) => {
+                        diagnostics.push(format!("{} parse error: {}", mcp_path.display(), e));
+                    }
+                }
+            }
+            Err(e) => {
+                diagnostics.push(format!("{} read error: {}", mcp_path.display(), e));
+            }
+        }
+    } else {
+        diagnostics.push(format!("{} does not exist", mcp_path.display()));
+    }
+
+    // Fallback: project-local .jcode/mcp.json
+    let local_jcode = std::path::Path::new(".jcode/mcp.json");
+    if local_jcode.exists() {
+        if let Ok(content) = std::fs::read_to_string(local_jcode) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+                all_servers.extend(load_mcp_from_value(&value));
+            }
+        }
+    }
+
+    // Fallback: project-local .claude/mcp.json
+    let local_claude = std::path::Path::new(".claude/mcp.json");
+    if local_claude.exists() {
+        if let Ok(content) = std::fs::read_to_string(local_claude) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+                all_servers.extend(load_mcp_from_value(&value));
+            }
+        }
+    }
+
+    // Fallback: global ~/.claude/mcp.json
+    if let Ok(claude_mcp) = jcode::storage::user_home_path(".claude/mcp.json") {
+        if claude_mcp.exists() {
+            if let Ok(content) = std::fs::read_to_string(&claude_mcp) {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+                    all_servers.extend(load_mcp_from_value(&value));
+                }
+            }
+        }
+    }
+
+    if all_servers.is_empty() && !diagnostics.is_empty() {
+        return Err(format!("No MCP servers found. Diagnostics:\n{}", diagnostics.join("\n")));
+    }
+
+    Ok(all_servers)
 }
 
 #[tauri::command]
 async fn list_skills() -> Result<Vec<serde_json::Value>, String> {
-    // Always load fresh from disk so new skills are visible without restart.
-    let registry = jcode::skill::SkillRegistry::load()
-        .map_err(|e| format!("Failed to load skills: {e}"))?;
-    let skills = registry.list();
-    let mut result = Vec::new();
-    for skill in skills {
-        result.push(serde_json::json!({
-            "name": skill.name,
-            "description": skill.description,
-            "allowed_tools": skill.allowed_tools,
-            "path": skill.path.to_string_lossy(),
-        }));
+    let mut diagnostics = Vec::new();
+    let mut skills_out = Vec::new();
+
+    // Load from ~/.jcode/skills/
+    let jcode_dir = jcode::storage::jcode_dir().map_err(|e| e.to_string())?;
+    let jcode_skills = jcode_dir.join("skills");
+    if jcode_skills.exists() {
+        let mut found_files = Vec::new();
+        let mut parse_errors = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&jcode_skills) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let skill_file = path.join("SKILL.md");
+                    let skill_file_lower = path.join("skill.md");
+                    let target = if skill_file.exists() { skill_file } else { skill_file_lower };
+                    if target.exists() {
+                        found_files.push(target.display().to_string());
+                        match jcode::skill::SkillRegistry::parse_skill(&target) {
+                            Ok(skill) => {
+                                skills_out.push(serde_json::json!({
+                                    "name": skill.name,
+                                    "description": skill.description,
+                                    "allowed_tools": skill.allowed_tools,
+                                    "path": skill.path.to_string_lossy(),
+                                }));
+                            }
+                            Err(e) => {
+                                parse_errors.push(format!("{}: {}", target.display(), e));
+                            }
+                        }
+                    }
+                } else if path.extension().is_some_and(|e| e == "md") {
+                    found_files.push(path.display().to_string());
+                    match jcode::skill::SkillRegistry::parse_skill(&path) {
+                        Ok(skill) => {
+                            skills_out.push(serde_json::json!({
+                                "name": skill.name,
+                                "description": skill.description,
+                                "allowed_tools": skill.allowed_tools,
+                                "path": skill.path.to_string_lossy(),
+                            }));
+                        }
+                        Err(e) => {
+                            parse_errors.push(format!("{}: {}", path.display(), e));
+                        }
+                    }
+                }
+            }
+        }
+        if skills_out.is_empty() {
+            diagnostics.push(format!(
+                "~/.jcode/skills/ exists. Scanned {} entries. Found {} skill files. Parse errors:\n{}",
+                found_files.len(),
+                found_files.len(),
+                if parse_errors.is_empty() { "none".to_string() } else { parse_errors.join("\n") }
+            ));
+        }
+    } else {
+        diagnostics.push("~/.jcode/skills/ does not exist".to_string());
     }
-    Ok(result)
+
+    // Fallback: project-local .jcode/skills/
+    let local_jcode = std::path::Path::new(".jcode/skills");
+    if local_jcode.exists() {
+        if let Ok(entries) = std::fs::read_dir(local_jcode) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let skill_file = path.join("SKILL.md");
+                    let skill_file_lower = path.join("skill.md");
+                    let target = if skill_file.exists() { skill_file } else { skill_file_lower };
+                    if target.exists() {
+                        if let Ok(skill) = jcode::skill::SkillRegistry::parse_skill(&target) {
+                            skills_out.push(serde_json::json!({
+                                "name": skill.name,
+                                "description": skill.description,
+                                "allowed_tools": skill.allowed_tools,
+                                "path": skill.path.to_string_lossy(),
+                            }));
+                        }
+                    }
+                } else if path.extension().is_some_and(|e| e == "md") {
+                    if let Ok(skill) = jcode::skill::SkillRegistry::parse_skill(&path) {
+                        skills_out.push(serde_json::json!({
+                            "name": skill.name,
+                            "description": skill.description,
+                            "allowed_tools": skill.allowed_tools,
+                            "path": skill.path.to_string_lossy(),
+                        }));
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: global ~/.claude/skills/
+    if skills_out.is_empty() {
+        if let Ok(claude_skills) = jcode::storage::user_home_path(".claude/skills") {
+            if claude_skills.exists() {
+                if let Ok(entries) = std::fs::read_dir(&claude_skills) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            let skill_file = path.join("skill.md");
+                            if skill_file.exists() {
+                                if let Ok(skill) = jcode::skill::SkillRegistry::parse_skill(&skill_file) {
+                                    skills_out.push(serde_json::json!({
+                                        "name": skill.name,
+                                        "description": skill.description,
+                                        "allowed_tools": skill.allowed_tools,
+                                        "path": skill.path.to_string_lossy(),
+                                    }));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if skills_out.is_empty() && !diagnostics.is_empty() {
+        return Err(format!("No skills found. Diagnostics:\n{}", diagnostics.join("\n")));
+    }
+
+    Ok(skills_out)
 }
 
 #[tauri::command]
