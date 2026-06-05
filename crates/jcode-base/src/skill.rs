@@ -257,9 +257,19 @@ impl SkillRegistry {
 
             if path.is_dir() {
                 let skill_file = path.join("SKILL.md");
-                if skill_file.exists()
-                    && let Ok(skill) = Self::parse_skill(&skill_file)
+                let skill_file_lower = path.join("skill.md");
+                let target = if skill_file.exists() {
+                    skill_file
+                } else {
+                    skill_file_lower
+                };
+                if target.exists()
+                    && let Ok(skill) = Self::parse_skill(&target)
                 {
+                    self.skills.insert(skill.name.clone(), skill);
+                }
+            } else if path.extension().is_some_and(|e| e == "md") {
+                if let Ok(skill) = Self::parse_skill(&path) {
                     self.skills.insert(skill.name.clone(), skill);
                 }
             }
@@ -269,7 +279,7 @@ impl SkillRegistry {
     }
 
     /// Parse a SKILL.md file
-    fn parse_skill(path: &Path) -> Result<Skill> {
+    pub fn parse_skill(path: &Path) -> Result<Skill> {
         let content = std::fs::read_to_string(path)?;
 
         // Parse YAML frontmatter

@@ -2440,15 +2440,62 @@ async fn git_status(working_dir: Option<String>) -> Result<String, String> {
 
 #[tauri::command]
 async fn list_mcp_servers() -> Result<Vec<serde_json::Value>, String> {
-    let config = jcode::mcp::McpConfig::load();
+    let jcode_dir = jcode::storage::jcode_dir().map_err(|e| e.to_string())?;
+    let mcp_path = jcode_dir.join("mcp.json");
+
+    if !mcp_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = std::fs::read_to_string(&mcp_path)
+        .map_err(|e| format!("Failed to read {}: {}", mcp_path.display(), e))?;
+
+    let value: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse {}: {}", mcp_path.display(), e))?;
+
+    // Support both jcode native `servers` and Claude Desktop `mcpServers` keys
+    let servers_obj = value
+        .get("servers")
+        .or_else(|| value.get("mcpServers"))
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default();
+
     let mut servers = Vec::new();
-    for (name, server_config) in config.servers {
+    for (name, server_value) in servers_obj {
+        let command = server_value
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let args = server_value
+            .get("args")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let env = server_value
+            .get("env")
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect::<std::collections::HashMap<String, String>>()
+            })
+            .unwrap_or_default();
+        let shared = server_value
+            .get("shared")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
         servers.push(serde_json::json!({
             "name": name,
-            "command": server_config.command,
-            "args": server_config.args,
-            "env": server_config.env,
-            "shared": server_config.shared,
+            "command": command,
+            "args": args,
+            "env": env,
+            "shared": shared,
         }));
     }
     Ok(servers)
