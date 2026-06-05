@@ -1,6 +1,6 @@
 [package]
 name = "jcode"
-version = "0.20.0"
+version = "0.21.0"
 description = "Possibly the greatest coding agent ever built — blazing-fast TUI, multi-model, swarm coordination, 30+ tools"
 edition = "2024"
 autobins = false
@@ -41,6 +41,8 @@ members = [
   "crates/jcode-provider-metadata",
   "crates/jcode-provider-openai",
   "crates/jcode-provider-openrouter",
+  "crates/jcode-render-core",
+  "crates/jcode-productivity-core",
   "crates/jcode-selfdev-types",
   "crates/jcode-session-types",
   "crates/jcode-side-panel-types",
@@ -52,6 +54,7 @@ members = [
   "crates/jcode-tool-core",
   "crates/jcode-tool-types",
   "crates/jcode-tui-account-picker",
+  "crates/jcode-tui-anim",
   "crates/jcode-tui-core",
   "crates/jcode-tui-markdown",
   "crates/jcode-tui-mermaid",
@@ -131,6 +134,7 @@ reqwest = { version = "0.12", default-features = false, features = [
   "http2",
   "system-proxy",
   "rustls-tls",
+  "rustls-tls-native-roots",
 ] }
 rustls = { version = "0.23", default-features = false, features = [
   "aws_lc_rs",
@@ -315,6 +319,22 @@ opt-level = 1
 debug = 0
 incremental = true
 codegen-units = 256
+
+# Keep the idle-animation math kernels fully optimized even in debug-style
+# builds. This crate is pure, dependency-free numeric code (the trig-heavy 3D
+# samplers that otherwise dominate idle CPU). Pinning it to opt-level = 3 here
+# means the optimized object is compiled once and reused across iterative
+# dev/selfdev rebuilds, since it only recompiles when the animation code itself
+# changes. The "*" glob above sets the default for dependencies; these explicit
+# package entries take precedence for this one crate in each profile.
+[profile.dev.package."jcode-tui-anim"]
+opt-level = 3
+
+[profile.selfdev.package."jcode-tui-anim"]
+opt-level = 3
+
+[profile.test.package."jcode-tui-anim"]
+opt-level = 3
 
 [profile.test]
 debug = 0
