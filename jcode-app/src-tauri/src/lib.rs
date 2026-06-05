@@ -2415,9 +2415,10 @@ async fn list_mcp_servers() -> Result<Vec<serde_json::Value>, String> {
 
 #[tauri::command]
 async fn list_skills() -> Result<Vec<serde_json::Value>, String> {
-    let registry = jcode::skill::SkillRegistry::shared_registry();
-    let guard = registry.read().await;
-    let skills = guard.list();
+    // Always load fresh from disk so new skills are visible without restart.
+    let registry = jcode::skill::SkillRegistry::load()
+        .map_err(|e| format!("Failed to load skills: {e}"))?;
+    let skills = registry.list();
     let mut result = Vec::new();
     for skill in skills {
         result.push(serde_json::json!({
