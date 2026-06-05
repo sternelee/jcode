@@ -859,6 +859,12 @@ export interface ProviderSetupReport {
 export interface RolePreset {
 	name: string;
 	model: string;
+	profileId?: string;
+	/** Optional provider key (e.g. `anthropic`, `openai`, `gemini`, or an
+	 * OpenAI-compatible profile id). Pair with `model` to route a swarm
+	 * member through a specific provider. Falls back to `profileId` when
+	 * not set, for backward compatibility. */
+	provider?: string;
 	detail: string;
 	tag?: string;
 	tagColor?: string;

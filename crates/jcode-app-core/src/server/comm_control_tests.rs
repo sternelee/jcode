@@ -68,6 +68,8 @@ fn member(session_id: &str, swarm_id: &str, status: &str) -> SwarmMember {
         joined_at: Instant::now(),
         last_status_change: Instant::now(),
         is_headless: false,
+        model: None,
+        provider_key: None,
     }
 }
 

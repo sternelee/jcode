@@ -148,6 +148,18 @@ pub struct SwarmMemberRecord {
     pub latest_completion_report: Option<String>,
     pub role: SwarmRole,
     pub is_headless: bool,
+    /// Optional model this member is pinned to. `None` means the member
+    /// inherits its provider/model from the spawning coordinator (or the
+    /// resolved default), which matches the historical behavior. When set,
+    /// the member uses exactly this model on its active provider.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Optional provider key for this member. Recognized values include
+    /// `anthropic`, `openai`, `copilot`, `gemini`, `antigravity`, `cursor`,
+    /// `bedrock`, `openrouter`, or any OpenAI-compatible profile id.
+    /// `None` means inherit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_key: Option<String>,
 }
 
 /// Bidirectional index for swarm channel subscriptions.

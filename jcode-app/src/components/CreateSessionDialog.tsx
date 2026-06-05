@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { ModelPickerModal } from "@/components/SlashCommands";
-import { ROLE_PRESETS } from "@/rolePresets";
+import { ROLE_PRESETS, memberProvider } from "@/rolePresets";
 
 const DEFAULT_MODEL = ROLE_PRESETS[0]?.model || "claude-sonnet-4-20250514";
+const DEFAULT_PROVIDER = memberProvider(ROLE_PRESETS[0]) ?? "anthropic";
 
 interface CreateSessionDialogProps {
 	open: boolean;
@@ -15,7 +16,15 @@ interface CreateSessionDialogProps {
 	/** Available model routes for the model picker */
 	availableModels?: string[];
 	/** Initial mode when opening the dialog */
-	initMode?: "normal" | "swarm";
+	initMode?: "normal" | "swarm" | "addMember";
+	/** Pre-seeded list of swarm members to display in the dialog. When
+	 * `initMode === "addMember"`, the dialog operates in "add to existing
+	 * swarm" mode and shows the existing team as read-only chips. */
+	existingSwarmMembers?: Array<{
+		roleName: string;
+		model?: string | null;
+		providerKey?: string | null;
+	}>;
 	/** Callbacks */
 	onCreateNormal: (
 		workingDir: string | null,
@@ -31,8 +40,17 @@ interface CreateSessionDialogProps {
 		roleName: string,
 		model: string,
 		profileId?: string,
+		providerKey?: string,
 	) => void;
 	onRemoveSwarmMember?: (roleName: string) => void;
+	/** Commit a single new member to an existing workspace. Used when
+	 * `initMode === "addMember"`. Returns the new session id on success. */
+	onCommitAddMember?: (
+		workingDir: string | null,
+		roleName: string,
+		model: string,
+		providerKey?: string,
+	) => Promise<string | null> | string | null;
 	/** Current swarm members (role names) */
 	swarmMembers?: string[];
 }
@@ -44,13 +62,15 @@ export function CreateSessionDialog({
 	currentWorkingDir,
 	availableModels = [],
 	initMode = "swarm",
+	existingSwarmMembers = [],
 	onCreateNormal,
 	onCreateSwarm,
 	onAddSwarmMember,
 	onRemoveSwarmMember,
+	onCommitAddMember,
 	swarmMembers = [],
 }: CreateSessionDialogProps) {
-	const [mode, setMode] = useState<"normal" | "swarm">(initMode);
+	const [mode, setMode] = useState<"normal" | "swarm" | "addMember">(initMode);
 	const [selectedWorkspace, setSelectedWorkspace] = useState<string>(
 		currentWorkingDir || workspaces[0] || "",
 	);
@@ -64,10 +84,16 @@ export function CreateSessionDialog({
 	);
 	const [customModel, setCustomModel] = useState("");
 	const [swarmModel, setSwarmModel] = useState(DEFAULT_MODEL);
-	const [swarmProfileId, setSwarmProfileId] = useState<string | null>(null);
+	const [swarmProfileId, setSwarmProfileId] = useState<string | null>(
+		DEFAULT_PROVIDER,
+	);
 	const [newRoleName, setNewRoleName] = useState("");
 	const [newRoleModel, setNewRoleModel] = useState(DEFAULT_MODEL);
-	const [newRoleProfileId, setNewRoleProfileId] = useState<string | null>(null);
+	const [newRoleProfileId, setNewRoleProfileId] = useState<string | null>(
+		DEFAULT_PROVIDER,
+	);
+	const [addMemberBusy, setAddMemberBusy] = useState(false);
+	const [addMemberError, setAddMemberError] = useState<string | null>(null);
 
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const [modelPickerTarget, setModelPickerTarget] = useState<
@@ -82,7 +108,8 @@ export function CreateSessionDialog({
 			workspaces.length === 0 ||
 				(currentWorkingDir ? !workspaces.includes(currentWorkingDir) : false),
 		);
-	}, [currentWorkingDir, open, workspaces]);
+		setAddMemberError(null);
+	}, [currentWorkingDir, open, workspaces, initMode]);
 
 	const effectiveModel = customModel || selectedModel;
 	const effectiveProfileId = customModel ? null : selectedProfileId;
@@ -110,8 +137,39 @@ export function CreateSessionDialog({
 	const handleAddRole = () => {
 		const name = newRoleName.trim();
 		if (!name) return;
-		onAddSwarmMember(name, newRoleModel, newRoleProfileId ?? undefined);
+		const providerKey = newRoleProfileId ?? undefined;
+		onAddSwarmMember(
+			name,
+			newRoleModel,
+			newRoleProfileId ?? undefined,
+			providerKey,
+		);
 		setNewRoleName("");
+	};
+
+	const handleCommitAddMember = async () => {
+		const name = newRoleName.trim();
+		if (!name || !onCommitAddMember) return;
+		setAddMemberBusy(true);
+		setAddMemberError(null);
+		try {
+			const newId = await onCommitAddMember(
+				resolvedWorkspace,
+				name,
+				newRoleModel,
+				newRoleProfileId ?? undefined,
+			);
+			if (newId) {
+				setNewRoleName("");
+				onOpenChange(false);
+			} else {
+				setAddMemberError("Failed to add member: server returned no id.");
+			}
+		} catch (e) {
+			setAddMemberError(String(e));
+		} finally {
+			setAddMemberBusy(false);
+		}
 	};
 
 	const openModelPicker = (target: "normal" | "swarm" | "role") => {
@@ -399,13 +457,19 @@ export function CreateSessionDialog({
 									<div className="grid grid-cols-2 gap-2 mb-3">
 										{ROLE_PRESETS.map((role) => {
 											const alreadyAdded = swarmMembers.includes(role.name);
+											const provider = memberProvider(role);
 											return (
 												<button
 													key={role.name}
 													type="button"
 													disabled={alreadyAdded}
 													onClick={() =>
-														onAddSwarmMember(role.name, role.model)
+														onAddSwarmMember(
+															role.name,
+															role.model,
+															role.profileId,
+															provider,
+														)
 													}
 													className={cn(
 														"text-left px-3 py-2 rounded-xl border text-[12px] transition-all",
@@ -414,7 +478,14 @@ export function CreateSessionDialog({
 															: "bg-card border-border hover:border-primary/50 hover:bg-muted/80 text-foreground",
 													)}
 												>
-													<div className="font-semibold">{role.name}</div>
+													<div className="flex items-baseline justify-between gap-1">
+														<span className="font-semibold">{role.name}</span>
+														{provider && (
+														<span className="text-[9px] uppercase tracking-wide text-muted-foreground/80">
+															{provider}
+														</span>
+														)}
+													</div>
 													<div className="text-[10px] text-muted-foreground mt-0.5">
 														{role.detail}
 													</div>
@@ -438,9 +509,17 @@ export function CreateSessionDialog({
 										<button
 											type="button"
 											onClick={() => openModelPicker("role")}
-											className="px-3 py-1.5 rounded-xl text-[12px] font-medium border bg-card border-border hover:border-muted-foreground/30 truncate max-w-[120px]"
+											className="px-3 py-1.5 rounded-xl text-[12px] font-medium border bg-card border-border hover:border-muted-foreground/30 truncate max-w-[120px] flex flex-col items-start leading-tight"
+											title={`${newRoleProfileId ?? "auto"}: ${newRoleModel}`}
 										>
-											{newRoleModel}
+											<span className="truncate w-full text-left">
+												{newRoleModel}
+											</span>
+											{newRoleProfileId && (
+												<span className="text-[9px] uppercase tracking-wide text-muted-foreground">
+													{newRoleProfileId}
+												</span>
+											)}
 										</button>
 										<button
 											type="button"
@@ -459,6 +538,75 @@ export function CreateSessionDialog({
 								</div>
 							</>
 						)}
+
+						{mode === "addMember" && (
+							/* ── Add-member mode: list existing team, then add one new role ── */
+							<div className="space-y-3">
+								{existingSwarmMembers.length > 0 && (
+									<div>
+										<label className="block text-[12px] font-semibold text-foreground mb-1.5">
+											Current team
+										</label>
+										<div className="flex flex-wrap gap-2">
+											{existingSwarmMembers.map((member) => (
+												<span
+													key={member.roleName}
+													className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted text-muted-foreground text-[12px] font-medium"
+												>
+													{member.roleName}
+													{member.providerKey && (
+														<span className="text-[9px] uppercase tracking-wide text-muted-foreground/80">
+															{member.providerKey}
+														</span>
+													)}
+												</span>
+											))}
+										</div>
+									</div>
+								)}
+								<div>
+									<label className="block text-[12px] font-semibold text-foreground mb-1.5">
+										New member name
+									</label>
+									<input
+										type="text"
+										value={newRoleName}
+										onChange={(e) => setNewRoleName(e.target.value)}
+										placeholder="e.g. Tester, Reviewer, Atlas-2..."
+										className="w-full h-9 px-3 rounded-xl border border-border text-[13px] outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
+									/>
+								</div>
+								<div>
+									<label className="block text-[12px] font-semibold text-foreground mb-1.5">
+										Model
+									</label>
+									<button
+										type="button"
+										onClick={() => openModelPicker("role")}
+										className="w-full text-left px-3 py-2 rounded-xl text-[13px] font-medium border transition-all flex items-center justify-between bg-card border-border hover:border-muted-foreground/30"
+									>
+										<span className="flex flex-col items-start leading-tight truncate">
+											<span className="truncate w-full text-left">
+												{newRoleModel}
+											</span>
+											{newRoleProfileId && (
+												<span className="text-[9px] uppercase tracking-wide text-muted-foreground">
+													{newRoleProfileId}
+												</span>
+											)}
+										</span>
+										<span className="text-[11px] text-muted-foreground shrink-0 ml-2">
+											Change
+										</span>
+									</button>
+								</div>
+								{addMemberError && (
+									<div className="text-[11px] text-destructive">
+										{addMemberError}
+									</div>
+								)}
+							</div>
+						)}
 					</div>
 
 					{/* Footer */}
@@ -472,15 +620,28 @@ export function CreateSessionDialog({
 						</button>
 						<button
 							type="button"
-							onClick={mode === "normal" ? handleStartNormal : handleStartSwarm}
+							onClick={
+								mode === "normal"
+									? handleStartNormal
+									: mode === "addMember"
+										? handleCommitAddMember
+										: handleStartSwarm
+							}
+							disabled={mode === "addMember" && (addMemberBusy || !newRoleName.trim())}
 							className={cn(
 								"px-5 py-2 rounded-xl text-[13px] font-medium transition-all",
-								mode === "normal"
-									? "bg-primary text-primary-foreground hover:bg-primary/90"
+								mode === "addMember" && (addMemberBusy || !newRoleName.trim())
+									? "bg-muted/50 text-muted-foreground cursor-not-allowed"
 									: "bg-primary text-primary-foreground hover:bg-primary/90",
 							)}
 						>
-							{mode === "normal" ? "Start Session" : "Launch Agent Team"}
+							{mode === "normal"
+								? "Start Session"
+								: mode === "addMember"
+									? addMemberBusy
+										? "Adding..."
+										: "Add Member"
+									: "Launch Agent Team"}
 						</button>
 					</div>
 				</div>

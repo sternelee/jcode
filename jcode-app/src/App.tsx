@@ -93,7 +93,12 @@ export default function App() {
 	const [selectedConvId, setSelectedConvId] = useState<string | undefined>();
 	const { effectiveTheme, setTheme } = useTheme();
 	const [pendingSwarmMembers, setPendingSwarmMembers] = useState<
-		Array<{ roleName: string; model: string; profileId?: string }>
+		Array<{
+			roleName: string;
+			model: string;
+			profileId?: string;
+			providerKey?: string;
+		}>
 	>([]);
 	// Read cursor: track when each conversation was last viewed
 	const [lastReadAt, setLastReadAt] = useState<Record<string, number>>({});
@@ -359,7 +364,10 @@ export default function App() {
 					members: pendingSwarmMembers.map((m) => ({
 						roleName: m.roleName,
 						model: m.model || null,
-						profileId: m.profileId || null,
+						// Prefer the explicit providerKey; fall back to profileId
+						// for older callers.
+						providerKey: m.providerKey ?? m.profileId ?? null,
+						profileId: m.profileId ?? null,
 					})),
 				})) ?? [];
 
@@ -384,11 +392,42 @@ export default function App() {
 		roleName: string,
 		model: string,
 		profileId?: string,
+		providerKey?: string,
 	) => {
 		setPendingSwarmMembers((prev) => {
 			if (prev.some((member) => member.roleName === roleName)) return prev;
-			return [...prev, { roleName, model, profileId }];
+			const resolvedProviderKey =
+				providerKey ?? profileId ?? undefined;
+			return [
+				...prev,
+				{ roleName, model, profileId, providerKey: resolvedProviderKey },
+			];
 		});
+	};
+
+	/** Commit a single new member to an existing workspace. Used by the
+	 * "add to existing swarm" flow in CreateSessionDialog. */
+	const handleCommitAddMember = async (
+		workingDir: string | null,
+		roleName: string,
+		model: string,
+		providerKey?: string,
+	): Promise<string | null> => {
+		try {
+			const newId = await invoke<string>("add_swarm_member", {
+				workingDir,
+				roleName,
+				model: model || null,
+				providerKey: providerKey ?? null,
+				memoryEnabled: true,
+			});
+			await listSessions();
+			return newId;
+		} catch (e) {
+			console.error("Add swarm member failed:", e);
+			alert(`Failed to add swarm member: ${String(e)}`);
+			return null;
+		}
 	};
 
 	const handleRemoveSwarmMember = (roleName: string) => {
@@ -1026,6 +1065,17 @@ export default function App() {
 				onCreateSwarm={handleCreateSwarm}
 				onAddSwarmMember={handleAddSwarmMember}
 				onRemoveSwarmMember={handleRemoveSwarmMember}
+				onCommitAddMember={handleCommitAddMember}
+				existingSwarmMembers={state.sessions
+					.filter(
+						(session) =>
+							workspaceIdFromDir(session.workingDir) === currentWorkspaceId,
+					)
+					.map((session) => ({
+						roleName: session.roleName ?? session.title ?? session.sessionId.slice(0, 8),
+						model: null,
+						providerKey: null,
+					}))}
 				swarmMembers={pendingSwarmMembers.map((member) => member.roleName)}
 				initMode={createDialogInitMode}
 			/>

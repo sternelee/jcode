@@ -429,11 +429,15 @@ fn test_comm_spawn_roundtrip_with_optional_nonce() -> Result<()> {
         initial_message: Some("Start here".to_string()),
         request_nonce: Some("planner-fresh-123".to_string()),
         spawn_mode: Some("headless".to_string()),
+        model: Some("gpt-4o".to_string()),
+        provider_key: Some("openai".to_string()),
     };
     let json = serde_json::to_string(&req)?;
     assert!(json.contains("\"type\":\"comm_spawn\""));
     assert!(json.contains("\"request_nonce\":\"planner-fresh-123\""));
     assert!(json.contains("\"spawn_mode\":\"headless\""));
+    assert!(json.contains("\"model\":\"gpt-4o\""));
+    assert!(json.contains("\"provider_key\":\"openai\""));
     let decoded = parse_request_json(&json)?;
     assert_eq!(decoded.id(), 59);
     let Request::CommSpawn {
@@ -442,6 +446,8 @@ fn test_comm_spawn_roundtrip_with_optional_nonce() -> Result<()> {
         initial_message,
         request_nonce,
         spawn_mode,
+        model,
+        provider_key,
         ..
     } = decoded
     else {
@@ -452,6 +458,31 @@ fn test_comm_spawn_roundtrip_with_optional_nonce() -> Result<()> {
     assert_eq!(initial_message.as_deref(), Some("Start here"));
     assert_eq!(request_nonce.as_deref(), Some("planner-fresh-123"));
     assert_eq!(spawn_mode.as_deref(), Some("headless"));
+    assert_eq!(model.as_deref(), Some("gpt-4o"));
+    assert_eq!(provider_key.as_deref(), Some("openai"));
+    Ok(())
+}
+
+#[test]
+fn test_comm_spawn_roundtrip_omits_optional_model_provider() -> Result<()> {
+    // Older clients do not send model/provider_key. The new fields must
+    // serialize only when set, and deserialize as None when missing.
+    let json = r#"{
+        "type": "comm_spawn",
+        "id": 60,
+        "session_id": "sess_coord"
+    }"#;
+    let decoded = parse_request_json(json)?;
+    let Request::CommSpawn {
+        model,
+        provider_key,
+        ..
+    } = decoded
+    else {
+        return Err(anyhow!("expected CommSpawn"));
+    };
+    assert!(model.is_none());
+    assert!(provider_key.is_none());
     Ok(())
 }
 

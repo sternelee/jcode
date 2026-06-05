@@ -1192,6 +1192,8 @@ mod tests {
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless,
+                model: None,
+                provider_key: None,
             },
             event_rx,
         )

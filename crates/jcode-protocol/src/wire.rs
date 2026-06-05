@@ -424,6 +424,18 @@ pub enum Request {
         request_nonce: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         spawn_mode: Option<String>,
+        /// Optional model override for the spawned worker. When set, the worker
+        /// is pinned to this model instead of inheriting the coordinator's
+        /// model or the global `agents.swarm_model` config. Pair with
+        /// `provider_key` to route through a different provider entirely.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        /// Optional provider/profile key for the spawned worker. Recognized
+        /// values include `anthropic`, `openai`, `copilot`, `gemini`,
+        /// `antigravity`, `cursor`, `bedrock`, `openrouter`, or any
+        /// OpenAI-compatible profile id from `~/.jcode/config.toml`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_key: Option<String>,
     },
 
     /// Stop/destroy an agent session (coordinator only)
@@ -436,13 +448,21 @@ pub enum Request {
         force: Option<bool>,
     },
 
-    /// Assign a role to an agent (coordinator only)
+    /// Assign a role to an agent (coordinator only).
+    ///
+    /// When `model` and/or `provider_key` are supplied, the target session's
+    /// active provider is reconfigured in place. This lets the coordinator
+    /// promote a worker into a new role with a different model in one step.
     #[serde(rename = "comm_assign_role")]
     CommAssignRole {
         id: u64,
         session_id: String,
         target_session: String,
         role: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_key: Option<String>,
     },
 
     /// Get a summary of an agent's recent tool calls

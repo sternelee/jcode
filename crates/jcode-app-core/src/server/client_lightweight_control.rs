@@ -314,6 +314,8 @@ pub(super) async fn handle_lightweight_control_request(
             initial_message,
             request_nonce,
             spawn_mode,
+            model,
+            provider_key,
         } => {
             let spawn_mode = match parse_swarm_spawn_mode(id, spawn_mode, &client_event_tx) {
                 Some(spawn_mode) => spawn_mode,
@@ -326,6 +328,8 @@ pub(super) async fn handle_lightweight_control_request(
                 initial_message,
                 request_nonce,
                 spawn_mode,
+                model,
+                provider_key,
                 &client_event_tx,
                 sessions,
                 global_session_id,
@@ -377,12 +381,16 @@ pub(super) async fn handle_lightweight_control_request(
             session_id: req_session_id,
             target_session,
             role,
+            model,
+            provider_key,
         } => {
             handle_comm_assign_role(
                 id,
                 req_session_id,
                 target_session,
                 role,
+                model,
+                provider_key,
                 &client_event_tx,
                 sessions,
                 swarm_members,

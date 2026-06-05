@@ -167,6 +167,16 @@ pub struct SwarmMember {
     /// Whether this is a headless (spawned) session vs a TUI-connected session.
     /// Headless sessions should not be automatically elected as coordinator.
     pub is_headless: bool,
+    /// Optional model override for this swarm member. `None` means inherit
+    /// the coordinator's model. When set, this member is pinned to this
+    /// exact model on its active provider, independent of the global
+    /// `agents.swarm_model` config.
+    pub model: Option<String>,
+    /// Optional provider key for this swarm member. `None` means inherit.
+    /// When set, the member's active provider is switched to this key
+    /// (e.g. `openai`, `anthropic`, `gemini`, or an OpenAI-compatible
+    /// profile id) before applying the model override.
+    pub provider_key: Option<String>,
 }
 
 impl SwarmMember {
@@ -183,6 +193,8 @@ impl SwarmMember {
             latest_completion_report: self.latest_completion_report.clone(),
             role: SwarmRole::from(self.role.clone()),
             is_headless: self.is_headless,
+            model: self.model.clone(),
+            provider_key: self.provider_key.clone(),
         }
     }
 
@@ -216,6 +228,8 @@ impl SwarmMember {
             joined_at: Instant::now(),
             last_status_change: Instant::now(),
             is_headless: record.is_headless,
+            model: record.model,
+            provider_key: record.provider_key,
         }
     }
 }

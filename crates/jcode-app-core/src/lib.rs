@@ -5,6 +5,7 @@
     clippy::unnecessary_sort_by,
     clippy::useless_conversion
 )]
+#![recursion_limit = "512"]
 
 //! Application core for jcode (upper layer).
 //!

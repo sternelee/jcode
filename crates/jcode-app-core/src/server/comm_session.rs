@@ -296,6 +296,8 @@ async fn register_visible_spawned_member(
                 joined_at: now,
                 last_status_change: now,
                 is_headless: false,
+                model: None,
+                provider_key: None,
             },
         );
     }
@@ -326,12 +328,21 @@ async fn register_visible_spawned_member(
     clippy::too_many_arguments,
     reason = "server-side swarm spawning needs session, swarm state, provider, and event sinks together"
 )]
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn spawn_swarm_agent(
     req_session_id: &str,
     swarm_id: &str,
     working_dir: Option<String>,
     initial_message: Option<String>,
     spawn_mode: Option<SwarmSpawnMode>,
+    // Optional per-call model override. When set, the spawned worker is
+    // pinned to this model regardless of the global `agents.swarm_model`
+    // config and the coordinator's model. Use `provider_key` to route the
+    // worker through a different provider entirely.
+    model_override: Option<String>,
+    // Optional per-call provider key. Pairs with `model_override`; ignored
+    // when no explicit `model_override` is given.
+    provider_key_override: Option<String>,
     sessions: &SessionAgents,
     global_session_id: &Arc<RwLock<String>>,
     provider_template: &Arc<dyn Provider>,
@@ -363,16 +374,48 @@ pub(super) async fn spawn_swarm_agent(
             .unwrap_or((None, None, false))
     };
     let agents_config = &crate::config::config().agents;
-    let configured_swarm_model = agents_config.swarm_model.clone();
+
+    // When the coordinator passes an explicit per-worker override, it wins
+    // over both the global `agents.swarm_model` config and the coordinator's
+    // own model. Otherwise fall back to the historical resolution path.
+    let per_call_override_active = model_override
+        .as_deref()
+        .map(|m| !m.trim().is_empty())
+        .unwrap_or(false);
+    let configured_swarm_model = if per_call_override_active {
+        model_override.clone()
+    } else {
+        agents_config.swarm_model.clone()
+    };
     let resolved_spawn_mode = spawn_mode.unwrap_or(agents_config.swarm_spawn_mode);
-    let (spawn_model, spawn_provider_key) = resolve_swarm_spawn_model_and_provider(
+    let (spawn_model, mut spawn_provider_key) = resolve_swarm_spawn_model_and_provider(
         configured_swarm_model.clone(),
         coordinator_model.clone(),
         coordinator_provider_key.clone(),
     );
+    if per_call_override_active {
+        // Resolve the per-call provider key independently from any global
+        // config or coordinator inheritance. Empty/sentinel values are treated
+        // as "inherit the auto-detected provider for the requested model".
+        if let Some(ref provider_key) = provider_key_override
+            && !provider_key.trim().is_empty()
+        {
+            spawn_provider_key = Some(provider_key.trim().to_string());
+        }
+    }
+    let resolved_persisted_model = if per_call_override_active {
+        spawn_model.clone()
+    } else {
+        None
+    };
+    let resolved_persisted_provider_key = if per_call_override_active {
+        spawn_provider_key.clone()
+    } else {
+        None
+    };
     crate::logging::info(&format!(
-        "Swarm spawn model resolution: configured_swarm_model={:?} coordinator_model={:?} -> spawn_model={:?} spawn_provider_key={:?}",
-        configured_swarm_model, coordinator_model, spawn_model, spawn_provider_key,
+        "Swarm spawn model resolution: per_call_override={} configured_swarm_model={:?} coordinator_model={:?} -> spawn_model={:?} spawn_provider_key={:?}",
+        per_call_override_active, configured_swarm_model, coordinator_model, spawn_model, spawn_provider_key,
     ));
 
     let startup_message = initial_message
@@ -430,6 +473,18 @@ pub(super) async fn spawn_swarm_agent(
             })
         }
     }?;
+
+    // Persist the per-worker model/provider override onto the headless
+    // SwarmMember so it shows up in swarm status broadcasts and survives
+    // reloads. Visible spawns carry this info in the session file on the
+    // spawned side and the coordinator picks it up via later events.
+    if is_headless_fallback {
+        let mut members = swarm_members.write().await;
+        if let Some(member) = members.get_mut(&new_session_id) {
+            member.model = resolved_persisted_model;
+            member.provider_key = resolved_persisted_provider_key;
+        }
+    }
 
     let startup_message = startup_message.clone();
     {
@@ -564,6 +619,16 @@ pub(super) async fn handle_comm_spawn(
     initial_message: Option<String>,
     request_nonce: Option<String>,
     spawn_mode: Option<SwarmSpawnMode>,
+    // Optional per-worker model override. When set, the spawned agent is
+    // pinned to this exact model, independent of the global
+    // `agents.swarm_model` config and the coordinator's model. Use
+    // `model_provider_key` to route through a different provider too.
+    model: Option<String>,
+    // Optional per-worker provider key. Recognized values: `anthropic`,
+    // `openai`, `copilot`, `gemini`, `antigravity`, `cursor`, `bedrock`,
+    // `openrouter`, or any OpenAI-compatible profile id. Has no effect
+    // unless `model` is also provided.
+    model_provider_key: Option<String>,
     client_event_tx: &mpsc::UnboundedSender<ServerEvent>,
     sessions: &SessionAgents,
     global_session_id: &Arc<RwLock<String>>,
@@ -608,6 +673,8 @@ pub(super) async fn handle_comm_spawn(
             spawn_mode
                 .map(|mode| format!("{mode:?}"))
                 .unwrap_or_default(),
+            model.clone().unwrap_or_default(),
+            model_provider_key.clone().unwrap_or_default(),
         ],
     );
     let Some(mutation_state) = begin_or_replay(
@@ -629,6 +696,8 @@ pub(super) async fn handle_comm_spawn(
         working_dir,
         initial_message,
         spawn_mode,
+        model,
+        model_provider_key,
         sessions,
         global_session_id,
         provider_template,

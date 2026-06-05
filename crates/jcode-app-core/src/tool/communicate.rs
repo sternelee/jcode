@@ -348,6 +348,8 @@ async fn spawn_assignment_session(ctx: &ToolContext, params: &CommunicateInput) 
         initial_message: None,
         request_nonce: Some(fresh_spawn_request_nonce(ctx)),
         spawn_mode: params.spawn_mode.clone(),
+        model: params.model.clone(),
+        provider_key: params.provider_key.clone(),
     };
 
     match send_request(spawn_request).await {
@@ -560,6 +562,18 @@ struct CommunicateInput {
     follow_up: Option<String>,
     #[serde(default)]
     spawn_mode: Option<String>,
+    /// Optional model override for the spawned worker. Pairs with
+    /// `provider_key`. When set, the worker is pinned to this model
+    /// instead of inheriting the coordinator's model.
+    #[serde(default)]
+    model: Option<String>,
+    /// Optional provider key for the spawned worker. Recognized values
+    /// include `anthropic`, `openai`, `copilot`, `gemini`, `antigravity`,
+    /// `cursor`, `bedrock`, `openrouter`, or any OpenAI-compatible
+    /// profile id. Used together with `model` to route through a
+    /// different provider entirely.
+    #[serde(default)]
+    provider_key: Option<String>,
 }
 
 impl CommunicateInput {
@@ -681,6 +695,14 @@ impl Tool for CommunicateTool {
                     "type": "string",
                     "enum": ["visible", "headless", "auto"],
                     "description": "Per-call spawn mode for swarm-created agents. Overrides agents.swarm_spawn_mode config when set. Defaults to visible/headed behavior."
+                },
+                "model": {
+                    "type": "string",
+                    "description": "For action=spawn or action=assign_role: optional per-worker model override. When set, the spawned/assigned agent is pinned to this model instead of inheriting the coordinator's model. Pair with provider_key to route through a different provider entirely (e.g. an OpenAI-compatible profile id)."
+                },
+                "provider_key": {
+                    "type": "string",
+                    "description": "For action=spawn or action=assign_role: optional provider/profile key for the new model. Recognized values: anthropic, openai, copilot, gemini, antigravity, cursor, bedrock, openrouter, or any OpenAI-compatible profile id from config.toml. Has no effect without also setting model."
                 },
                 "session_ids": {
                     "type": "array",
@@ -1047,15 +1069,22 @@ impl Tool for CommunicateTool {
                     initial_message: params.spawn_initial_message(),
                     request_nonce: None,
                     spawn_mode: params.spawn_mode.clone(),
+                    model: params.model.clone(),
+                    provider_key: params.provider_key.clone(),
                 };
 
                 match send_request(request).await {
                     Ok(ServerEvent::CommSpawnResponse { new_session_id, .. })
                         if !new_session_id.is_empty() =>
                     {
+                        let model_suffix = match (&params.model, &params.provider_key) {
+                            (Some(m), Some(p)) => format!(" (model={m}, provider={p})"),
+                            (Some(m), None) => format!(" (model={m})"),
+                            (None, Some(p)) => format!(" (provider={p})"),
+                            (None, None) => String::new(),
+                        };
                         Ok(ToolOutput::new(format!(
-                            "Spawned new agent: {}",
-                            new_session_id
+                            "Spawned new agent: {new_session_id}{model_suffix}"
                         )))
                     }
                     Ok(response) => {
@@ -1113,14 +1142,21 @@ impl Tool for CommunicateTool {
                     session_id: ctx.session_id.clone(),
                     target_session: target.clone(),
                     role: role.clone(),
+                    model: params.model.clone(),
+                    provider_key: params.provider_key.clone(),
                 };
 
                 match send_request(request).await {
                     Ok(response) => {
                         ensure_success(&response)?;
+                        let swap_suffix = match (&params.model, &params.provider_key) {
+                            (Some(m), Some(p)) => format!(" and switched to {p}:{m}"),
+                            (Some(m), None) => format!(" and switched to model {m}"),
+                            (None, Some(p)) => format!(" and switched to provider {p}"),
+                            (None, None) => String::new(),
+                        };
                         Ok(ToolOutput::new(format!(
-                            "Assigned role '{}' to {}",
-                            role, target
+                            "Assigned role '{role}' to {target}{swap_suffix}"
                         )))
                     }
                     Err(e) => Err(anyhow::anyhow!("Failed to assign role: {}", e)),

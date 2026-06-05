@@ -58,9 +58,19 @@ async fn begin_session(
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 struct SwarmMemberRequest {
     role_name: String,
     model: Option<String>,
+    /// Optional provider key. When set, the member is created on this
+    /// provider (e.g. `anthropic`, `openai`, `gemini`, or any
+    /// OpenAI-compatible profile id). Falls back to `profile_id` for
+    /// backward compatibility with existing clients.
+    #[serde(default)]
+    provider_key: Option<String>,
+    /// Deprecated alias for `provider_key`. Kept for clients that still
+    /// pass the older field name. When both are set, `provider_key` wins.
+    #[serde(default)]
     profile_id: Option<String>,
 }
 
@@ -115,14 +125,27 @@ async fn begin_swarm(
         let resolved_memory_enabled = resolved_memory_enabled;
         let role_name = member.role_name.clone();
         let model = member.model.clone();
-        let profile_id = member.profile_id.clone();
+        let provider_key = member
+            .provider_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| {
+                member
+                    .profile_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            });
         let runtimes = runtimes.clone();
         let swarm = swarm.clone();
         member_futures.push(async move {
             let provider = create_provider().await?;
             if let Some(ref model_name) = model {
-                let model_arg = if let Some(pid) = profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-                    format!("{}:{}", pid, model_name)
+                let model_arg = if let Some(ref pk) = provider_key {
+                    format!("{}:{}", pk, model_name)
                 } else {
                     model_name.clone()
                 };
@@ -180,6 +203,52 @@ async fn begin_swarm(
     Ok(created_ids)
 }
 
+/// Add a single new member to an existing workspace. Mirrors the per-member
+/// branch of `begin_swarm` so the desktop UI can grow a swarm after the
+/// initial team is launched. The new member's role is "agent" by default;
+/// the coordinator can promote or re-model it via the swarm comm tool.
+#[tauri::command]
+async fn add_swarm_member(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+    working_dir: Option<String>,
+    role_name: String,
+    model: Option<String>,
+    provider_key: Option<String>,
+    memory_enabled: Option<bool>,
+) -> Result<String, String> {
+    let trimmed_provider_key = provider_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
+    let provider = create_provider().await?;
+    if let Some(ref model_name) = model {
+        let model_arg = if let Some(ref pk) = trimmed_provider_key {
+            format!("{}:{}", pk, model_name)
+        } else {
+            model_name.clone()
+        };
+        jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg)
+            .map_err(|e| format!("Failed to set swarm member model: {e}"))?;
+    }
+
+    let mut session = Session::create(None, None);
+    session.working_dir = working_dir.clone();
+    session.model = Some(provider.model());
+    session.provider_key = jcode::session::derive_session_provider_key(provider.name());
+    session.rename_title(Some(role_name.clone()));
+
+    let mut agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
+    let resolved_memory_enabled = memory_enabled.unwrap_or_else(|| {
+        jcode::config::Config::resolve_workspace_memory_enabled(working_dir.as_deref())
+    });
+    agent.set_memory_enabled(resolved_memory_enabled);
+
+    let runtime = register_runtime_and_emit(&app_handle, &state, agent).await?;
+    Ok(runtime.session_id.clone())
+}
 
 #[tauri::command]
 async fn resume_session(
@@ -2794,6 +2863,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             begin_session,
             begin_swarm,
+            add_swarm_member,
             resume_session,
             send_message,
             cancel,

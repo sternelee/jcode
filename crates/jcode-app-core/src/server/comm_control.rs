@@ -671,6 +671,15 @@ pub(super) async fn handle_comm_assign_role(
     req_session_id: String,
     target_session: String,
     role: String,
+    // Optional model swap on the target session. When set, the target
+    // session's active provider is reconfigured to use this model. Pair
+    // with `model_provider_key` to also switch providers.
+    model: Option<String>,
+    // Optional provider key for the target session's model swap. When
+    // set, the target session's active provider is switched to this key
+    // (e.g. `openai`, `anthropic`, `gemini`, or an OpenAI-compatible
+    // profile id) before applying the model.
+    model_provider_key: Option<String>,
     client_event_tx: &mpsc::UnboundedSender<ServerEvent>,
     sessions: &SessionAgents,
     swarm_members: &Arc<RwLock<HashMap<String, SwarmMember>>>,
@@ -778,6 +787,81 @@ pub(super) async fn handle_comm_assign_role(
             )
             .await;
             return;
+        }
+    }
+
+    // Optional model swap: when the coordinator provides `model` and/or
+    // `model_provider_key`, reconfigure the target session's active
+    // provider so it picks a different model (or a different provider
+    // entirely) the next time it issues a completion. We only do this
+    // in-process for headless workers, since visible/headed workers run
+    // in a separate process and pick up the change on their next event.
+    let model_swap_requested = model
+        .as_deref()
+        .map(|m| !m.trim().is_empty())
+        .unwrap_or(false);
+    if model_swap_requested || model_provider_key.is_some() {
+        let swap_model = model
+            .as_deref()
+            .map(str::trim)
+            .filter(|m| !m.is_empty())
+            .map(str::to_string);
+        let swap_provider_key = model_provider_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|k| !k.is_empty())
+            .map(str::to_string);
+        let model_arg = match (&swap_model, &swap_provider_key) {
+            (Some(m), Some(p)) => Some(format!("{p}:{m}")),
+            (Some(m), None) => Some(m.clone()),
+            (None, Some(_)) => None, // provider-only swap without model: nothing to do at runtime
+            _ => None,
+        };
+        let mut swap_error: Option<String> = None;
+        if let Some(model_arg) = model_arg {
+            let agent_opt = {
+                let map = sessions.read().await;
+                map.get(&target_session).cloned()
+            };
+            if let Some(agent_arc) = agent_opt {
+                let mut agent_guard = agent_arc.lock().await;
+                if let Err(e) = agent_guard.set_model(&model_arg) {
+                    swap_error = Some(format!(
+                        "Role reassigned, but failed to switch model to '{}': {}",
+                        model_arg, e
+                    ));
+                } else {
+                    // `set_model` already updated the underlying session
+                    // metadata (model, provider_key). We also mirror the
+                    // explicit provider_key override if the caller pinned
+                    // to a profile id (e.g. `openrouter:foo`).
+                    if swap_provider_key.is_some() {
+                        agent_guard.set_session_provider_key(swap_provider_key.clone());
+                    }
+                }
+            }
+        }
+        {
+            let mut members = swarm_members.write().await;
+            if let Some(member) = members.get_mut(&target_session) {
+                if let Some(m) = &swap_model {
+                    member.model = Some(m.clone());
+                } else if !model_swap_requested {
+                    member.model = None;
+                }
+                if swap_provider_key.is_some() {
+                    member.provider_key = swap_provider_key.clone();
+                } else {
+                    member.provider_key = None;
+                }
+            }
+        }
+        if let Some(message) = swap_error {
+            let _ = client_event_tx.send(ServerEvent::Error {
+                id,
+                message,
+                retry_after_secs: None,
+            });
         }
     }
 
@@ -1226,6 +1310,8 @@ pub(super) async fn handle_comm_assign_next(
                 &req_session_id,
                 &swarm_id,
                 working_dir.clone(),
+                None,
+                None,
                 None,
                 None,
                 sessions,

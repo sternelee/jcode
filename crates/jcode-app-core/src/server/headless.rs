@@ -156,6 +156,8 @@ pub(super) async fn create_headless_session(
                 joined_at: now,
                 last_status_change: now,
                 is_headless: true,
+                model: None,
+                provider_key: None,
             },
         );
     }

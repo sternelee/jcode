@@ -329,6 +329,8 @@ fn handle_reload_queues_signal_for_canary_session() -> Result<()> {
                     joined_at: now,
                     last_status_change: now,
                     is_headless: false,
+                    model: None,
+                    provider_key: None,
                 },
             ),
             (
@@ -349,6 +351,8 @@ fn handle_reload_queues_signal_for_canary_session() -> Result<()> {
                     joined_at: now,
                     last_status_change: now,
                     is_headless: false,
+                    model: None,
+                    provider_key: None,
                 },
             ),
         ])));
