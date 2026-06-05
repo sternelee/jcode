@@ -340,6 +340,139 @@ pub fn provider_catalog_entry(
     })
 }
 
+/// Build provider catalog entries from configured auth profiles rather than
+/// model routes. This avoids listing every route-derived provider (e.g.
+/// dozens of "via OpenRouter" entries) and shows only the actual provider
+/// profiles the user has configured.
+pub fn provider_entries_from_profiles(
+    routes: &[jcode::provider::ModelRoute],
+    current_provider: Option<&str>,
+) -> Vec<serde_json::Value> {
+    let auth_status = jcode::auth::AuthStatus::check();
+    let current_auth_provider_id =
+        current_provider.and_then(|provider| auth_provider_id_for_route(provider, None));
+
+    // Pre-compute route counts per auth provider
+    let mut route_counts: HashMap<String, usize> = HashMap::new();
+    for route in routes {
+        if let Some(auth_id) = auth_provider_id_for_route(&route.provider, Some(&route.api_method)) {
+            *route_counts.entry(auth_id).or_insert(0) += 1;
+        }
+    }
+
+    let mut seen = HashSet::new();
+    let mut entries = Vec::new();
+
+    // Built-in login providers (Claude, OpenAI, OpenRouter, DeepSeek, etc.)
+    for provider in jcode::provider_catalog::auth_status_login_providers() {
+        let provider_key = provider.id.to_string();
+        seen.insert(provider_key.clone());
+        let route_count = route_counts.get(&provider_key).copied().unwrap_or(0);
+        let is_current_provider = Some(provider_key.as_str()) == current_auth_provider_id.as_deref();
+        let state = auth_status.state_for_provider(provider);
+        let method_detail = auth_status.method_detail_for_provider(provider);
+        let options = provider_config_options(&provider_key).unwrap_or_default();
+
+        entries.push(serde_json::json!({
+            "provider_key": provider_key,
+            "auth_provider_id": provider_key,
+            "display_name": provider.display_name,
+            "has_config_surface": true,
+            "configured": matches!(state, jcode::auth::AuthState::Available),
+            "status": auth_state_label(state),
+            "method_detail": method_detail,
+            "route_count": route_count,
+            "is_current_provider": is_current_provider,
+            "options": options,
+        }));
+    }
+
+    // Custom provider profiles from config.toml
+    let cfg = jcode::config::Config::load();
+    for (name, profile) in &cfg.providers {
+        if seen.contains(name) {
+            continue;
+        }
+        let provider_key = name.clone();
+        let route_count = route_counts.get(&provider_key).copied().unwrap_or(0);
+        let is_current_provider = Some(provider_key.as_str()) == current_auth_provider_id.as_deref();
+
+        let configured = if profile.requires_api_key.unwrap_or(true) {
+            profile.api_key.is_some()
+                || profile
+                    .api_key_env
+                    .as_ref()
+                    .and_then(|key| {
+                        jcode::provider_catalog::load_api_key_from_env_or_config(
+                            key,
+                            profile.env_file.as_deref().unwrap_or(""),
+                        )
+                    })
+                    .is_some()
+        } else {
+            true
+        };
+
+        let status = if configured { "available" } else { "not_configured" };
+        let method_detail = if configured {
+            format!("Custom profile · {}", profile.base_url)
+        } else {
+            "API key required".to_string()
+        };
+
+        let options = vec![serde_json::json!({
+            "provider_id": provider_key,
+            "kind": "api_key",
+            "label": format!("Save {} API key", provider_key),
+            "detail": format!("Configure {} access", provider_key),
+        })];
+
+        entries.push(serde_json::json!({
+            "provider_key": provider_key,
+            "auth_provider_id": provider_key,
+            "display_name": provider_key,
+            "has_config_surface": true,
+            "configured": configured,
+            "status": status,
+            "method_detail": method_detail,
+            "route_count": route_count,
+            "is_current_provider": is_current_provider,
+            "options": options,
+        }));
+    }
+
+    // Sort: current first, then configured, then alphabetically
+    entries.sort_by(|a, b| {
+        let a_current = a
+            .get("is_current_provider")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let b_current = b
+            .get("is_current_provider")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if a_current != b_current {
+            return b_current.cmp(&a_current);
+        }
+        let a_configured = a
+            .get("configured")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let b_configured = b
+            .get("configured")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        if a_configured != b_configured {
+            return b_configured.cmp(&a_configured);
+        }
+        let a_name = a.get("display_name").and_then(|v| v.as_str()).unwrap_or("");
+        let b_name = b.get("display_name").and_then(|v| v.as_str()).unwrap_or("");
+        a_name.cmp(b_name)
+    });
+
+    entries
+}
+
 pub fn provider_entries_from_routes(
     routes: &[jcode::provider::ModelRoute],
     current_provider: Option<&str>,
@@ -552,12 +685,13 @@ pub fn desktop_history_messages(session: &Session) -> Vec<serde_json::Value> {
         for block in &message.content {
             match block {
                 ContentBlock::Text { text, .. } => pending_text.push_str(text),
-                ContentBlock::ToolUse { id, name, input } => {
+                ContentBlock::ToolUse { id, name, input, .. } => {
                     let tool_call = ToolCall {
                         id: id.clone(),
                         name: name.clone(),
                         input: input.clone(),
                         intent: ToolCall::intent_from_input(input),
+                        thought_signature: None,
                     };
                     tool_map.insert(id.clone(), tool_call);
                     pending_tool_calls.push(name.clone());
@@ -584,6 +718,7 @@ pub fn desktop_history_messages(session: &Session) -> Vec<serde_json::Value> {
                             name: "tool".to_string(),
                             input: serde_json::Value::Null,
                             intent: None,
+                            thought_signature: None,
                         })
                     });
                     current_tool = pending_tool_data.clone();
@@ -598,7 +733,8 @@ pub fn desktop_history_messages(session: &Session) -> Vec<serde_json::Value> {
                 ContentBlock::Reasoning { .. }
                 | ContentBlock::OpenAICompaction { .. }
                 | ContentBlock::AnthropicThinking { .. }
-                | ContentBlock::OpenAIReasoning { .. } => {}
+                | ContentBlock::OpenAIReasoning { .. }
+                | ContentBlock::ReasoningTrace { .. } => {}
             }
         }
 

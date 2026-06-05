@@ -1797,6 +1797,47 @@ async fn get_models(state: State<'_, AppState>) -> Result<serde_json::Value, Str
 }
 
 #[tauri::command]
+async fn get_provider_profiles(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let (raw_routes, current_provider_name) = if let Ok(runtime) = active_runtime(&state).await {
+        let provider = { runtime.agent.lock().await.provider_handle() };
+        let _ = provider.prefetch_models().await;
+        let guard = runtime.agent.lock().await;
+        let raw_routes = guard
+            .model_routes()
+            .into_iter()
+            .filter(|r| jcode::provider::is_listable_model_name(&r.model))
+            .collect::<Vec<_>>();
+        let current = {
+            let name = guard.provider_handle().name().to_string();
+            if name.eq_ignore_ascii_case("openrouter") {
+                std::env::var("JCODE_OPENROUTER_CACHE_NAMESPACE")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(name)
+            } else {
+                name
+            }
+        };
+        (raw_routes, Some(current))
+    } else {
+        let provider = jcode::provider::MultiProvider::new();
+        let _ = provider.prefetch_models().await;
+        let raw_routes = provider
+            .model_routes()
+            .into_iter()
+            .filter(|r| jcode::provider::is_listable_model_name(&r.model))
+            .collect::<Vec<_>>();
+        (raw_routes, None)
+    };
+
+    let providers = provider_entries_from_profiles(&raw_routes, current_provider_name.as_deref());
+    Ok(serde_json::json!({
+        "providers": providers,
+        "current": current_provider_name.as_deref().unwrap_or(""),
+    }))
+}
+
+#[tauri::command]
 async fn save_provider_api_key(
     app_handle: AppHandle,
     state: State<'_, AppState>,
@@ -2488,6 +2529,7 @@ pub fn run() {
             delete_workspace_sessions,
             send_stdin_response,
             get_models,
+            get_provider_profiles,
             save_provider_api_key,
             start_provider_auth_flow,
             complete_provider_auth_flow,

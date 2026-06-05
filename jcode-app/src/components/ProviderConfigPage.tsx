@@ -144,6 +144,14 @@ export function ProviderConfigPage({
 				current: string;
 			}>("get_models");
 			setModelRoutes(result.routes);
+		} catch {
+			/* ignore */
+		}
+		try {
+			const result = await invoke<{
+				providers: ProviderCatalogEntry[];
+				current: string;
+			}>("get_provider_profiles");
 			setProviders(result.providers);
 		} catch {
 			/* ignore */
