@@ -901,3 +901,18 @@ export interface WorkspaceMemoryPreferences {
 	default_enabled: boolean;
 	workspaces: Record<string, boolean>;
 }
+
+export interface McpServerInfo {
+	name: string;
+	command: string;
+	args: string[];
+	env: Record<string, string>;
+	shared: boolean;
+}
+
+export interface SkillInfo {
+	name: string;
+	description: string;
+	allowed_tools?: string[];
+	path: string;
+}

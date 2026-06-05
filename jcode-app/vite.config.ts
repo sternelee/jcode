@@ -1,16 +1,19 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
+import react, { reactCompilerPreset } from "@vitejs/plugin-react";
+import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { visualizer } from "rollup-plugin-visualizer";
 import path from "path";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig(async () => ({
   plugins: [
     tailwindcss(),
     react(),
+    babel({
+      presets: [reactCompilerPreset()],
+    }),
     process.env.ANALYZE === "1" &&
       visualizer({
         open: true,
@@ -37,7 +40,13 @@ export default defineConfig(async () => ({
       output: {
         manualChunks: {
           vendor: ["react", "react-dom"],
-          streamdown: ["streamdown", "@streamdown/code", "@streamdown/mermaid", "@streamdown/math", "@streamdown/cjk"],
+          streamdown: [
+            "streamdown",
+            "@streamdown/code",
+            "@streamdown/mermaid",
+            "@streamdown/math",
+            "@streamdown/cjk",
+          ],
         },
       },
     },

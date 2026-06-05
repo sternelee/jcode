@@ -2398,6 +2398,46 @@ async fn git_status(working_dir: Option<String>) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn list_mcp_servers() -> Result<Vec<serde_json::Value>, String> {
+    let config = jcode::mcp::McpConfig::load();
+    let mut servers = Vec::new();
+    for (name, server_config) in config.servers {
+        servers.push(serde_json::json!({
+            "name": name,
+            "command": server_config.command,
+            "args": server_config.args,
+            "env": server_config.env,
+            "shared": server_config.shared,
+        }));
+    }
+    Ok(servers)
+}
+
+#[tauri::command]
+async fn list_skills() -> Result<Vec<serde_json::Value>, String> {
+    let registry = jcode::skill::SkillRegistry::shared_registry();
+    let guard = registry.read().await;
+    let skills = guard.list();
+    let mut result = Vec::new();
+    for skill in skills {
+        result.push(serde_json::json!({
+            "name": skill.name,
+            "description": skill.description,
+            "allowed_tools": skill.allowed_tools,
+            "path": skill.path.to_string_lossy(),
+        }));
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+async fn reload_skills() -> Result<usize, String> {
+    let registry = jcode::skill::SkillRegistry::shared_registry();
+    let mut guard = registry.write().await;
+    guard.reload_all().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn trigger_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     if matches!(
@@ -2488,6 +2528,9 @@ pub fn run() {
             send_transcript,
             run_dictation,
             list_workspace_files,
+            list_mcp_servers,
+            list_skills,
+            reload_skills,
             git_status,
             save_session_state,
             get_last_session_state,

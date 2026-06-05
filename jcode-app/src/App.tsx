@@ -13,6 +13,8 @@ import { TasksPage } from "@/components/TasksPage";
 import { MonitorPage } from "@/components/MonitorPage";
 import { TeamPage } from "@/components/TeamPage";
 import { MediaPage } from "@/components/MediaPage";
+import { McpPage } from "@/components/McpPage";
+import { SkillsPage } from "@/components/SkillsPage";
 import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
 import { SidePanel } from "@/components/SidePanel";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
@@ -998,6 +1000,10 @@ export default function App() {
 							<TeamPage sessions={state.sessions} />
 						) : activeNavTab === "media" ? (
 							<MediaPage sessionData={state.sessionData} />
+						) : activeNavTab === "mcp" ? (
+							<McpPage />
+						) : activeNavTab === "skills" ? (
+							<SkillsPage />
 						) : (
 							<PlaceholderPage
 								key={activeNavTab}

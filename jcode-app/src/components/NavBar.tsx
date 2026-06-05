@@ -9,6 +9,8 @@ import {
 	Settings,
 	LogOut,
 	Menu,
+	Server,
+	Wrench,
 } from "lucide-react";
 
 interface NavBarProps {
@@ -26,6 +28,8 @@ const navItems = [
 	{ id: "tasks", icon: CheckSquare, label: "Tasks" },
 	{ id: "monitor", icon: Eye, label: "Monitor" },
 	{ id: "team", icon: Users, label: "Swarm" },
+	{ id: "mcp", icon: Server, label: "MCP" },
+	{ id: "skills", icon: Wrench, label: "Skills" },
 ];
 
 export function NavBar({
