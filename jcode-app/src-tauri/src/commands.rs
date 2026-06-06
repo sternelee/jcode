@@ -6,7 +6,7 @@ use jcode::session::Session;
 use jcode::tool::Registry;
 use jcode::tool::StdinInputRequest;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -145,6 +145,11 @@ pub struct AppState {
     /// Initialized lazily on first use; shared via Arc so cloning is cheap.
     /// Call `clear_provider()` after provider config changes to force refresh.
     pub provider: tokio::sync::RwLock<Option<Arc<MultiProvider>>>,
+    /// Optional server socket client for server-backed mode.
+    /// Wrapped in std::sync::Mutex so it can be set after AppState is managed.
+    pub server_client: Arc<std::sync::Mutex<Option<Arc<crate::server_client::ServerClient>>>>,
+    /// Session IDs that are managed by the jcode server (not local agents).
+    pub server_managed_sessions: Arc<Mutex<HashSet<String>>>,
 }
 
 impl Default for AppState {
@@ -161,6 +166,8 @@ impl AppState {
             pending_stdin: Arc::new(Mutex::new(std::collections::HashMap::new())),
             swarm: Arc::new(Mutex::new(SwarmState::new())),
             provider: tokio::sync::RwLock::new(None),
+            server_client: Arc::new(std::sync::Mutex::new(None)),
+            server_managed_sessions: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 

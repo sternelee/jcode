@@ -21,6 +21,7 @@ export interface ConversationItemData {
 	unread?: number;
 	muted?: boolean;
 	isActive?: boolean;
+	serverManaged?: boolean;
 }
 
 interface ConversationsListProps {
@@ -145,6 +146,7 @@ function buildNormalItems(
 					? ("typing" as const)
 					: ("text" as const),
 				isActive: session.liveProcessing,
+				serverManaged: session.serverManaged,
 			};
 		});
 }
@@ -468,9 +470,16 @@ function ConvItem({
 						>
 							{item.name}
 						</span>
-						<span className="text-[11px] text-sidebar-foreground/40 shrink-0">
-							{item.time}
-						</span>
+						<div className="flex items-center gap-1.5 shrink-0">
+							{item.serverManaged && (
+								<span className="text-[10px] text-sidebar-foreground/40 bg-sidebar-accent/50 px-1 py-0.5 rounded" title="Server managed">
+									srv
+								</span>
+							)}
+							<span className="text-[11px] text-sidebar-foreground/40">
+								{item.time}
+							</span>
+						</div>
 					</div>
 					<div className="mt-0.5 flex items-center gap-2">
 						{isProcessing ? (

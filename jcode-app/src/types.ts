@@ -537,6 +537,10 @@ export interface SessionInfo {
 	liveToolName?: string;
 	liveStatusDetail?: string;
 	livePhase?: "thinking" | "tool" | "chunking" | "waiting" | "idle";
+	/** True if this session is managed by a jcode server */
+	serverManaged?: boolean;
+	serverName?: string;
+	serverIcon?: string;
 }
 
 export interface RoleInfo {

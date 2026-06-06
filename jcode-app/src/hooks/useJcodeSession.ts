@@ -357,6 +357,9 @@ export function useJcodeSession() {
 						live_tool_name?: string;
 						live_status_detail?: string;
 						live_phase?: "thinking" | "tool" | "chunking" | "waiting" | "idle";
+						server_managed?: boolean;
+						server_name?: string;
+						server_icon?: string;
 					}>
 				>("list_sessions");
 			const sessions = data.map((d) => ({
@@ -430,6 +433,9 @@ export function useJcodeSession() {
 				liveToolName: d.live_tool_name,
 				liveStatusDetail: d.live_status_detail,
 				livePhase: d.live_phase,
+				serverManaged: d.server_managed,
+				serverName: d.server_name,
+				serverIcon: d.server_icon,
 			}));
 			dispatch({
 				type: "SET_SESSIONS",

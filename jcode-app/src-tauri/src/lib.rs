@@ -1,6 +1,8 @@
 pub mod commands;
+mod server_client;
 
 use commands::{create_agent_with_session, create_provider, AppState};
+use server_client::ServerClient;
 use jcode::cli::login::scriptable::{complete_scriptable_login_data, start_scriptable_login_data};
 use jcode::cli::login::LoginOptions;
 
@@ -11,6 +13,7 @@ use jcode::session::Session;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 mod utils;
@@ -269,16 +272,91 @@ async fn resume_session(
     if let Some(runtime) = state.runtimes.lock().await.get(&session_id).cloned() {
         {
             let mut active = state.active_session_id.lock().await;
-            *active = Some(session_id);
+            *active = Some(session_id.clone());
         }
         app_handle
             .emit(
                 "server-event",
-                &serde_json::json!({ "type": "connection_phase", "phase": "connected" }),
+                &serde_json::json!({ "type": "connection_phase", "phase": "connected", "session_id": &session_id }),
             )
             .ok();
         emit_runtime_snapshot(&app_handle, &runtime).await?;
         return Ok(());
+    }
+
+    // Try server-backed resume first if a server connection is available.
+    if let Ok(client) = get_server_client(&state) {
+        let req = jcode::protocol::Request::ResumeSession {
+            id: 1,
+            session_id: session_id.clone(),
+            client_instance_id: None,
+            client_has_local_history: false,
+            allow_session_takeover: false,
+        };
+        match client.request(req).await {
+            Ok(jcode::protocol::ServerEvent::History { .. }) => {
+                eprintln!("[resume_session] server resume succeeded for {}", session_id);
+                client.set_active_session(Some(session_id.clone())).await;
+                state.server_managed_sessions.lock().await.insert(session_id.clone());
+                {
+                    let mut active = state.active_session_id.lock().await;
+                    *active = Some(session_id.clone());
+                }
+                // The History response was consumed by request(); emit it manually so
+                // the frontend receives the full payload via the normal event pipeline.
+                // Re-fetch the session from disk to build a local snapshot for the UI.
+                if let Ok(session) = Session::load(&session_id) {
+                    let messages = desktop_history_messages(&session);
+                    let provider = state.get_provider().await?.fork();
+                    if let Some(ref saved_model) = session.model {
+                        let model_arg = if let Some(ref pk) = session.provider_key {
+                            format!("{}:{}", pk, saved_model)
+                        } else {
+                            saved_model.clone()
+                        };
+                        let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg);
+                    }
+                    app_handle
+                        .emit(
+                            "server-event",
+                            &serde_json::json!({
+                                "type": "connection_phase",
+                                "phase": "connected",
+                                "session_id": &session_id,
+                            }),
+                        )
+                        .ok();
+                    app_handle
+                        .emit(
+                            "server-event",
+                            &serde_json::json!({
+                                "type": "history",
+                                "id": 0,
+                                "session_id": session_id.clone(),
+                                "messages": messages,
+                                "images": Vec::<serde_json::Value>::new(),
+                                "provider_name": infer_provider_name_from_model(provider.name(), &provider.model()),
+                                "provider_model": provider.model(),
+                                "available_models": provider.available_models_display(),
+                                "available_model_routes": Vec::<jcode::provider::ModelRoute>::new(),
+                                "all_sessions": Vec::<String>::new(),
+                                "reasoning_effort": provider.reasoning_effort(),
+                                "connection_type": None::<String>,
+                                "status_detail": None::<String>,
+                                "memory_enabled": true,
+                            }),
+                        )
+                        .ok();
+                }
+                return Ok(());
+            }
+            Ok(other) => {
+                eprintln!("[resume_session] unexpected server response for {}: {:?}", session_id, other);
+            }
+            Err(e) => {
+                eprintln!("[resume_session] server resume failed for {}: {}, falling back to local", session_id, e);
+            }
+        }
     }
 
     let session = Session::load(&session_id)
@@ -313,6 +391,20 @@ async fn send_message(
         session_id,
         content.chars().take(60).collect::<String>()
     );
+
+    // Server-managed session: forward message to the jcode server.
+    if state.server_managed_sessions.lock().await.contains(&session_id) {
+        let client = get_server_client(&state)?;
+        client.set_active_session(Some(session_id.clone())).await;
+        let req = jcode::protocol::Request::Message {
+            id: 1,
+            content,
+            images: images.unwrap_or_default(),
+            system_reminder,
+        };
+        client.send(req).await?;
+        return Ok(());
+    }
 
     // 若 runtime 不在内存（Swarm 模式下历史会话尚未加载），则静默从磁盘加载
     let runtime = match get_or_load_session_runtime(&app_handle, &state, &session_id).await {
@@ -586,6 +678,12 @@ async fn send_message(
 
 #[tauri::command]
 async fn cancel(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+    if state.server_managed_sessions.lock().await.contains(&session_id) {
+        let client = get_server_client(&state)?;
+        let req = jcode::protocol::Request::Cancel { id: 1 };
+        client.send(req).await?;
+        return Ok(());
+    }
     let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     runtime.cancel_signal.fire();
     Ok(())
@@ -598,6 +696,16 @@ async fn send_soft_interrupt(
     content: String,
     urgent: bool,
 ) -> Result<(), String> {
+    if state.server_managed_sessions.lock().await.contains(&session_id) {
+        let client = get_server_client(&state)?;
+        let req = jcode::protocol::Request::SoftInterrupt {
+            id: 1,
+            content,
+            urgent,
+        };
+        client.send(req).await?;
+        return Ok(());
+    }
     let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     runtime.agent.lock().await.queue_soft_interrupt(
         content,
@@ -615,6 +723,24 @@ async fn set_model(
     model: String,
     profile_id: Option<String>,
 ) -> Result<(), String> {
+    if state.server_managed_sessions.lock().await.contains(&session_id) {
+        let client = get_server_client(&state)?;
+        let model_arg = if let Some(pid) = profile_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            format!("{}:{}", pid, model)
+        } else {
+            model
+        };
+        let req = jcode::protocol::Request::SetModel {
+            id: 1,
+            model: model_arg,
+        };
+        client.send(req).await?;
+        return Ok(());
+    }
     let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     let model_arg = if let Some(pid) = profile_id
@@ -1455,7 +1581,20 @@ fn delete_session_artifacts(session_id: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn rename_session(session_id: String, title: String) -> Result<(), String> {
+async fn rename_session(
+    state: State<'_, AppState>,
+    session_id: String,
+    title: String,
+) -> Result<(), String> {
+    if state.server_managed_sessions.lock().await.contains(&session_id) {
+        let client = get_server_client(&state)?;
+        let req = jcode::protocol::Request::RenameSession {
+            id: 1,
+            title: Some(title.trim().to_string()),
+        };
+        client.send(req).await?;
+        return Ok(());
+    }
     let session_path = jcode::session::session_path(&session_id)
         .map_err(|e| format!("Failed to resolve session path for {session_id}: {e}"))?;
     if !session_path.exists() {
@@ -1496,6 +1635,7 @@ async fn delete_session(state: State<'_, AppState>, session_id: String) -> Resul
 
     state.runtimes.lock().await.remove(&session_id);
     state.swarm.lock().await.remove_session(&session_id);
+    state.server_managed_sessions.lock().await.remove(&session_id);
 
     delete_session_artifacts(&session_id)
 }
@@ -1880,6 +2020,56 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
         }
     }
 
+    // If connected to a jcode server, merge server-side sessions and mark
+    // server-managed sessions so the UI can distinguish them.
+    if let Ok(client) = get_server_client(&state) {
+        let req = jcode::protocol::Request::GetHistory { id: 1 };
+        if let Ok(jcode::protocol::ServerEvent::History {
+            all_sessions,
+            server_name,
+            server_icon,
+            ..
+        }) = client.request(req).await
+        {
+            let existing_ids: std::collections::HashSet<String> = sessions
+                .iter()
+                .filter_map(|s| s.get("id").and_then(Value::as_str).map(String::from))
+                .collect();
+
+            for session_id in &all_sessions {
+                if existing_ids.contains(session_id) {
+                    // Mark existing session as server-managed
+                    if let Some(summary) = sessions.iter_mut().find(|s| {
+                        s.get("id")
+                            .and_then(Value::as_str)
+                            == Some(session_id.as_str())
+                    }) {
+                        summary["server_managed"] = serde_json::json!(true);
+                        if let Some(ref name) = server_name {
+                            summary["server_name"] = serde_json::json!(name);
+                        }
+                        if let Some(ref icon) = server_icon {
+                            summary["server_icon"] = serde_json::json!(icon);
+                        }
+                    }
+                } else {
+                    // Server-only session: load from disk if available
+                    let path = dir.join(format!("{session_id}.json"));
+                    if let Ok(Some(mut summary)) = load_session_sidebar_summary(&path) {
+                        summary["server_managed"] = serde_json::json!(true);
+                        if let Some(ref name) = server_name {
+                            summary["server_name"] = serde_json::json!(name);
+                        }
+                        if let Some(ref icon) = server_icon {
+                            summary["server_icon"] = serde_json::json!(icon);
+                        }
+                        sessions.push(summary);
+                    }
+                }
+            }
+        }
+    }
+
     Ok(sessions)
 }
 
@@ -1889,6 +2079,19 @@ async fn send_stdin_response(
     request_id: String,
     input: String,
 ) -> Result<(), String> {
+    let active = state.active_session_id.lock().await.clone();
+    if let Some(ref session_id) = active {
+        if state.server_managed_sessions.lock().await.contains(session_id) {
+            let client = get_server_client(&state)?;
+            let req = jcode::protocol::Request::StdinResponse {
+                id: 1,
+                request_id,
+                input,
+            };
+            client.send(req).await?;
+            return Ok(());
+        }
+    }
     let mut guard = state.pending_stdin.lock().await;
     if let Some(tx) = guard.remove(&request_id) {
         let _ = tx.send(input);
@@ -2186,6 +2389,12 @@ async fn clear_chat(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<(), String> {
+    if state.server_managed_sessions.lock().await.contains(&session_id) {
+        let client = get_server_client(&state)?;
+        let req = jcode::protocol::Request::Clear { id: 1 };
+        client.send(req).await?;
+        return Ok(());
+    }
     let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     guard.clear();
@@ -2206,6 +2415,12 @@ async fn rewind_chat(
     session_id: String,
     message_index: usize,
 ) -> Result<(), String> {
+    if state.server_managed_sessions.lock().await.contains(&session_id) {
+        let client = get_server_client(&state)?;
+        let req = jcode::protocol::Request::Rewind { id: 1, message_index };
+        client.send(req).await?;
+        return Ok(());
+    }
     let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     guard
@@ -2228,6 +2443,16 @@ async fn set_reasoning_effort(
     session_id: String,
     effort: String,
 ) -> Result<(), String> {
+    if state.server_managed_sessions.lock().await.contains(&session_id) {
+        let client = get_server_client(&state)?;
+        let req = jcode::protocol::Request::SetReasoningEffort {
+            id: 1,
+            effort,
+            target_session_id: None,
+        };
+        client.send(req).await?;
+        return Ok(());
+    }
     let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     let current = guard
@@ -2254,6 +2479,12 @@ async fn compact_context(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<(), String> {
+    if state.server_managed_sessions.lock().await.contains(&session_id) {
+        let client = get_server_client(&state)?;
+        let req = jcode::protocol::Request::Compact { id: 1 };
+        client.send(req).await?;
+        return Ok(());
+    }
     let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     let provider = guard.provider_fork();
@@ -2535,6 +2766,299 @@ async fn clear_session_state() -> Result<(), String> {
         let _ = std::fs::remove_file(&path);
     }
     Ok(())
+}
+
+// ─── Server-backed swarm commands ─────────────────────────────────────────
+
+#[tauri::command]
+async fn server_connect(state: State<'_, AppState>) -> Result<bool, String> {
+    let client = {
+        let guard = state.server_client.lock().map_err(|e| e.to_string())?;
+        guard.clone()
+    };
+    if let Some(client) = client {
+        client.connect().await
+    } else {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+async fn server_is_connected(state: State<'_, AppState>) -> Result<bool, String> {
+    let client = {
+        let guard = state.server_client.lock().map_err(|e| e.to_string())?;
+        guard.clone()
+    };
+    if let Some(client) = client {
+        Ok(client.is_connected().await)
+    } else {
+        Ok(false)
+    }
+}
+
+fn get_server_client(state: &State<'_, AppState>) -> Result<Arc<ServerClient>, String> {
+    let guard = state.server_client.lock().map_err(|e| e.to_string())?;
+    guard.clone().ok_or_else(|| "Server client not initialized".to_string())
+}
+
+#[tauri::command]
+async fn comm_spawn(
+    state: State<'_, AppState>,
+    session_id: String,
+    working_dir: Option<String>,
+    initial_message: Option<String>,
+    model: Option<String>,
+    provider_key: Option<String>,
+    spawn_mode: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let client = get_server_client(&state)?;
+    let req = jcode::protocol::Request::CommSpawn {
+        id: 1,
+        session_id,
+        working_dir,
+        initial_message,
+        request_nonce: None,
+        spawn_mode,
+        model,
+        provider_key,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::CommSpawnResponse { new_session_id, .. } => {
+            Ok(serde_json::json!({ "new_session_id": new_session_id }))
+        }
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Err("Unexpected response from server".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn comm_stop(
+    state: State<'_, AppState>,
+    session_id: String,
+    target_session: String,
+    force: Option<bool>,
+) -> Result<(), String> {
+    let client = get_server_client(&state)?;
+    let req = jcode::protocol::Request::CommStop {
+        id: 1,
+        session_id,
+        target_session,
+        force,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::Ack { .. } => Ok(()),
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Ok(()),
+    }
+}
+
+#[tauri::command]
+async fn comm_list(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<jcode::protocol::AgentInfo>, String> {
+    let client = get_server_client(&state)?;
+    let req = jcode::protocol::Request::CommList {
+        id: 1,
+        session_id,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::CommMembers { members, .. } => Ok(members),
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Err("Unexpected response from server".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn comm_status(
+    state: State<'_, AppState>,
+    session_id: String,
+    target_session: String,
+) -> Result<serde_json::Value, String> {
+    let client = get_server_client(&state)?;
+    let req = jcode::protocol::Request::CommStatus {
+        id: 1,
+        session_id,
+        target_session,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::CommStatusResponse { snapshot, .. } => {
+            Ok(serde_json::to_value(snapshot).map_err(|e| e.to_string())?)
+        }
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Err("Unexpected response from server".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn comm_assign_task(
+    state: State<'_, AppState>,
+    session_id: String,
+    target_session: Option<String>,
+    task_id: Option<String>,
+    message: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let client = get_server_client(&state)?;
+    let req = jcode::protocol::Request::CommAssignTask {
+        id: 1,
+        session_id,
+        target_session,
+        task_id,
+        message,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::CommAssignTaskResponse {
+            task_id,
+            target_session,
+            ..
+        } => Ok(serde_json::json!({
+            "task_id": task_id,
+            "target_session": target_session,
+        })),
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Err("Unexpected response from server".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn comm_approve_plan(
+    state: State<'_, AppState>,
+    session_id: String,
+    proposer_session: String,
+) -> Result<(), String> {
+    let client = get_server_client(&state)?;
+    let req = jcode::protocol::Request::CommApprovePlan {
+        id: 1,
+        session_id,
+        proposer_session,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::Ack { .. } => Ok(()),
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Ok(()),
+    }
+}
+
+#[tauri::command]
+async fn comm_reject_plan(
+    state: State<'_, AppState>,
+    session_id: String,
+    proposer_session: String,
+    reason: Option<String>,
+) -> Result<(), String> {
+    let client = get_server_client(&state)?;
+    let req = jcode::protocol::Request::CommRejectPlan {
+        id: 1,
+        session_id,
+        proposer_session,
+        reason,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::Ack { .. } => Ok(()),
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Ok(()),
+    }
+}
+
+#[tauri::command]
+async fn comm_message(
+    state: State<'_, AppState>,
+    from_session: String,
+    message: String,
+    to_session: Option<String>,
+    channel: Option<String>,
+    delivery: Option<String>,
+    wake: Option<bool>,
+) -> Result<(), String> {
+    let client = get_server_client(&state)?;
+    let delivery_mode = delivery.and_then(|d| match d.as_str() {
+        "notify" => Some(jcode::protocol::CommDeliveryMode::Notify),
+        "interrupt" => Some(jcode::protocol::CommDeliveryMode::Interrupt),
+        "wake" => Some(jcode::protocol::CommDeliveryMode::Wake),
+        _ => None,
+    });
+    let req = jcode::protocol::Request::CommMessage {
+        id: 1,
+        from_session,
+        message,
+        to_session,
+        channel,
+        delivery: delivery_mode,
+        wake,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::Ack { .. } => Ok(()),
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Ok(()),
+    }
+}
+
+#[tauri::command]
+async fn comm_plan_status(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<serde_json::Value, String> {
+    let client = get_server_client(&state)?;
+    let req = jcode::protocol::Request::CommPlanStatus {
+        id: 1,
+        session_id,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::CommPlanStatusResponse { summary, .. } => {
+            Ok(serde_json::to_value(summary).map_err(|e| e.to_string())?)
+        }
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Err("Unexpected response from server".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn comm_list_channels(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Vec<jcode::protocol::SwarmChannelInfo>, String> {
+    let client = get_server_client(&state)?;
+    let req = jcode::protocol::Request::CommListChannels {
+        id: 1,
+        session_id,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::CommChannels { channels, .. } => Ok(channels),
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Err("Unexpected response from server".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn comm_read_context(
+    state: State<'_, AppState>,
+    session_id: String,
+    key: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let client = get_server_client(&state)?;
+    let req = jcode::protocol::Request::CommRead {
+        id: 1,
+        session_id,
+        key,
+    };
+    let response = client.request(req).await?;
+    match response {
+        jcode::protocol::ServerEvent::CommContext { entries, .. } => {
+            Ok(serde_json::to_value(entries).map_err(|e| e.to_string())?)
+        }
+        jcode::protocol::ServerEvent::Error { message, .. } => Err(message),
+        _ => Err("Unexpected response from server".to_string()),
+    }
 }
 
 #[tauri::command]
@@ -2980,6 +3504,31 @@ pub fn run() {
             if let Ok(app_data_dir) = app.path().app_data_dir() {
                 std::env::set_var("JCODE_HOME", app_data_dir);
             }
+            // Initialize server client if a jcode server is available
+            let handle = app.handle().clone();
+            let client = Arc::new(ServerClient::new());
+            let client_for_setup = client.clone();
+            tokio::spawn(async move {
+                client_for_setup.set_app_handle(handle).await;
+            });
+            // Use a mutable reference to set the field. Since AppState is managed by Tauri,
+            // we need to use unsafe or a different approach. Better: make server_client
+            // an Arc<Mutex<Option<...>>> so we can set it after construction.
+            // For now, let's spawn a task that will connect and start the event loop.
+            let client_for_task = client.clone();
+            tokio::spawn(async move {
+                let connected = client_for_task.connect().await.unwrap_or(false);
+                if connected {
+                    eprintln!("[setup] connected to jcode server");
+                    client_for_task.start_event_loop();
+                } else {
+                    eprintln!("[setup] no jcode server available, running in direct-agent mode");
+                }
+            });
+            let state = app.state::<AppState>();
+            if let Ok(mut guard) = state.server_client.lock() {
+                *guard = Some(client);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -3053,6 +3602,19 @@ pub fn run() {
             save_session_state,
             get_last_session_state,
             clear_session_state,
+            server_connect,
+            server_is_connected,
+            comm_spawn,
+            comm_stop,
+            comm_list,
+            comm_status,
+            comm_assign_task,
+            comm_approve_plan,
+            comm_reject_plan,
+            comm_message,
+            comm_plan_status,
+            comm_list_channels,
+            comm_read_context,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
