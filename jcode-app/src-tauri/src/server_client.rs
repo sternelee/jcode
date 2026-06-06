@@ -60,6 +60,14 @@ impl ServerClient {
             }
         }
 
+        // Reap stale socket before connecting so a leftover file from a
+        // crashed or reloaded server does not wedge us forever.
+        let socket_path = jcode::server::socket_path();
+        let was_stale = jcode::server::reap_stale_socket_if_dead(&socket_path).await;
+        if was_stale {
+            eprintln!("[server_client] reaped stale socket at {}", socket_path.display());
+        }
+
         match JcodeClient::connect().await {
             Ok(client) => {
                 *guard = Some(client);

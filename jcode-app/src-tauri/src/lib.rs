@@ -3501,9 +3501,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
         .setup(|app| {
-            if let Ok(app_data_dir) = app.path().app_data_dir() {
-                std::env::set_var("JCODE_HOME", app_data_dir);
-            }
             // Register the ServerClient synchronously; lazy-connect on first use.
             let client = Arc::new(ServerClient::new());
             client.set_app_handle(app.handle().clone());
