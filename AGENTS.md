@@ -3,13 +3,13 @@
 ## Project Overview
 
 **jcode** is a high-performance AI coding agent built in Rust. It supports:
-- **Interactive TUI** (ratatui + crossterm) — the primary interface
+- **Interactive TUI** (ratatui + crossterm) — primary interface
 - **Server/Client mode** — single-server, multi-client over Unix sockets
 - **Desktop app** (`jcode-app/`) — Tauri v2 + React 19 + TypeScript + Tailwind v4
-- **iOS app** (`ios/`) — XcodeGen-based, deployed via Codemagic
+- **iOS app** (`ios/`) — XcodeGen-based
 - **Telemetry service** (`telemetry-worker/`) — Cloudflare Workers + D1
 
-It's a Rust workspace with 60+ crates under `crates/` plus the main binary/lib in `src/`.
+Rust workspace with 60+ crates under `crates/` plus the main binary/lib in `src/`.
 
 ## Architecture & Data Flow
 
@@ -28,9 +28,29 @@ User Input → TUI / Desktop / Client → Agent → Provider(s) → StreamEvent 
 
 | Mode | Flow |
 |------|------|
-| **TUI** (direct) | `jcode::run()` → Agent → Session (in-process) |
+| **TUI** | `jcode::run()` → Agent → Session (in-process) |
 | **Server** | Client ↔ Unix socket ↔ Server ↔ Session ↔ Agent |
-| **Desktop** (Tauri) | Frontend `invoke()` → Tauri command → Agent → `server-event` → Frontend listener |
+| **Desktop** | Frontend `invoke()` → Tauri command → Agent → `server-event` → Frontend listener |
+
+### Crate Layering
+
+The root `jcode` crate (`src/lib.rs`, `src/main.rs`) is a thin entrypoint. Real work lives in:
+
+```
+src/lib.rs               # re-exports jcode_tui::* + pub mod cli
+  └─→ crates/jcode-tui   # presentation (TUI rendering, video export)
+        ├─→ crates/jcode-app-core   # non-presentation app logic
+        │     └─→ crates/jcode-base # lowest-level cross-cutting helpers
+        └─→ (other deps)
+src/cli/                 # CLI dispatch + commands (kept in root crate)
+```
+
+`pub use jcode_tui::*` keeps historical `crate::<module>` paths resolving from the root crate. When exploring, the *real* sources are:
+- `crates/jcode-tui/src/` — TUI rendering, info widgets, app shell
+- `crates/jcode-app-core/src/` — `agent/`, `server/`, `session*`, `protocol*`, `provider.rs`, `tool/`, `config/`, `memory*`, `safety`, `compaction`, `ambient/`, `overnight`, `notifications`, `external_auth`, etc.
+- `crates/jcode-base/src/` — `config/`, `auth`, `browser`, `compaction`, `embedding`, `gateway`, `id`, `notifications`, `tool` (lowest layer)
+
+> **Note:** `crates/jcode-desktop/` is a separate wgpu/winit native desktop experiment — **not** the shipping desktop app. The shipping desktop is `jcode-app/` (Tauri).
 
 ### Key Architectural Layers
 
@@ -38,7 +58,7 @@ User Input → TUI / Desktop / Client → Agent → Provider(s) → StreamEvent 
 2. **`Provider`** — `async_trait Provider` in `jcode-provider-core`. Implementations: OpenAI, Gemini, OpenRouter, AWS Bedrock. Returns `EventStream` (pinned `Stream<Item = Result<StreamEvent>>`)
 3. **`Tool`** — `async_trait Tool` in `jcode-tool-core`. Each tool gets a `ToolContext` (session_id, working_dir, interrupt signals). 30+ tools: bash, file ops, git, web search, browser, etc.
 4. **`Session`** — owns conversation history, git state, model selection, memory config. Persisted via `jcode-storage`
-5. **`Protocol`** — `ServerEvent` enum in `jcode-protocol` — newline-delimited JSON over Unix socket. Events cover streaming tokens, tool calls/results, errors, memory, plans, side panel updates
+5. **`Protocol`** — `ServerEvent` enum in `jcode-protocol` — newline-delimited JSON over Unix socket
 6. **`Server`** — named with adjective+animal (e.g. "🔥 blazing 🦊 fox"), registry at `~/.jcode/servers.json`, transparent reconnect on `/reload`
 
 ### Crate Organization
@@ -69,9 +89,17 @@ User Input → TUI / Desktop / Client → Agent → Provider(s) → StreamEvent 
 - `jcode-overnight-core` / `jcode-update-core` — background tasks, auto-update
 - `jcode-azure-auth` / `jcode-notify-email` — auth and notification integrations
 - `jcode-terminal-launch` — terminal emulator launching
+- `jcode-terminal-image` — terminal image rendering
 - `jcode-build-support` — build-time code generation
+- `jcode-build-meta` — build metadata
+- `jcode-logging` — logging infrastructure
+- `jcode-productivity-core` — productivity features
+- `jcode-render-core` — rendering core
+- `jcode-app-core` — non-presentation application logic
+- `jcode-base` — lowest-level cross-cutting helpers
 
 **TUI crates** (`jcode-tui-*`):
+- `jcode-tui` — main TUI crate (presentation layer)
 - `jcode-tui-core` — shared TUI primitives
 - `jcode-tui-render` — frame rendering
 - `jcode-tui-messages` — message display
@@ -83,6 +111,7 @@ User Input → TUI / Desktop / Client → Agent → Provider(s) → StreamEvent 
 - `jcode-tui-usage-overlay` — usage/cost overlay
 - `jcode-tui-workspace` — workspace sidebar
 - `jcode-tui-style` — theme and color definitions
+- `jcode-tui-anim` — TUI animations
 
 **Other**:
 - `jcode-mobile-core` / `jcode-mobile-sim` — iOS/mobile support
@@ -229,6 +258,20 @@ pnpm tauri build          # from inside jcode-app/
 | `jemalloc-prof` | jemalloc with profiling support |
 | `mmdr-size-api` | Mermaid diagram size API |
 
+## Build Profiles
+
+| Profile | Opt-level | LTO | Codegen Units | Use |
+|---------|-----------|-----|---------------|-----|
+| `dev` | 0 | off | 256 | Fast compilation during development |
+| `test` | 0 | off | 256 | Test builds |
+| `release` | 1 | off | 256 | Fast release (not for distribution) |
+| `release-lto` | 3 | thin | 16 | Distribution builds, CI releases |
+| `selfdev` | 0 | off | 256 | Self-dev install path (inherits release) |
+
+- `cargo build --release` — Fast release. **Not** the distribution build.
+- `cargo build --profile release-lto` — True release. Used by `install_release.sh` and CI.
+- `jcode-tui-anim` is pinned to `opt-level = 3` in dev/test/selfdev profiles (trig-heavy 3D samplers that otherwise dominate idle CPU).
+
 ## Important Files
 
 - `src/main.rs` — entry point, global allocator (jemalloc), tokio runtime bootstrap
@@ -243,15 +286,6 @@ pnpm tauri build          # from inside jcode-app/
 - `jcode-app/src-tauri/src/lib.rs` — 50+ `#[tauri::command]` handlers
 - `jcode-app/src/hooks/useJcodeSession.ts` — frontend state management (useReducer)
 - `docs/SERVER_ARCHITECTURE.md` — server design and lifecycle
-
-## Build Profiles
-
-| Profile | Opt-level | LTO | Codegen Units | Use |
-|---------|-----------|-----|---------------|-----|
-| `dev` | 0 | off | 256 | Fast compilation during development |
-| `test` | 0 | off | 256 | Test builds |
-| `release` | 1 | off | 256 | Fast release (not for distribution) |
-| `release-lto` | 3 | thin | 16 | Distribution builds, CI releases |
 
 ## Testing & QA
 
