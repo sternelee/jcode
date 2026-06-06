@@ -11,9 +11,7 @@ use jcode::session::Session;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
-use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
-
 
 mod utils;
 use utils::*;
@@ -30,7 +28,11 @@ async fn begin_session(
 ) -> Result<String, String> {
     let provider = state.get_provider().await?.fork();
     if let Some(ref model_name) = model {
-        let model_arg = if let Some(pid) = profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let model_arg = if let Some(pid) = profile_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             format!("{}:{}", pid, model_name)
         } else {
             model_name.clone()
@@ -86,13 +88,16 @@ async fn begin_swarm(
     memory_enabled: Option<bool>,
     members: Vec<SwarmMemberRequest>,
 ) -> Result<Vec<String>, String> {
-
     let provider = state.get_provider().await?;
 
     // -- Coordinator --
     let coordinator_provider = provider.fork();
     if let Some(ref model_name) = coordinator_model {
-        let model_arg = if let Some(pid) = coordinator_profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        let model_arg = if let Some(pid) = coordinator_profile_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             format!("{}:{}", pid, model_name)
         } else {
             model_name.clone()
@@ -103,26 +108,31 @@ async fn begin_swarm(
 
     let mut coordinator_session = Session::create(None, None);
     coordinator_session.working_dir = working_dir.clone();
-    coordinator_session.model = Some(provider.model());
-    coordinator_session.provider_key = jcode::session::derive_session_provider_key(provider.name());
+    coordinator_session.model = Some(coordinator_provider.model());
+    coordinator_session.provider_key =
+        jcode::session::derive_session_provider_key(coordinator_provider.name());
+    coordinator_session.rename_title(Some("Coordinator".to_string()));
+    coordinator_session
+        .save()
+        .map_err(|e| format!("Failed to persist coordinator session: {e}"))?;
 
-    let mut coordinator_agent = create_agent_with_session(coordinator_provider, coordinator_session, working_dir.as_deref()).await?;
+    let mut coordinator_agent = create_agent_with_session(
+        coordinator_provider,
+        coordinator_session,
+        working_dir.as_deref(),
+    )
+    .await?;
     let resolved_memory_enabled = memory_enabled.unwrap_or_else(|| {
         jcode::config::Config::resolve_workspace_memory_enabled(working_dir.as_deref())
     });
     coordinator_agent.set_memory_enabled(resolved_memory_enabled);
 
-    let coordinator_runtime = register_runtime_and_emit(&app_handle, &state, coordinator_agent).await?;
+    let coordinator_runtime =
+        register_runtime_and_emit(&app_handle, &state, coordinator_agent).await?;
     let coordinator_id = coordinator_runtime.session_id.clone();
     let mut created_ids = vec![coordinator_id];
-    // -- Members (concurrent for performance) --
-    let runtimes = state.runtimes.clone();
-    let swarm = state.swarm.clone();
-    let mut member_futures = Vec::with_capacity(members.len());
+    // -- Members --
     for member in members {
-        let app_handle = app_handle.clone();
-        let working_dir = working_dir.clone();
-        let resolved_memory_enabled = resolved_memory_enabled;
         let role_name = member.role_name.clone();
         let model = member.model.clone();
         let provider_key = member
@@ -139,9 +149,8 @@ async fn begin_swarm(
                     .filter(|s| !s.is_empty())
                     .map(str::to_string)
             });
-        let runtimes = runtimes.clone();
-        let swarm = swarm.clone();
-        member_futures.push(async move {
+
+        let create_result = async {
             let provider = create_provider().await?;
             if let Some(ref model_name) = model {
                 let model_arg = if let Some(ref pk) = provider_key {
@@ -150,7 +159,9 @@ async fn begin_swarm(
                     model_name.clone()
                 };
                 jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg)
-                    .map_err(|e| format!("Swarm creation failed for member '{}': {}.", role_name, e))?;
+                    .map_err(|e| {
+                        format!("Swarm creation failed for member '{}': {}.", role_name, e)
+                    })?;
             }
 
             let mut session = Session::create(None, None);
@@ -158,38 +169,34 @@ async fn begin_swarm(
             session.model = Some(provider.model());
             session.provider_key = jcode::session::derive_session_provider_key(provider.name());
             session.rename_title(Some(role_name.clone()));
+            session
+                .save()
+                .map_err(|e| format!("Failed to persist member session '{}': {}", role_name, e))?;
 
-            let mut agent = create_agent_with_session(provider, session, working_dir.as_deref()).await
+            let mut agent = create_agent_with_session(provider, session, working_dir.as_deref())
+                .await
                 .map_err(|e| format!("Swarm creation failed for member '{}': {}.", role_name, e))?;
             agent.set_memory_enabled(resolved_memory_enabled);
 
-            // Build a temporary AppState view for register_runtime_and_emit
-            let task_state = AppState {
-                runtimes,
-                active_session_id: Arc::new(tokio::sync::Mutex::new(None)),
-                pending_stdin: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-                swarm,
-                provider: tokio::sync::RwLock::new(None),
-            };
-            let runtime = register_runtime_and_emit(&app_handle, &task_state, agent).await
+            let runtime = register_runtime_and_emit_with_active(&app_handle, &state, agent, false)
+                .await
                 .map_err(|e| format!("Swarm creation failed for member '{}': {}.", role_name, e))?;
             Ok::<String, String>(runtime.session_id.clone())
-        });
-    }
+        }
+        .await;
 
-    let member_results: Vec<Result<String, String>> = futures::future::join_all(member_futures).await;
-    let mut member_ids = Vec::with_capacity(member_results.len());
-    for result in member_results {
-        match result {
-            Ok(id) => member_ids.push(id),
+        match create_result {
+            Ok(id) => created_ids.push(id),
             Err(e) => {
-                // Rollback coordinator + all successfully created members
-                for id in &created_ids {
-                    let _ = delete_session_artifacts(id);
-                    let _ = state.runtimes.lock().await.remove(id);
-                    state.swarm.lock().await.remove_session(id);
+                {
+                    let mut active = state.active_session_id.lock().await;
+                    for id in &created_ids {
+                        if active.as_deref() == Some(id) {
+                            *active = None;
+                        }
+                    }
                 }
-                for id in &member_ids {
+                for id in &created_ids {
                     let _ = delete_session_artifacts(id);
                     let _ = state.runtimes.lock().await.remove(id);
                     state.swarm.lock().await.remove_session(id);
@@ -198,7 +205,6 @@ async fn begin_swarm(
             }
         }
     }
-    created_ids.extend(member_ids);
 
     Ok(created_ids)
 }
@@ -239,6 +245,9 @@ async fn add_swarm_member(
     session.model = Some(provider.model());
     session.provider_key = jcode::session::derive_session_provider_key(provider.name());
     session.rename_title(Some(role_name.clone()));
+    session
+        .save()
+        .map_err(|e| format!("Failed to persist member session '{}': {}", role_name, e))?;
 
     let mut agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
     let resolved_memory_enabled = memory_enabled.unwrap_or_else(|| {
@@ -246,7 +255,7 @@ async fn add_swarm_member(
     });
     agent.set_memory_enabled(resolved_memory_enabled);
 
-    let runtime = register_runtime_and_emit(&app_handle, &state, agent).await?;
+    let runtime = register_runtime_and_emit_with_active(&app_handle, &state, agent, false).await?;
     Ok(runtime.session_id.clone())
 }
 
@@ -274,18 +283,20 @@ async fn resume_session(
 
     let session = Session::load(&session_id)
         .map_err(|e| format!("Failed to load session {}: {e}", &session_id))?;
-	let provider = state.get_provider().await?.fork();
-	if let Some(ref saved_model) = session.model {
-		let model_arg = if let Some(ref pk) = session.provider_key {
-			format!("{}:{}", pk, saved_model)
-		} else {
-			saved_model.clone()
-		};
-		let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg);
-	}
+    let provider = state.get_provider().await?.fork();
+    if let Some(ref saved_model) = session.model {
+        let model_arg = if let Some(ref pk) = session.provider_key {
+            format!("{}:{}", pk, saved_model)
+        } else {
+            saved_model.clone()
+        };
+        let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg);
+    }
 
     let agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
-    register_runtime_and_emit(&app_handle, &state, agent).await.map(|_| ())
+    register_runtime_and_emit(&app_handle, &state, agent)
+        .await
+        .map(|_| ())
 }
 
 #[tauri::command]
@@ -297,9 +308,11 @@ async fn send_message(
     images: Option<Vec<(String, String)>>,
     system_reminder: Option<String>,
 ) -> Result<(), String> {
-    eprintln!("[send_message] → session={} content={:?}",
+    eprintln!(
+        "[send_message] → session={} content={:?}",
         session_id,
-        content.chars().take(60).collect::<String>());
+        content.chars().take(60).collect::<String>()
+    );
 
     // 若 runtime 不在内存（Swarm 模式下历史会话尚未加载），则静默从磁盘加载
     let runtime = match get_or_load_session_runtime(&app_handle, &state, &session_id).await {
@@ -420,15 +433,21 @@ async fn send_message(
                                 })
                             })
                             .collect::<Vec<_>>();
-                        let (ready_count, active_count, blocked_count, completed_count, next_ready_ids, preview_items) =
-                            summarize_swarm_plan_items(
-                                swarm_id,
-                                *version,
-                                participants.clone(),
-                                reason.clone(),
-                                item_values,
-                                summary.as_ref(),
-                            );
+                        let (
+                            ready_count,
+                            active_count,
+                            blocked_count,
+                            completed_count,
+                            next_ready_ids,
+                            preview_items,
+                        ) = summarize_swarm_plan_items(
+                            swarm_id,
+                            *version,
+                            participants.clone(),
+                            reason.clone(),
+                            item_values,
+                            summary.as_ref(),
+                        );
                         let participant_ids = if participants.is_empty() {
                             vec![runtime_for_reader.session_id.clone()]
                         } else {
@@ -438,16 +457,21 @@ async fn send_message(
                             crate::commands::SwarmPlanSnapshot {
                                 swarm_id: swarm_id.clone(),
                                 version: *version,
-                                items: items.iter().map(|item| serde_json::json!({
-                                    "id": item.id,
-                                    "content": item.content,
-                                    "status": item.status,
-                                    "priority": item.priority,
-                                    "subsystem": item.subsystem,
-                                    "file_scope": item.file_scope,
-                                    "blocked_by": item.blocked_by,
-                                    "assigned_to": item.assigned_to,
-                                })).collect(),
+                                items: items
+                                    .iter()
+                                    .map(|item| {
+                                        serde_json::json!({
+                                            "id": item.id,
+                                            "content": item.content,
+                                            "status": item.status,
+                                            "priority": item.priority,
+                                            "subsystem": item.subsystem,
+                                            "file_scope": item.file_scope,
+                                            "blocked_by": item.blocked_by,
+                                            "assigned_to": item.assigned_to,
+                                        })
+                                    })
+                                    .collect(),
                                 participants: participant_ids.clone(),
                                 reason: reason.clone(),
                                 ready_count,
@@ -475,16 +499,21 @@ async fn send_message(
                                 proposer_name: proposer_name.clone(),
                                 summary: summary.clone(),
                                 proposal_key: proposal_key.clone(),
-                                items: items.iter().map(|item| serde_json::json!({
-                                    "id": item.id,
-                                    "content": item.content,
-                                    "status": item.status,
-                                    "priority": item.priority,
-                                    "subsystem": item.subsystem,
-                                    "file_scope": item.file_scope,
-                                    "blocked_by": item.blocked_by,
-                                    "assigned_to": item.assigned_to,
-                                })).collect(),
+                                items: items
+                                    .iter()
+                                    .map(|item| {
+                                        serde_json::json!({
+                                            "id": item.id,
+                                            "content": item.content,
+                                            "status": item.status,
+                                            "priority": item.priority,
+                                            "subsystem": item.subsystem,
+                                            "file_scope": item.file_scope,
+                                            "blocked_by": item.blocked_by,
+                                            "assigned_to": item.assigned_to,
+                                        })
+                                    })
+                                    .collect(),
                             },
                         );
                     }
@@ -497,9 +526,11 @@ async fn send_message(
                 if let Some(obj) = payload.as_object_mut() {
                     obj.insert("session_id".to_string(), serde_json::json!(sid));
                 }
-                eprintln!("[send_message] emit event type={} session={}",
+                eprintln!(
+                    "[send_message] emit event type={} session={}",
                     payload.get("type").and_then(|v| v.as_str()).unwrap_or("?"),
-                    sid);
+                    sid
+                );
                 rh.emit("server-event", &payload).ok();
 
                 // Unified workspace-event emit: backend is the single source of
@@ -521,15 +552,21 @@ async fn send_message(
             .await
             .run_once_streaming_mpsc(&content, images.unwrap_or_default(), system_reminder, tx)
             .await;
-        eprintln!("[send_message] agent run finished session={} ok={}",
-            session_id_for_spawn, result.is_ok());
+        eprintln!(
+            "[send_message] agent run finished session={} ok={}",
+            session_id_for_spawn,
+            result.is_ok()
+        );
         reader.await.ok();
         runtime.cancel_signal.reset();
         *runtime.is_processing.lock().await = false;
         *runtime.current_tool_name.lock().await = None;
 
         if let Err(e) = result {
-            eprintln!("[send_message] agent ERROR session={}: {e:#}", session_id_for_spawn);
+            eprintln!(
+                "[send_message] agent ERROR session={}: {e:#}",
+                session_id_for_spawn
+            );
             handle
                 .emit(
                     "server-event",
@@ -562,14 +599,13 @@ async fn send_soft_interrupt(
     urgent: bool,
 ) -> Result<(), String> {
     let runtime = get_runtime_by_session_id(&state, &session_id).await?;
-    runtime
-        .agent
-        .lock()
-        .await
-        .queue_soft_interrupt(content, urgent, jcode::agent::SoftInterruptSource::User);
+    runtime.agent.lock().await.queue_soft_interrupt(
+        content,
+        urgent,
+        jcode::agent::SoftInterruptSource::User,
+    );
     Ok(())
 }
-
 
 #[tauri::command]
 async fn set_model(
@@ -581,7 +617,11 @@ async fn set_model(
 ) -> Result<(), String> {
     let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
-    let model_arg = if let Some(pid) = profile_id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    let model_arg = if let Some(pid) = profile_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         format!("{}:{}", pid, model)
     } else {
         model
@@ -647,10 +687,7 @@ async fn set_workspace_memory_preference(
 }
 
 #[tauri::command]
-fn get_memory_list(
-    scope: String,
-    tag: Option<String>,
-) -> Result<serde_json::Value, String> {
+fn get_memory_list(scope: String, tag: Option<String>) -> Result<serde_json::Value, String> {
     use jcode::memory::MemoryManager;
     let manager = MemoryManager::new();
     let mut all_memories: Vec<serde_json::Value> = Vec::new();
@@ -958,9 +995,12 @@ fn revoke_device(device_id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn run_auth_test(state: State<'_, AppState>, provider_id: Option<String>) -> Result<serde_json::Value, String> {
+async fn run_auth_test(
+    state: State<'_, AppState>,
+    provider_id: Option<String>,
+) -> Result<serde_json::Value, String> {
     let provider = state.get_provider().await?;
-    
+
     // If a specific provider_id is given, try to set a model from that provider
     // to ensure we're testing the right provider.
     if let Some(pid) = provider_id.as_deref().filter(|s| !s.is_empty()) {
@@ -998,7 +1038,8 @@ async fn run_auth_test(state: State<'_, AppState>, provider_id: Option<String>) 
 #[tauri::command]
 fn get_ambient_status() -> Result<serde_json::Value, String> {
     use jcode::ambient::{AmbientManager, AmbientStatus};
-    let manager = AmbientManager::new().map_err(|e| format!("Failed to load ambient manager: {e}"))?;
+    let manager =
+        AmbientManager::new().map_err(|e| format!("Failed to load ambient manager: {e}"))?;
     let state = manager.state();
     let queue = manager.queue();
 
@@ -1066,11 +1107,15 @@ fn get_ambient_transcripts() -> Result<serde_json::Value, String> {
         let mut entries: Vec<_> = std::fs::read_dir(&dir)
             .map_err(|e| e.to_string())?
             .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
-            })
+            .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
             .collect();
-        entries.sort_by_key(|a| std::cmp::Reverse(a.metadata().and_then(|m| m.modified()).unwrap_or(std::time::SystemTime::UNIX_EPOCH)));
+        entries.sort_by_key(|a| {
+            std::cmp::Reverse(
+                a.metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+            )
+        });
 
         for entry in entries.into_iter().take(10) {
             let content = std::fs::read_to_string(entry.path()).unwrap_or_default();
@@ -1121,8 +1166,10 @@ fn run_auth_doctor() -> Result<serde_json::Value, String> {
         if needs_attn {
             needs_attention_count += 1;
         }
-        let diagnostics = jcode::auth::doctor::diagnostics(provider, &assessment, validation_result);
-        let actions = jcode::auth::doctor::recommended_actions(provider, &assessment, validation_result);
+        let diagnostics =
+            jcode::auth::doctor::diagnostics(provider, &assessment, validation_result);
+        let actions =
+            jcode::auth::doctor::recommended_actions(provider, &assessment, validation_result);
 
         provider_reports.push(serde_json::json!({
             "id": provider.id,
@@ -1251,9 +1298,10 @@ async fn approve_external_auth_candidate(index: usize) -> Result<serde_json::Val
     let candidate = &candidates[index];
     jcode::external_auth::approve_external_auth_review_candidate(candidate)
         .map_err(|e| format!("Failed to import auth source: {e}"))?;
-    let validation: String = jcode::external_auth::validate_external_auth_review_candidate(candidate)
-        .await
-        .unwrap_or_else(|e| format!("Imported but validation failed: {e}"));
+    let validation: String =
+        jcode::external_auth::validate_external_auth_review_candidate(candidate)
+            .await
+            .unwrap_or_else(|e| format!("Imported but validation failed: {e}"));
     jcode::auth::AuthStatus::invalidate_cache();
     Ok(serde_json::json!({
         "imported": true,
@@ -1268,8 +1316,8 @@ async fn check_cursor_auth_status() -> Result<serde_json::Value, String> {
     let has_native = jcode::auth::cursor::has_cursor_native_auth();
     let has_vscdb = jcode::auth::cursor::has_cursor_vscdb_token();
     let has_auth_file = jcode::auth::cursor::has_cursor_auth_file_token();
-    let preferred_source = jcode::auth::cursor::preferred_external_auth_source()
-        .map(|s| s.display_name().to_string());
+    let preferred_source =
+        jcode::auth::cursor::preferred_external_auth_source().map(|s| s.display_name().to_string());
     Ok(serde_json::json!({
         "has_api_key": has_api_key,
         "has_native_auth": has_native,
@@ -1286,7 +1334,7 @@ async fn run_provider_doctor(
     model: Option<String>,
     tier: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    use jcode::auth::provider_e2e::{DoctorTier, run_provider_e2e};
+    use jcode::auth::provider_e2e::{run_provider_e2e, DoctorTier};
     use jcode::provider_catalog;
 
     // Try to find by id first, then by display_name (case-insensitive)
@@ -1308,10 +1356,8 @@ async fn run_provider_doctor(
     };
 
     // Try to load API key from env or config
-    let api_key = provider_catalog::load_api_key_from_env_or_config(
-        profile.api_key_env,
-        profile.env_file,
-    );
+    let api_key =
+        provider_catalog::load_api_key_from_env_or_config(profile.api_key_env, profile.env_file);
 
     let api_key_ref = api_key.as_deref().filter(|k| !k.trim().is_empty());
 
@@ -1353,9 +1399,7 @@ async fn run_provider_doctor(
 }
 
 #[tauri::command]
-async fn test_provider_connection(
-    provider_id: String,
-) -> Result<serde_json::Value, String> {
+async fn test_provider_connection(provider_id: String) -> Result<serde_json::Value, String> {
     use jcode::auth::live_provider_probes::fetch_live_openai_compatible_models;
     use jcode::provider_catalog;
 
@@ -1370,10 +1414,8 @@ async fn test_provider_connection(
         })
         .ok_or_else(|| format!("Provider '{provider_id}' not found or not OpenAI-compatible"))?;
 
-    let api_key = provider_catalog::load_api_key_from_env_or_config(
-        profile.api_key_env,
-        profile.env_file,
-    );
+    let api_key =
+        provider_catalog::load_api_key_from_env_or_config(profile.api_key_env, profile.env_file);
 
     let api_key = api_key
         .filter(|k| !k.trim().is_empty())
@@ -1427,8 +1469,11 @@ async fn rename_session(session_id: String, title: String) -> Result<(), String>
 
     value["custom_title"] = serde_json::json!(title.trim());
 
-    fs::write(&session_path, serde_json::to_string_pretty(&value).unwrap_or_default())
-        .map_err(|e| format!("failed to write {}: {e}", session_path.display()))?;
+    fs::write(
+        &session_path,
+        serde_json::to_string_pretty(&value).unwrap_or_default(),
+    )
+    .map_err(|e| format!("failed to write {}: {e}", session_path.display()))?;
 
     Ok(())
 }
@@ -1598,8 +1643,14 @@ async fn get_workspace_thread_history(
     }
 
     messages.sort_by(|a, b| {
-        let a_ts = a.get("timestamp").and_then(Value::as_i64).unwrap_or(i64::MIN);
-        let b_ts = b.get("timestamp").and_then(Value::as_i64).unwrap_or(i64::MIN);
+        let a_ts = a
+            .get("timestamp")
+            .and_then(Value::as_i64)
+            .unwrap_or(i64::MIN);
+        let b_ts = b
+            .get("timestamp")
+            .and_then(Value::as_i64)
+            .unwrap_or(i64::MIN);
         a_ts.cmp(&b_ts).then_with(|| {
             a.get("id")
                 .and_then(Value::as_str)
@@ -1642,7 +1693,9 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
             .ok()
             .and_then(|agent| agent.working_dir().map(str::to_string))
             .unwrap_or_else(|| "default".to_string());
-        *live_workspace_counts.entry(working_dir.clone()).or_insert(0) += 1;
+        *live_workspace_counts
+            .entry(working_dir.clone())
+            .or_insert(0) += 1;
         let current_best = workspace_ordinals.get(&working_dir).copied();
         if current_best.is_none() || runtime.ordinal < current_best.unwrap_or(u64::MAX) {
             workspace_ordinals.insert(working_dir.clone(), runtime.ordinal);
@@ -1668,7 +1721,8 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
                     if let Some(member) = live_swarm_members.get(&session_id) {
                         summary["status"] = serde_json::json!(member.status);
                         if let Some(model) = summary.get("model").and_then(Value::as_str) {
-                            summary["subtitle"] = serde_json::json!(format!("{} · {}", member.status, model));
+                            summary["subtitle"] =
+                                serde_json::json!(format!("{} · {}", member.status, model));
                         }
                         if let Some(ref detail) = member.detail {
                             if !detail.is_empty() {
@@ -1676,7 +1730,9 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
                                     .get("detail")
                                     .and_then(Value::as_str)
                                     .unwrap_or_default();
-                                summary["detail"] = serde_json::json!(if current_detail.contains(detail.as_str()) {
+                                summary["detail"] = serde_json::json!(if current_detail
+                                    .contains(detail.as_str())
+                                {
                                     current_detail.to_string()
                                 } else if current_detail.is_empty() {
                                     detail.clone()
@@ -1697,7 +1753,8 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
                         summary["swarm_id"] = serde_json::json!(plan.swarm_id);
                         if plan.participants.len() >= 2 {
                             summary["swarm_enabled"] = serde_json::json!(true);
-                            summary["swarm_peer_count"] = serde_json::json!(plan.participants.len());
+                            summary["swarm_peer_count"] =
+                                serde_json::json!(plan.participants.len());
                         }
                         summary["swarm_plan"] = serde_json::json!({
                             "swarm_id": plan.swarm_id,
@@ -1726,15 +1783,28 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
                             "items_preview": proposal.items,
                         });
                     }
-                    let swarm_peer_count = *live_workspace_counts.get(&working_dir_key).unwrap_or(&0);
+                    let swarm_peer_count =
+                        *live_workspace_counts.get(&working_dir_key).unwrap_or(&0);
                     if swarm_peer_count >= 2 {
                         summary["swarm_enabled"] = serde_json::json!(true);
                         summary["swarm_peer_count"] = serde_json::json!(swarm_peer_count);
-                        summary["swarm_role"] = serde_json::json!(if workspace_coordinators.get(&working_dir_key) == Some(&session_id) {
+                        summary["swarm_role"] = serde_json::json!(if workspace_coordinators
+                            .get(&working_dir_key)
+                            == Some(&session_id)
+                        {
                             "coordinator"
                         } else {
                             "agent"
                         });
+                        if summary.get("role_name").and_then(Value::as_str).is_none() {
+                            if let Some(role_name) = summary
+                                .get("custom_title")
+                                .and_then(Value::as_str)
+                                .filter(|value| !value.trim().is_empty())
+                            {
+                                summary["role_name"] = serde_json::json!(role_name);
+                            }
+                        }
                     }
                     if let Some(runtime) = live_runtimes.get(&session_id) {
                         let is_processing = *runtime.is_processing.lock().await;
@@ -1752,7 +1822,10 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
                         if let Some(tool_name) = current_tool_name.clone() {
                             summary["live_tool_name"] = serde_json::json!(tool_name);
                         }
-                        if let Some(detail) = status_detail.clone().filter(|value| !value.trim().is_empty()) {
+                        if let Some(detail) = status_detail
+                            .clone()
+                            .filter(|value| !value.trim().is_empty())
+                        {
                             summary["live_status_detail"] = serde_json::json!(detail.clone());
                         }
                         if is_processing {
@@ -1775,11 +1848,16 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
                             if swarm_peer_count >= 2 {
                                 summary["subtitle"] = serde_json::json!(match live_phase {
                                     "waiting" => "swarm · waiting".to_string(),
-                                    _ => summary.get("subtitle").and_then(Value::as_str).unwrap_or("ready").to_string(),
+                                    _ => summary
+                                        .get("subtitle")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("ready")
+                                        .to_string(),
                                 });
                             }
                         }
-                        if let Some(detail) = status_detail.filter(|value| !value.trim().is_empty()) {
+                        if let Some(detail) = status_detail.filter(|value| !value.trim().is_empty())
+                        {
                             let current_detail = summary
                                 .get("detail")
                                 .and_then(Value::as_str)
@@ -1856,7 +1934,11 @@ async fn get_models(state: State<'_, AppState>) -> Result<serde_json::Value, Str
         (raw_routes, None)
     };
 
-    let routes: Vec<serde_json::Value> = raw_routes.iter().cloned().map(serialize_model_route).collect();
+    let routes: Vec<serde_json::Value> = raw_routes
+        .iter()
+        .cloned()
+        .map(serialize_model_route)
+        .collect();
     let providers = provider_entries_from_routes(&raw_routes, current_provider_name.as_deref());
     Ok(serde_json::json!({
         "routes": routes,
@@ -1931,12 +2013,20 @@ async fn save_provider_api_key(
             .map_err(|e| format!("Failed to save OpenRouter API key: {e}"))?;
         }
         "openai-api" => {
-            jcode::cli::provider_init::save_named_api_key("openai.env", "OPENAI_API_KEY", trimmed_key)
-                .map_err(|e| format!("Failed to save OpenAI API key: {e}"))?;
+            jcode::cli::provider_init::save_named_api_key(
+                "openai.env",
+                "OPENAI_API_KEY",
+                trimmed_key,
+            )
+            .map_err(|e| format!("Failed to save OpenAI API key: {e}"))?;
         }
         "cursor" => {
-            jcode::cli::provider_init::save_named_api_key("cursor.env", "CURSOR_API_KEY", trimmed_key)
-                .map_err(|e| format!("Failed to save Cursor API key: {e}"))?;
+            jcode::cli::provider_init::save_named_api_key(
+                "cursor.env",
+                "CURSOR_API_KEY",
+                trimmed_key,
+            )
+            .map_err(|e| format!("Failed to save Cursor API key: {e}"))?;
         }
         "jcode" => {
             jcode::cli::provider_init::save_named_api_key(
@@ -1946,7 +2036,11 @@ async fn save_provider_api_key(
             )
             .map_err(|e| format!("Failed to save Jcode API key: {e}"))?;
 
-            if let Some(api_base) = api_base.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+            if let Some(api_base) = api_base
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
                 jcode::provider_catalog::save_env_value_to_env_file(
                     jcode::subscription_catalog::JCODE_API_BASE_ENV,
                     jcode::subscription_catalog::JCODE_ENV_FILE,
@@ -1979,8 +2073,12 @@ async fn save_provider_api_key(
         provider_id => {
             // Generic handler for OpenAI-compatible providers (deepseek, togetherai, etc.)
             let descriptor = jcode::provider_catalog::resolve_login_provider(provider_id)
-                .ok_or_else(|| format!("Inline API key save is not supported for provider `{provider_id}`"))?;
-            if let jcode::provider_catalog::LoginProviderTarget::OpenAiCompatible(profile) = descriptor.target {
+                .ok_or_else(|| {
+                    format!("Inline API key save is not supported for provider `{provider_id}`")
+                })?;
+            if let jcode::provider_catalog::LoginProviderTarget::OpenAiCompatible(profile) =
+                descriptor.target
+            {
                 let resolved = jcode::provider_catalog::resolve_openai_compatible_profile(profile);
                 jcode::cli::provider_init::save_named_api_key(
                     &resolved.env_file,
@@ -1989,7 +2087,9 @@ async fn save_provider_api_key(
                 )
                 .map_err(|e| format!("Failed to save {} API key: {e}", resolved.display_name))?;
             } else {
-                return Err(format!("Inline API key save is not supported for provider `{provider_id}`"));
+                return Err(format!(
+                    "Inline API key save is not supported for provider `{provider_id}`"
+                ));
             }
         }
     }
@@ -2032,7 +2132,9 @@ async fn complete_provider_auth_flow(
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "Callback URL is required".to_string())?;
-            Some(jcode::cli::login::ProvidedAuthInput::CallbackUrl(value.to_string()))
+            Some(jcode::cli::login::ProvidedAuthInput::CallbackUrl(
+                value.to_string(),
+            ))
         }
         "auth_code" => {
             let value = input
@@ -2040,7 +2142,9 @@ async fn complete_provider_auth_flow(
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "Authorization code is required".to_string())?;
-            Some(jcode::cli::login::ProvidedAuthInput::AuthCode(value.to_string()))
+            Some(jcode::cli::login::ProvidedAuthInput::AuthCode(
+                value.to_string(),
+            ))
         }
         "auth_code_or_callback_url" => {
             let value = input
@@ -2049,9 +2153,13 @@ async fn complete_provider_auth_flow(
                 .filter(|value| !value.is_empty())
                 .ok_or_else(|| "Callback URL or authorization code is required".to_string())?;
             if value.contains("://") || value.contains("code=") || value.contains("state=") {
-                Some(jcode::cli::login::ProvidedAuthInput::CallbackUrl(value.to_string()))
+                Some(jcode::cli::login::ProvidedAuthInput::CallbackUrl(
+                    value.to_string(),
+                ))
             } else {
-                Some(jcode::cli::login::ProvidedAuthInput::AuthCode(value.to_string()))
+                Some(jcode::cli::login::ProvidedAuthInput::AuthCode(
+                    value.to_string(),
+                ))
             }
         }
         other => return Err(format!("Unsupported auth completion kind `{other}`")),
@@ -2185,7 +2293,11 @@ async fn compact_context(
                 manager.token_budget() / 1000,
                 stats.context_usage * 100.0,
                 if stats.has_summary { "yes" } else { "no" },
-                if stats.is_compacting { "in progress..." } else { "no" }
+                if stats.is_compacting {
+                    "in progress..."
+                } else {
+                    "no"
+                }
             );
 
             match manager.force_compact_with(&messages, provider) {
@@ -2264,7 +2376,7 @@ async fn add_provider_profile(
     api_key: Option<String>,
     auth: Option<String>,
 ) -> Result<serde_json::Value, String> {
-    use jcode::cli::commands::provider_setup::{ProviderAddOptions, configure_provider_profile};
+    use jcode::cli::commands::provider_setup::{configure_provider_profile, ProviderAddOptions};
     let auth_arg = auth.as_deref().and_then(|a| match a {
         "bearer" => Some(jcode::cli::args::ProviderAuthArg::Bearer),
         "api-key" => Some(jcode::cli::args::ProviderAuthArg::ApiKey),
@@ -2394,8 +2506,11 @@ async fn save_session_state(session_id: String, working_dir: Option<String>) -> 
     let path = jcode::storage::jcode_dir()
         .map_err(|e| e.to_string())?
         .join("desktop_app_state.json");
-    std::fs::write(&path, serde_json::to_string_pretty(&state).unwrap_or_default())
-        .map_err(|e| e.to_string())
+    std::fs::write(
+        &path,
+        serde_json::to_string_pretty(&state).unwrap_or_default(),
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2460,7 +2575,9 @@ async fn list_workspace_files(working_dir: Option<String>) -> Result<Vec<String>
         if depth > 4 {
             return;
         }
-        let Ok(entries) = std::fs::read_dir(path) else { return };
+        let Ok(entries) = std::fs::read_dir(path) else {
+            return;
+        };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
             if should_ignore(&name) {
@@ -2517,7 +2634,10 @@ fn load_mcp_from_value(value: &serde_json::Value) -> Vec<serde_json::Value> {
 
     let mut servers = Vec::new();
     for (name, server_value) in servers_obj {
-        let url = server_value.get("url").and_then(|v| v.as_str()).map(String::from);
+        let url = server_value
+            .get("url")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         let command = server_value
             .get("command")
             .and_then(|v| v.as_str())
@@ -2589,7 +2709,11 @@ fn scan_skills_from_dir(dir: &std::path::Path) -> Vec<serde_json::Value> {
         if path.is_dir() {
             let skill_file = path.join("SKILL.md");
             let skill_file_lower = path.join("skill.md");
-            let target = if skill_file.exists() { skill_file } else { skill_file_lower };
+            let target = if skill_file.exists() {
+                skill_file
+            } else {
+                skill_file_lower
+            };
             if target.exists() {
                 if let Ok(skill) = jcode::skill::SkillRegistry::parse_skill(&target) {
                     out.push(serde_json::json!({
@@ -2699,9 +2823,7 @@ async fn save_mcp_server(
         serde_json::json!({"servers": {}})
     };
 
-    let obj = value
-        .as_object_mut()
-        .ok_or("Invalid mcp.json root")?;
+    let obj = value.as_object_mut().ok_or("Invalid mcp.json root")?;
 
     // Determine which key to use (preserve existing)
     let key = if obj.contains_key("mcpServers") && !obj.contains_key("servers") {

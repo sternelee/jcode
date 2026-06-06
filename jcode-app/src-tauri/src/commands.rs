@@ -63,7 +63,6 @@ pub struct SwarmState {
     pub proposals: HashMap<String, SwarmProposalSnapshot>,
 }
 
-
 impl Default for SwarmState {
     fn default() -> Self {
         Self::new()
@@ -83,28 +82,19 @@ impl SwarmState {
     pub fn apply_plan(&mut self, plan: SwarmPlanSnapshot) {
         for participant_id in &plan.participants {
             self.proposals.remove(participant_id);
-            self.plans
-                .insert(participant_id.clone(), plan.clone());
+            self.plans.insert(participant_id.clone(), plan.clone());
         }
     }
 
     /// Insert a proposal (scoped to a single session).
-    pub fn apply_proposal(
-        &mut self,
-        session_id: String,
-        proposal: SwarmProposalSnapshot,
-    ) {
+    pub fn apply_proposal(&mut self, session_id: String, proposal: SwarmProposalSnapshot) {
         self.proposals.insert(session_id, proposal);
     }
 
     /// Upsert member statuses from a SwarmStatus event.
-    pub fn apply_status(
-        &mut self,
-        members: Vec<SwarmMemberStatus>,
-    ) {
+    pub fn apply_status(&mut self, members: Vec<SwarmMemberStatus>) {
         for member in members {
-            self.members
-                .insert(member.session_id.clone(), member);
+            self.members.insert(member.session_id.clone(), member);
         }
     }
 

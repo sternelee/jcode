@@ -794,12 +794,17 @@ export function ChatArea({
 							currentSessionId={currentSessionId}
 							sessionTitle={channelName}
 							isSwarmRole={workspaceSessions.some(
-								(s) => s.sessionId === currentSessionId && !!s.roleName,
+								(s) =>
+									s.sessionId === currentSessionId &&
+									(!!s.roleName || s.swarmRole === "coordinator"),
 							)}
 							totalTokens={totalTokens}
 						/>{" "}
 						{/* Convene */}
-						{workspaceSessions.some((s) => s.roleName) && onConvene && (
+						{workspaceSessions.some(
+							(s) => s.roleName || s.swarmRole === "coordinator",
+						) &&
+							onConvene && (
 							<button
 								type="button"
 								onClick={() => {
@@ -817,7 +822,9 @@ export function ChatArea({
 				</div>
 
 				{/* ── Agent status bar ── */}
-				{workspaceSessions.some((s) => s.roleName) && (
+				{workspaceSessions.some(
+					(s) => s.roleName || s.swarmRole === "coordinator",
+				) && (
 					<div className="px-5 py-1.5 border-b border-border bg-muted/30 flex items-center gap-4 text-[11px] text-muted-foreground shrink-0">
 						<span className="font-medium">{channelMembers.length} agents</span>
 						{respondingRoles.length > 0 ? (

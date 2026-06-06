@@ -87,7 +87,7 @@ export default function App() {
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
 	// Pre-seed createDialog in swarm mode when adding an agent to existing workspace
 	const [createDialogInitMode, setCreateDialogInitMode] = useState<
-		"normal" | "swarm"
+		"normal" | "swarm" | "addMember"
 	>("normal");
 	const [preferredModel] = useState("");
 	const [selectedConvId, setSelectedConvId] = useState<string | undefined>();
@@ -319,6 +319,7 @@ export default function App() {
 	}, [listSessions]);
 
 	const handleNewSession = async () => {
+		setCreateDialogInitMode("normal");
 		setCreateDialogOpen(true);
 	};
 
@@ -414,6 +415,7 @@ export default function App() {
 		providerKey?: string,
 	): Promise<string | null> => {
 		try {
+			const workspaceId = workspaceIdFromDir(workingDir);
 			const newId = await invoke<string>("add_swarm_member", {
 				workingDir,
 				roleName,
@@ -422,6 +424,7 @@ export default function App() {
 				memoryEnabled: true,
 			});
 			await listSessions();
+			await openWorkspaceConversation(workspaceId, undefined, "swarm");
 			return newId;
 		} catch (e) {
 			console.error("Add swarm member failed:", e);
@@ -438,7 +441,7 @@ export default function App() {
 
 	/** Open the create dialog pre-set to swarm mode for the current workspace. */
 	const handleAddAgentToWorkspace = () => {
-		setCreateDialogInitMode("swarm");
+		setCreateDialogInitMode("addMember");
 		setCreateDialogOpen(true);
 	};
 

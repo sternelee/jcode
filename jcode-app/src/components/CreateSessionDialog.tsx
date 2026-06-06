@@ -212,7 +212,7 @@ export function CreateSessionDialog({
 
 	return (
 		<>
-			<div className="fixed inset-0 z-50 flex items-center justify-center">
+				<div className="fixed inset-0 z-50 flex items-center justify-center">
 				<div
 					className="absolute inset-0 bg-black/30"
 					onClick={() => onOpenChange(false)}
@@ -221,9 +221,9 @@ export function CreateSessionDialog({
 					{/* Header */}
 					<div className="px-6 pt-5 pb-3 border-b border-border">
 						<div className="flex items-center justify-between">
-							<h2 className="text-[17px] font-bold text-foreground">
-								New Session
-							</h2>
+								<h2 className="text-[17px] font-bold text-foreground">
+									{mode === "addMember" ? "Add Team Member" : "New Session"}
+								</h2>
 							<button
 								type="button"
 								onClick={() => onOpenChange(false)}
@@ -241,51 +241,53 @@ export function CreateSessionDialog({
 					</div>
 
 					<div className="px-6 py-4 space-y-5">
-						{/* Mode selector */}
-						<div className="flex rounded-xl bg-muted/50 p-1">
-							<button
-								type="button"
-								onClick={() => setMode("normal")}
-								className={cn(
-									"flex-1 px-4 py-2 rounded-[10px] text-[13px] font-medium transition-all",
-									mode === "normal"
-										? "bg-card text-foreground shadow-sm"
-										: "text-muted-foreground hover:text-foreground",
-								)}
-							>
-								<div className="flex items-center justify-center gap-2">
-									<svg
-										viewBox="0 0 20 20"
-										fill="currentColor"
-										className="w-4 h-4"
+							{/* Mode selector */}
+							{mode !== "addMember" && (
+								<div className="flex rounded-xl bg-muted/50 p-1">
+									<button
+										type="button"
+										onClick={() => setMode("normal")}
+										className={cn(
+											"flex-1 px-4 py-2 rounded-[10px] text-[13px] font-medium transition-all",
+											mode === "normal"
+												? "bg-card text-foreground shadow-sm"
+												: "text-muted-foreground hover:text-foreground",
+										)}
 									>
-										<path d="M10 2a.75.75 0 01.75.75v6.5h6.5a.75.75 0 010 1.5h-6.5v6.5a.75.75 0 01-1.5 0v-6.5h-6.5a.75.75 0 010-1.5h6.5v-6.5A.75.75 0 0110 2z" />
-									</svg>
-									Single Agent
-								</div>
-							</button>
-							<button
-								type="button"
-								onClick={() => setMode("swarm")}
-								className={cn(
-									"flex-1 px-4 py-2 rounded-[10px] text-[13px] font-medium transition-all",
-									mode === "swarm"
-										? "bg-card text-foreground shadow-sm"
-										: "text-muted-foreground hover:text-foreground",
-								)}
-							>
-								<div className="flex items-center justify-center gap-2">
-									<svg
-										viewBox="0 0 20 20"
-										fill="currentColor"
-										className="w-4 h-4"
+										<div className="flex items-center justify-center gap-2">
+											<svg
+												viewBox="0 0 20 20"
+												fill="currentColor"
+												className="w-4 h-4"
+											>
+												<path d="M10 2a.75.75 0 01.75.75v6.5h6.5a.75.75 0 010 1.5h-6.5v6.5a.75.75 0 01-1.5 0v-6.5h-6.5a.75.75 0 010-1.5h6.5v-6.5A.75.75 0 0110 2z" />
+											</svg>
+											Single Agent
+										</div>
+									</button>
+									<button
+										type="button"
+										onClick={() => setMode("swarm")}
+										className={cn(
+											"flex-1 px-4 py-2 rounded-[10px] text-[13px] font-medium transition-all",
+											mode === "swarm"
+												? "bg-card text-foreground shadow-sm"
+												: "text-muted-foreground hover:text-foreground",
+										)}
 									>
-										<path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
-									</svg>
-									Agent Team
+										<div className="flex items-center justify-center gap-2">
+											<svg
+												viewBox="0 0 20 20"
+												fill="currentColor"
+												className="w-4 h-4"
+											>
+												<path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
+											</svg>
+											Agent Team
+										</div>
+									</button>
 								</div>
-							</button>
-						</div>
+							)}
 
 						{/* Workspace selection */}
 						<div>
@@ -365,9 +367,9 @@ export function CreateSessionDialog({
 							</div>
 						</div>
 
-						{mode === "normal" ? (
-							/* ── Normal mode: pick model ── */
-							<div>
+							{mode === "normal" && (
+								/* ── Normal mode: pick model ── */
+								<div>
 								<label className="block text-[12px] font-semibold text-foreground mb-1.5">
 									Model
 								</label>
@@ -395,10 +397,12 @@ export function CreateSessionDialog({
 										className="w-full h-9 px-3 rounded-xl border border-border text-[13px] outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20"
 									/>
 								</div>
-							</div>
-						) : (
-							/* ── Swarm mode: default model + add roles ── */
-							<>
+								</div>
+							)}
+
+							{mode === "swarm" && (
+								/* ── Swarm mode: default model + add roles ── */
+								<>
 								<div>
 									<label className="block text-[12px] font-semibold text-foreground mb-1.5">
 										Orchestrator Model
@@ -535,9 +539,9 @@ export function CreateSessionDialog({
 											Add
 										</button>
 									</div>
-								</div>
-							</>
-						)}
+									</div>
+								</>
+							)}
 
 						{mode === "addMember" && (
 							/* ── Add-member mode: list existing team, then add one new role ── */

@@ -77,10 +77,8 @@ pub fn serialize_model_route(route: jcode::provider::ModelRoute) -> serde_json::
     let detail = route.detail;
     let cheapness = route.cheapness;
     let display_name = model.clone();
-    let context_window = jcode::provider::context_limit_for_model_with_provider(
-        &model,
-        Some(&provider),
-    );
+    let context_window =
+        jcode::provider::context_limit_for_model_with_provider(&model, Some(&provider));
     serde_json::json!({
         "provider": provider,
         "model": model,
@@ -127,15 +125,17 @@ pub fn provider_config_options(provider_key: &str) -> Option<Vec<serde_json::Val
                     "input_placeholder": "sk-...",
                 }),
             ]),
-            jcode::provider_catalog::LoginProviderTarget::OpenRouter => Some(vec![serde_json::json!({
-                "provider_id": descriptor.id,
-                "kind": "api_key",
-                "label": "Save OpenRouter API key",
-                "detail": "Configure pay-per-token OpenRouter access",
-                "setup_url": "https://openrouter.ai/keys",
-                "input_label": "OPENROUTER_API_KEY",
-                "input_placeholder": "sk-or-v1-...",
-            })]),
+            jcode::provider_catalog::LoginProviderTarget::OpenRouter => {
+                Some(vec![serde_json::json!({
+                    "provider_id": descriptor.id,
+                    "kind": "api_key",
+                    "label": "Save OpenRouter API key",
+                    "detail": "Configure pay-per-token OpenRouter access",
+                    "setup_url": "https://openrouter.ai/keys",
+                    "input_label": "OPENROUTER_API_KEY",
+                    "input_placeholder": "sk-or-v1-...",
+                })])
+            }
             jcode::provider_catalog::LoginProviderTarget::OpenAiCompatible(profile) => {
                 let resolved = jcode::provider_catalog::resolve_openai_compatible_profile(profile);
                 Some(vec![serde_json::json!({
@@ -156,21 +156,23 @@ pub fn provider_config_options(provider_key: &str) -> Option<Vec<serde_json::Val
                     },
                 })])
             }
-            jcode::provider_catalog::LoginProviderTarget::Bedrock => Some(vec![serde_json::json!({
-                "provider_id": descriptor.id,
-                "kind": "api_key",
-                "label": "Save Bedrock API key",
-                "detail": "Requires an API key plus AWS region",
-                "setup_url": "https://console.aws.amazon.com/bedrock/home#/api-keys",
-                "input_label": "BEDROCK_API_KEY",
-                "input_placeholder": "bedrock-...",
-                "extra_fields": [{
-                    "key": "region",
-                    "label": "AWS region",
-                    "placeholder": "us-east-2",
-                    "default_value": "us-east-2",
-                }],
-            })]),
+            jcode::provider_catalog::LoginProviderTarget::Bedrock => {
+                Some(vec![serde_json::json!({
+                    "provider_id": descriptor.id,
+                    "kind": "api_key",
+                    "label": "Save Bedrock API key",
+                    "detail": "Requires an API key plus AWS region",
+                    "setup_url": "https://console.aws.amazon.com/bedrock/home#/api-keys",
+                    "input_label": "BEDROCK_API_KEY",
+                    "input_placeholder": "bedrock-...",
+                    "extra_fields": [{
+                        "key": "region",
+                        "label": "AWS region",
+                        "placeholder": "us-east-2",
+                        "default_value": "us-east-2",
+                    }],
+                })])
+            }
             jcode::provider_catalog::LoginProviderTarget::Cursor => Some(vec![serde_json::json!({
                 "provider_id": descriptor.id,
                 "kind": "api_key",
@@ -180,24 +182,28 @@ pub fn provider_config_options(provider_key: &str) -> Option<Vec<serde_json::Val
                 "input_label": "CURSOR_API_KEY",
                 "input_placeholder": "cursor_...",
             })]),
-            jcode::provider_catalog::LoginProviderTarget::Copilot => Some(vec![serde_json::json!({
-                "provider_id": descriptor.id,
-                "kind": "device_code",
-                "label": "Start GitHub device login",
-                "detail": "Open GitHub and confirm the device code",
-            })]),
+            jcode::provider_catalog::LoginProviderTarget::Copilot => {
+                Some(vec![serde_json::json!({
+                    "provider_id": descriptor.id,
+                    "kind": "device_code",
+                    "label": "Start GitHub device login",
+                    "detail": "Open GitHub and confirm the device code",
+                })])
+            }
             jcode::provider_catalog::LoginProviderTarget::Gemini => Some(vec![serde_json::json!({
                 "provider_id": descriptor.id,
                 "kind": "oauth",
                 "label": "Sign in with Gemini",
                 "detail": "Google Gemini Code Assist OAuth login",
             })]),
-            jcode::provider_catalog::LoginProviderTarget::Antigravity => Some(vec![serde_json::json!({
-                "provider_id": descriptor.id,
-                "kind": "oauth",
-                "label": "Sign in with Antigravity",
-                "detail": "Google Antigravity OAuth login",
-            })]),
+            jcode::provider_catalog::LoginProviderTarget::Antigravity => {
+                Some(vec![serde_json::json!({
+                    "provider_id": descriptor.id,
+                    "kind": "oauth",
+                    "label": "Sign in with Antigravity",
+                    "detail": "Google Antigravity OAuth login",
+                })])
+            }
             jcode::provider_catalog::LoginProviderTarget::Jcode => Some(vec![serde_json::json!({
                 "provider_id": descriptor.id,
                 "kind": "api_key",
@@ -253,7 +259,9 @@ pub fn auth_provider_id_for_route(provider_key: &str, api_method: Option<&str>) 
     }
 
     let trimmed = provider_key.trim();
-    if let Some(profile_id) = jcode::provider_catalog::openai_compatible_profile_id_for_display_name(trimmed) {
+    if let Some(profile_id) =
+        jcode::provider_catalog::openai_compatible_profile_id_for_display_name(trimmed)
+    {
         return Some(profile_id.to_string());
     }
 
@@ -355,7 +363,8 @@ pub fn provider_entries_from_profiles(
     // Pre-compute route counts per auth provider
     let mut route_counts: HashMap<String, usize> = HashMap::new();
     for route in routes {
-        if let Some(auth_id) = auth_provider_id_for_route(&route.provider, Some(&route.api_method)) {
+        if let Some(auth_id) = auth_provider_id_for_route(&route.provider, Some(&route.api_method))
+        {
             *route_counts.entry(auth_id).or_insert(0) += 1;
         }
     }
@@ -368,7 +377,8 @@ pub fn provider_entries_from_profiles(
         let provider_key = provider.id.to_string();
         seen.insert(provider_key.clone());
         let route_count = route_counts.get(&provider_key).copied().unwrap_or(0);
-        let is_current_provider = Some(provider_key.as_str()) == current_auth_provider_id.as_deref();
+        let is_current_provider =
+            Some(provider_key.as_str()) == current_auth_provider_id.as_deref();
         let state = auth_status.state_for_provider(provider);
         let method_detail = auth_status.method_detail_for_provider(provider);
         let options = provider_config_options(&provider_key).unwrap_or_default();
@@ -395,7 +405,8 @@ pub fn provider_entries_from_profiles(
         }
         let provider_key = name.clone();
         let route_count = route_counts.get(&provider_key).copied().unwrap_or(0);
-        let is_current_provider = Some(provider_key.as_str()) == current_auth_provider_id.as_deref();
+        let is_current_provider =
+            Some(provider_key.as_str()) == current_auth_provider_id.as_deref();
 
         let configured = if profile.requires_api_key.unwrap_or(true) {
             profile.api_key.is_some()
@@ -413,7 +424,11 @@ pub fn provider_entries_from_profiles(
             true
         };
 
-        let status = if configured { "available" } else { "not_configured" };
+        let status = if configured {
+            "available"
+        } else {
+            "not_configured"
+        };
         let method_detail = if configured {
             format!("Custom profile · {}", profile.base_url)
         } else {
@@ -478,14 +493,16 @@ pub fn provider_entries_from_routes(
     current_provider: Option<&str>,
 ) -> Vec<serde_json::Value> {
     let auth_status = jcode::auth::AuthStatus::check();
-    let current_auth_provider_id = current_provider.and_then(|provider| auth_provider_id_for_route(provider, None));
+    let current_auth_provider_id =
+        current_provider.and_then(|provider| auth_provider_id_for_route(provider, None));
     let mut grouped: HashMap<String, (usize, Option<String>)> = HashMap::new();
     let mut ordered = Vec::new();
     let mut seen = HashSet::new();
     let mut current_provider_matched = false;
 
     for route in routes {
-        let route_key = direct_config_provider_id(&route.provider).unwrap_or_else(|| route.provider.clone());
+        let route_key =
+            direct_config_provider_id(&route.provider).unwrap_or_else(|| route.provider.clone());
         let route_api_method = Some(route.api_method.clone());
         let entry = grouped.entry(route_key.clone()).or_insert_with(|| {
             if seen.insert(route_key.clone()) {
@@ -498,7 +515,8 @@ pub fn provider_entries_from_routes(
         }
         entry.0 += 1;
 
-        let route_auth_provider_id = auth_provider_id_for_route(&route.provider, Some(&route.api_method));
+        let route_auth_provider_id =
+            auth_provider_id_for_route(&route.provider, Some(&route.api_method));
         if let Some(owner_key) = route_auth_provider_id.clone() {
             let owner_entry = grouped.entry(owner_key.clone()).or_insert_with(|| {
                 if seen.insert(owner_key.clone()) {
@@ -510,14 +528,18 @@ pub fn provider_entries_from_routes(
                 owner_entry.1 = None;
             }
         }
-        if !current_provider_matched && route_auth_provider_id.is_some() && route_auth_provider_id == current_auth_provider_id {
+        if !current_provider_matched
+            && route_auth_provider_id.is_some()
+            && route_auth_provider_id == current_auth_provider_id
+        {
             current_provider_matched = true;
         }
     }
 
     if let Some(provider) = current_provider {
         if !current_provider_matched {
-            let provider_key = direct_config_provider_id(provider).unwrap_or_else(|| provider.to_string());
+            let provider_key =
+                direct_config_provider_id(provider).unwrap_or_else(|| provider.to_string());
             let provider_entry = grouped.entry(provider_key.clone()).or_insert_with(|| {
                 if seen.insert(provider_key.clone()) {
                     ordered.push(provider_key.clone());
@@ -618,9 +640,8 @@ pub async fn refresh_active_runtime_auth(
             emit_runtime_snapshot(app_handle, &runtime).await?;
         }
     } else {
-        let runtimes: Vec<Arc<SessionRuntime>> = {
-            state.runtimes.lock().await.values().cloned().collect()
-        };
+        let runtimes: Vec<Arc<SessionRuntime>> =
+            { state.runtimes.lock().await.values().cloned().collect() };
         for runtime in runtimes {
             let provider = { runtime.agent.lock().await.provider_handle() };
             provider.on_auth_changed();
@@ -673,7 +694,9 @@ pub fn desktop_history_messages(session: &Session) -> Vec<serde_json::Value> {
             continue;
         }
 
-        let timestamp_ms = message.timestamp.map(|timestamp| timestamp.timestamp_millis());
+        let timestamp_ms = message
+            .timestamp
+            .map(|timestamp| timestamp.timestamp_millis());
         let base_role = message_role(message);
         let mut pending_role = base_role;
         let mut pending_text = String::new();
@@ -685,7 +708,9 @@ pub fn desktop_history_messages(session: &Session) -> Vec<serde_json::Value> {
         for block in &message.content {
             match block {
                 ContentBlock::Text { text, .. } => pending_text.push_str(text),
-                ContentBlock::ToolUse { id, name, input, .. } => {
+                ContentBlock::ToolUse {
+                    id, name, input, ..
+                } => {
                     let tool_call = ToolCall {
                         id: id.clone(),
                         name: name.clone(),
@@ -883,7 +908,14 @@ pub fn summarize_swarm_plan_items(
     _reason: Option<String>,
     items: Vec<serde_json::Value>,
     summary_override: Option<&jcode::protocol::PlanGraphStatus>,
-) -> (usize, usize, usize, usize, Vec<String>, Vec<serde_json::Value>) {
+) -> (
+    usize,
+    usize,
+    usize,
+    usize,
+    Vec<String>,
+    Vec<serde_json::Value>,
+) {
     let completed_ids = items
         .iter()
         .filter_map(|item| {
@@ -942,8 +974,12 @@ pub fn summarize_swarm_plan_items(
         let normalized_status = status.to_ascii_lowercase();
         let is_completed = matches!(normalized_status.as_str(), "completed" | "done");
         let is_active = matches!(normalized_status.as_str(), "running" | "running_stale");
-        let is_runnable = matches!(normalized_status.as_str(), "queued" | "ready" | "pending" | "todo");
-        let is_blocked = normalized_status == "blocked" || (!is_completed && !is_active && unresolved_dependencies);
+        let is_runnable = matches!(
+            normalized_status.as_str(),
+            "queued" | "ready" | "pending" | "todo"
+        );
+        let is_blocked = normalized_status == "blocked"
+            || (!is_completed && !is_active && unresolved_dependencies);
 
         if is_completed {
             completed_count += 1;
@@ -996,7 +1032,14 @@ pub fn summarize_swarm_plan_items(
     let blocked = summary_override.map_or(blocked_count, |summary| summary.blocked_ids.len());
     let completed = summary_override.map_or(completed_count, |summary| summary.completed_ids.len());
     let next = summary_override
-        .map(|summary| summary.next_ready_ids.iter().take(4).cloned().collect::<Vec<_>>())
+        .map(|summary| {
+            summary
+                .next_ready_ids
+                .iter()
+                .take(4)
+                .cloned()
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_else(|| next_ready_ids.into_iter().take(4).collect::<Vec<_>>());
 
     (ready, active, blocked, completed, next, items_preview)
@@ -1013,7 +1056,10 @@ pub fn latest_swarm_plan_summary(value: &Value) -> Option<serde_json::Value> {
         if swarm_id.is_empty() {
             return None;
         }
-        let version = event.get("version").and_then(Value::as_u64).unwrap_or_default();
+        let version = event
+            .get("version")
+            .and_then(Value::as_u64)
+            .unwrap_or_default();
         let reason = event
             .get("reason")
             .and_then(Value::as_str)
@@ -1039,15 +1085,21 @@ pub fn latest_swarm_plan_summary(value: &Value) -> Option<serde_json::Value> {
             .cloned()
             .unwrap_or_default();
 
-        let (ready_count, active_count, blocked_count, completed_count, next_ready_ids, items_preview) =
-            summarize_swarm_plan_items(
-                &swarm_id,
-                version,
-                participants.clone(),
-                reason.clone(),
-                items.clone(),
-                None,
-            );
+        let (
+            ready_count,
+            active_count,
+            blocked_count,
+            completed_count,
+            next_ready_ids,
+            items_preview,
+        ) = summarize_swarm_plan_items(
+            &swarm_id,
+            version,
+            participants.clone(),
+            reason.clone(),
+            items.clone(),
+            None,
+        );
         return Some(serde_json::json!({
             "swarm_id": swarm_id,
             "version": version,
@@ -1067,8 +1119,8 @@ pub fn latest_swarm_plan_summary(value: &Value) -> Option<serde_json::Value> {
 }
 
 pub fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Value>, String> {
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+    let raw =
+        fs::read_to_string(path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
     let value: Value = serde_json::from_str(&raw)
         .map_err(|e| format!("failed to parse {}: {e}", path.display()))?;
 
@@ -1083,7 +1135,9 @@ pub fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Va
         .get("messages")
         .and_then(Value::as_array)
         .map_or(0, Vec::len);
-    let title = string_field(&value, "custom_title")
+    let custom_title = string_field(&value, "custom_title");
+    let title = custom_title
+        .clone()
         .or_else(|| string_field(&value, "title"))
         .or_else(|| latest_user_preview(&value))
         .unwrap_or_else(|| short_name.clone());
@@ -1120,11 +1174,8 @@ pub fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Va
         SESSION_PREVIEW_LINE_LIMIT,
         SESSION_PREVIEW_CHAR_LIMIT,
     );
-    let detail_lines = recent_message_preview_lines(
-        &value,
-        SESSION_DETAIL_LINE_LIMIT,
-        SESSION_DETAIL_CHAR_LIMIT,
-    );
+    let detail_lines =
+        recent_message_preview_lines(&value, SESSION_DETAIL_LINE_LIMIT, SESSION_DETAIL_CHAR_LIMIT);
 
     let mut summary = serde_json::json!({
         "id": id,
@@ -1137,18 +1188,16 @@ pub fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Va
         "provider": provider,
         "status": effective_status,
         "working_dir": working_dir,
-        "role_name": if swarm_plan.is_some() || swarm_status.is_some() {
-            string_field(&value, "custom_title")
-        } else {
-            None
-        },
+        "custom_title": custom_title,
+        "role_name": string_field(&value, "custom_title"),
     });
 
     if let Some(swarm_plan) = swarm_plan.clone() {
         if let Some(swarm_id) = swarm_plan.get("swarm_id").and_then(Value::as_str) {
             summary["swarm_id"] = serde_json::json!(swarm_id);
         }
-        if let Some(participant_count) = swarm_plan.get("participant_count").and_then(Value::as_u64) {
+        if let Some(participant_count) = swarm_plan.get("participant_count").and_then(Value::as_u64)
+        {
             if participant_count >= 2 {
                 summary["swarm_enabled"] = serde_json::json!(true);
                 summary["swarm_peer_count"] = serde_json::json!(participant_count);
@@ -1173,6 +1222,14 @@ pub fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Va
             } else {
                 format!("{current_detail} · {detail}")
             });
+        }
+    }
+
+    // Preset swarm_role for coordinator so the UI can identify it before any
+    // swarm status events are generated.
+    if summary.get("swarm_role").is_none() {
+        if custom_title.as_deref() == Some("Coordinator") {
+            summary["swarm_role"] = serde_json::json!("coordinator");
         }
     }
 
@@ -1375,18 +1432,17 @@ pub async fn load_session_runtime_silently(
     eprintln!("[load_silently] loading session={} from disk", session_id);
     let session = Session::load(session_id)
         .map_err(|e| format!("Session not found and cannot be auto-loaded: {session_id}: {e}"))?;
-	let provider = state.get_provider().await?.fork();
-	if let Some(ref saved_model) = session.model {
-		let model_arg = if let Some(ref pk) = session.provider_key {
-			format!("{}:{}", pk, saved_model)
-		} else {
-			saved_model.clone()
-		};
-		let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg);
-	}
+    let provider = state.get_provider().await?.fork();
+    if let Some(ref saved_model) = session.model {
+        let model_arg = if let Some(ref pk) = session.provider_key {
+            format!("{}:{}", pk, saved_model)
+        } else {
+            saved_model.clone()
+        };
+        let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg);
+    }
     let working_dir = session.working_dir.clone();
-    let mut agent =
-        create_agent_with_session(provider, session, working_dir.as_deref()).await?;
+    let mut agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
     let cancel_signal = agent.graceful_shutdown_signal();
     let (_stdin_tx, mut stdin_rx) = setup_stdin_channel(&mut agent);
     let runtime = Arc::new(SessionRuntime::new(
@@ -1401,7 +1457,10 @@ pub async fn load_session_runtime_silently(
             .await
             .insert(session_id.to_string(), runtime.clone());
     }
-    eprintln!("[load_silently] session={} registered in runtimes", session_id);
+    eprintln!(
+        "[load_silently] session={} registered in runtimes",
+        session_id
+    );
     // 通知前端该 session 已连接（只更新 sessionData，不改 active session）
     app_handle
         .emit(
@@ -1453,7 +1512,10 @@ pub async fn get_or_load_session_runtime(
     load_session_runtime_silently(app_handle, state, session_id).await
 }
 
-pub async fn emit_runtime_snapshot(app_handle: &AppHandle, runtime: &Arc<SessionRuntime>) -> Result<(), String> {
+pub async fn emit_runtime_snapshot(
+    app_handle: &AppHandle,
+    runtime: &Arc<SessionRuntime>,
+) -> Result<(), String> {
     let session_id = runtime.session_id.clone();
     let snapshot = if let Ok(agent) = runtime.agent.try_lock() {
         let provider = agent.provider_handle();
@@ -1486,7 +1548,8 @@ pub async fn emit_runtime_snapshot(app_handle: &AppHandle, runtime: &Arc<Session
             .or_else(|_| Session::load_startup_stub(&session_id))
             .map_err(|e| format!("Failed to snapshot busy session {}: {e}", &session_id))?;
         (
-            serde_json::to_value(desktop_history_messages(&session)).unwrap_or(serde_json::json!([])),
+            serde_json::to_value(desktop_history_messages(&session))
+                .unwrap_or(serde_json::json!([])),
             serde_json::json!([]),
             session.provider_key.clone(),
             session.model.clone(),
@@ -1544,18 +1607,31 @@ pub async fn emit_runtime_snapshot(app_handle: &AppHandle, runtime: &Arc<Session
 pub async fn register_runtime_and_emit(
     app_handle: &AppHandle,
     state: &AppState,
+    agent: jcode::agent::Agent,
+) -> Result<Arc<SessionRuntime>, String> {
+    register_runtime_and_emit_with_active(app_handle, state, agent, true).await
+}
+
+pub async fn register_runtime_and_emit_with_active(
+    app_handle: &AppHandle,
+    state: &AppState,
     mut agent: jcode::agent::Agent,
+    make_active: bool,
 ) -> Result<Arc<SessionRuntime>, String> {
     let session_id = agent.session_id().to_string();
     let cancel_signal = agent.graceful_shutdown_signal();
     let (_stdin_tx, mut stdin_rx) = setup_stdin_channel(&mut agent);
-    let runtime = Arc::new(SessionRuntime::new(session_id.clone(), agent, cancel_signal));
+    let runtime = Arc::new(SessionRuntime::new(
+        session_id.clone(),
+        agent,
+        cancel_signal,
+    ));
 
     {
         let mut runtimes = state.runtimes.lock().await;
         runtimes.insert(session_id.clone(), runtime.clone());
     }
-    {
+    if make_active {
         let mut active = state.active_session_id.lock().await;
         *active = Some(session_id.clone());
     }
@@ -1568,7 +1644,8 @@ pub async fn register_runtime_and_emit(
         while let Some(req) = stdin_rx.recv().await {
             let rid = req.request_id.clone();
             pending.lock().await.insert(rid.clone(), req.response_tx);
-            let is_active = active_session_id.lock().await.as_deref() == Some(&runtime_for_stdin.session_id);
+            let is_active =
+                active_session_id.lock().await.as_deref() == Some(&runtime_for_stdin.session_id);
             if is_active {
                 handle
                     .emit(
@@ -1595,7 +1672,6 @@ pub async fn register_runtime_and_emit(
     emit_runtime_snapshot(app_handle, &runtime).await?;
     Ok(runtime)
 }
-
 
 #[tauri::command]
 /// Infer a display provider name from the model string, matching the logic
