@@ -1,6 +1,6 @@
 [package]
 name = "jcode"
-version = "0.21.0"
+version = "0.23.0"
 description = "Possibly the greatest coding agent ever built — blazing-fast TUI, multi-model, swarm coordination, 30+ tools"
 edition = "2024"
 autobins = false
@@ -9,15 +9,14 @@ autobins = false
 members = [
   ".",
   "crates/jcode-agent-runtime",
-  "crates/jcode-app-core",
-  "crates/jcode-base",
-  "crates/jcode-tui",
-  "crates/jcode-build-meta",
   "crates/jcode-ambient-types",
+  "crates/jcode-app-core",
   "crates/jcode-auth-types",
   "crates/jcode-azure-auth",
   "crates/jcode-background-types",
+  "crates/jcode-base",
   "crates/jcode-batch-types",
+  "crates/jcode-build-meta",
   "crates/jcode-build-support",
   "crates/jcode-compaction-core",
   "crates/jcode-config-types",
@@ -35,24 +34,27 @@ members = [
   "crates/jcode-overnight-core",
   "crates/jcode-pdf",
   "crates/jcode-plan",
+  "crates/jcode-productivity-core",
   "crates/jcode-protocol",
+  "crates/jcode-provider-bedrock",
   "crates/jcode-provider-core",
+  "crates/jcode-provider-env",
   "crates/jcode-provider-gemini",
   "crates/jcode-provider-metadata",
   "crates/jcode-provider-openai",
   "crates/jcode-provider-openrouter",
   "crates/jcode-render-core",
-  "crates/jcode-productivity-core",
   "crates/jcode-selfdev-types",
   "crates/jcode-session-types",
   "crates/jcode-side-panel-types",
   "crates/jcode-storage",
   "crates/jcode-swarm-core",
   "crates/jcode-task-types",
-  "crates/jcode-terminal-launch",
   "crates/jcode-terminal-image",
+  "crates/jcode-terminal-launch",
   "crates/jcode-tool-core",
   "crates/jcode-tool-types",
+  "crates/jcode-tui",
   "crates/jcode-tui-account-picker",
   "crates/jcode-tui-anim",
   "crates/jcode-tui-core",
@@ -64,6 +66,7 @@ members = [
   "crates/jcode-tui-style",
   "crates/jcode-tui-tool-display",
   "crates/jcode-tui-usage-overlay",
+  "crates/jcode-tui-visual-debug",
   "crates/jcode-tui-workspace",
   "crates/jcode-update-core",
   "crates/jcode-usage-types",
@@ -334,6 +337,58 @@ opt-level = 3
 opt-level = 3
 
 [profile.test.package."jcode-tui-anim"]
+opt-level = 3
+
+# Keep the text-shaping stack optimized even in dev/selfdev/test builds.
+#
+# cosmic-text + rustybuzz + ttf-parser + swash + yazi do all of the desktop
+# transcript glyph shaping. At opt-level = 0 they are 15-40x slower, which made
+# scrolling real (emoji/markdown-heavy) transcripts janky in dev/selfdev builds
+# even though the production release build was smooth. These are stable
+# third-party crates that almost never recompile, so pinning them to opt-level =
+# 3 costs a one-time compile and is then reused across every iterative jcode
+# rebuild (same rationale as jcode-tui-anim above). It does NOT slow down
+# recompiles of jcode's own crates.
+[profile.dev.package.cosmic-text]
+opt-level = 3
+[profile.selfdev.package.cosmic-text]
+opt-level = 3
+[profile.test.package.cosmic-text]
+opt-level = 3
+
+[profile.dev.package.rustybuzz]
+opt-level = 3
+[profile.selfdev.package.rustybuzz]
+opt-level = 3
+[profile.test.package.rustybuzz]
+opt-level = 3
+
+[profile.dev.package.ttf-parser]
+opt-level = 3
+[profile.selfdev.package.ttf-parser]
+opt-level = 3
+[profile.test.package.ttf-parser]
+opt-level = 3
+
+[profile.dev.package.swash]
+opt-level = 3
+[profile.selfdev.package.swash]
+opt-level = 3
+[profile.test.package.swash]
+opt-level = 3
+
+[profile.dev.package.yazi]
+opt-level = 3
+[profile.selfdev.package.yazi]
+opt-level = 3
+[profile.test.package.yazi]
+opt-level = 3
+
+[profile.dev.package.fontdb]
+opt-level = 3
+[profile.selfdev.package.fontdb]
+opt-level = 3
+[profile.test.package.fontdb]
 opt-level = 3
 
 [profile.test]

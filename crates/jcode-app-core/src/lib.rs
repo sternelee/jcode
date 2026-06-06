@@ -26,6 +26,7 @@ pub mod agent;
 pub mod ambient;
 pub mod ambient_runner;
 pub mod ambient_scheduler;
+pub mod build;
 pub mod catchup;
 pub mod channel;
 pub mod external_auth;
