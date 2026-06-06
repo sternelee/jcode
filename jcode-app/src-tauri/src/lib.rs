@@ -296,7 +296,7 @@ async fn resume_session(
         match client.request(req).await {
             Ok(jcode::protocol::ServerEvent::History { .. }) => {
                 eprintln!("[resume_session] server resume succeeded for {}", session_id);
-                client.set_active_session(Some(session_id.clone())).await;
+                client.set_active_session(Some(session_id.clone()));
                 state.server_managed_sessions.lock().await.insert(session_id.clone());
                 {
                     let mut active = state.active_session_id.lock().await;
@@ -395,7 +395,7 @@ async fn send_message(
     // Server-managed session: forward message to the jcode server.
     if state.server_managed_sessions.lock().await.contains(&session_id) {
         let client = get_server_client(&state)?;
-        client.set_active_session(Some(session_id.clone())).await;
+        client.set_active_session(Some(session_id.clone()));
         let req = jcode::protocol::Request::Message {
             id: 1,
             content,
@@ -3504,27 +3504,9 @@ pub fn run() {
             if let Ok(app_data_dir) = app.path().app_data_dir() {
                 std::env::set_var("JCODE_HOME", app_data_dir);
             }
-            // Initialize server client if a jcode server is available
-            let handle = app.handle().clone();
+            // Register the ServerClient synchronously; lazy-connect on first use.
             let client = Arc::new(ServerClient::new());
-            let client_for_setup = client.clone();
-            tokio::spawn(async move {
-                client_for_setup.set_app_handle(handle).await;
-            });
-            // Use a mutable reference to set the field. Since AppState is managed by Tauri,
-            // we need to use unsafe or a different approach. Better: make server_client
-            // an Arc<Mutex<Option<...>>> so we can set it after construction.
-            // For now, let's spawn a task that will connect and start the event loop.
-            let client_for_task = client.clone();
-            tokio::spawn(async move {
-                let connected = client_for_task.connect().await.unwrap_or(false);
-                if connected {
-                    eprintln!("[setup] connected to jcode server");
-                    client_for_task.start_event_loop();
-                } else {
-                    eprintln!("[setup] no jcode server available, running in direct-agent mode");
-                }
-            });
+            client.set_app_handle(app.handle().clone());
             let state = app.state::<AppState>();
             if let Ok(mut guard) = state.server_client.lock() {
                 *guard = Some(client);

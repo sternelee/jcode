@@ -1,33 +1,45 @@
 use jcode::protocol::{Request, ServerEvent};
 use jcode::server::Client as JcodeClient;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 
 /// Wrapper around jcode::server::Client that handles connection,
 /// request/response pairing, and background event forwarding.
 pub struct ServerClient {
     inner: Arc<Mutex<Option<JcodeClient>>>,
-    app_handle: Arc<RwLock<Option<AppHandle>>>,
-    active_session_id: Arc<RwLock<Option<String>>>,
+    app_handle: Arc<std::sync::RwLock<Option<AppHandle>>>,
+    active_session_id: Arc<std::sync::RwLock<Option<String>>>,
+    event_loop_started: AtomicBool,
 }
 
 impl ServerClient {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(None)),
-            app_handle: Arc::new(RwLock::new(None)),
-            active_session_id: Arc::new(RwLock::new(None)),
+            app_handle: Arc::new(std::sync::RwLock::new(None)),
+            active_session_id: Arc::new(std::sync::RwLock::new(None)),
+            event_loop_started: AtomicBool::new(false),
         }
     }
 
-    pub async fn set_active_session(&self, session_id: Option<String>) {
-        let mut guard = self.active_session_id.write().await;
+    /// Connect (if needed) and start the background event loop once.
+    async fn ensure_connected(&self) -> Result<bool, String> {
+        let connected = self.connect().await?;
+        if connected && !self.event_loop_started.swap(true, Ordering::SeqCst) {
+            self.start_event_loop();
+        }
+        Ok(connected)
+    }
+
+    pub fn set_active_session(&self, session_id: Option<String>) {
+        let mut guard = self.active_session_id.write().unwrap();
         *guard = session_id;
     }
 
-    pub async fn set_app_handle(&self, handle: AppHandle) {
-        let mut guard = self.app_handle.write().await;
+    pub fn set_app_handle(&self, handle: AppHandle) {
+        let mut guard = self.app_handle.write().unwrap();
         *guard = Some(handle);
     }
 
@@ -74,6 +86,7 @@ impl ServerClient {
     /// Send a request and wait for the matching response event.
     /// Skips acks and unrelated broadcast events.
     pub async fn request(&self, req: Request) -> Result<ServerEvent, String> {
+        self.ensure_connected().await?;
         let request_id = req.id();
         let mut guard = self.inner.lock().await;
         let mut client = guard.as_mut().ok_or("Not connected to server")?;
@@ -101,7 +114,7 @@ impl ServerClient {
                 // Forward broadcast events that are not tied to our request
                 ref ev if Self::is_broadcast_event(ev) && Self::event_id(ev) != Some(request_id) => {
                     drop(guard);
-                    Self::emit_event(&self.app_handle, &self.active_session_id, event).await;
+                    Self::emit_event(&self.app_handle, &self.active_session_id, event);
                     guard = self.inner.lock().await;
                     client = guard.as_mut().ok_or("Not connected to server")?;
                     continue;
@@ -113,6 +126,7 @@ impl ServerClient {
 
     /// Send a request without waiting for response (fire-and-forget)
     pub async fn send(&self, req: Request) -> Result<(), String> {
+        self.ensure_connected().await?;
         let mut guard = self.inner.lock().await;
         let client = guard.as_mut().ok_or("Not connected to server")?;
         client
@@ -171,7 +185,7 @@ impl ServerClient {
                     match read_result {
                         Ok(Ok(event)) => {
                             drop(client_guard);
-                            Self::emit_event(&app_handle, &active_session_id, event).await;
+                            Self::emit_event(&app_handle, &active_session_id, event);
                         }
                         Ok(Err(e)) => {
                             eprintln!("[server_client] read error: {e}");
@@ -269,14 +283,13 @@ impl ServerClient {
         }
     }
 
-    async fn emit_event(
-        app_handle: &RwLock<Option<AppHandle>>,
-        active_session_id: &RwLock<Option<String>>,
+    fn emit_event(
+        app_handle: &Arc<std::sync::RwLock<Option<AppHandle>>>,
+        active_session_id: &Arc<std::sync::RwLock<Option<String>>>,
         event: ServerEvent,
     ) {
-        let guard = app_handle.read().await;
-        let handle = match guard.as_ref() {
-            Some(h) => h,
+        let handle = match app_handle.read().unwrap().as_ref() {
+            Some(h) => h.clone(),
             None => return,
         };
         let mut payload = match serde_json::to_value(&event) {
@@ -288,13 +301,11 @@ impl ServerClient {
         };
 
         // Inject session_id so the frontend can route events correctly.
-        let sid_guard = active_session_id.read().await;
-        if let Some(ref sid) = *sid_guard {
+        if let Some(ref sid) = *active_session_id.read().unwrap() {
             if let Some(obj) = payload.as_object_mut() {
                 obj.insert("session_id".to_string(), serde_json::json!(sid));
             }
         }
-        drop(sid_guard);
 
         // Emit as "server-event" for compatibility with existing frontend
         let _ = handle.emit("server-event", &payload);
