@@ -160,6 +160,47 @@ impl MarkdownSpacingMode {
     }
 }
 
+/// How to display the model's reasoning/thinking content in the TUI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReasoningDisplayMode {
+    /// Never display reasoning content.
+    #[default]
+    Off,
+    /// Keep every reasoning trace in the transcript (classic behavior).
+    Full,
+    /// Show only the *current* reasoning live; collapse it once the model
+    /// commits an assistant message or tool call, then show the next one.
+    Current,
+}
+
+impl ReasoningDisplayMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "Off",
+            Self::Full => "Full",
+            Self::Current => "Current",
+        }
+    }
+
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Off => Self::Current,
+            Self::Current => Self::Full,
+            Self::Full => Self::Off,
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_lowercase().as_str() {
+            "off" | "none" | "false" | "0" | "no" => Some(Self::Off),
+            "full" | "all" | "true" | "1" | "yes" | "on" => Some(Self::Full),
+            "current" | "live" | "ephemeral" | "collapse" => Some(Self::Current),
+            _ => None,
+        }
+    }
+}
+
 /// Update channel: how aggressively to receive updates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -392,6 +433,15 @@ impl SwarmSpawnMode {
             _ => None,
         }
     }
+
+    /// Canonical lowercase string for this mode (matches the config/env values).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Visible => "visible",
+            Self::Headless => "headless",
+            Self::Auto => "auto",
+        }
+    }
 }
 
 /// Automatic end-of-turn code review configuration.
@@ -542,8 +592,12 @@ pub struct DisplayConfig {
     pub debug_socket: bool,
     /// Center all content (default: false)
     pub centered: bool,
-    /// Show thinking/reasoning content by default (default: false)
+    /// Show thinking/reasoning content by default (default: true)
     pub show_thinking: bool,
+    /// How to display reasoning/thinking content (off/full/current).
+    /// When unset, falls back to `show_thinking` (true => full, false => off).
+    #[serde(default)]
+    reasoning_display: Option<ReasoningDisplayMode>,
     /// How to display mermaid diagrams (none/margin/pinned, default: none).
     /// Mermaid rendering is temporarily disabled for users unless JCODE_ENABLE_MERMAID=1.
     pub diagram_mode: DiagramDisplayMode,
@@ -584,7 +638,8 @@ impl Default for DisplayConfig {
             mouse_capture: true,
             debug_socket: false,
             centered: false,
-            show_thinking: false,
+            show_thinking: true,
+            reasoning_display: Some(ReasoningDisplayMode::Current),
             diagram_mode: DiagramDisplayMode::default(),
             markdown_spacing: MarkdownSpacingMode::default(),
             idle_animation: true,
@@ -610,6 +665,30 @@ impl DisplayConfig {
                 DiffDisplayMode::Off
             };
         }
+    }
+
+    /// Resolve the effective reasoning display mode. Prefers the explicit
+    /// `reasoning_display` field, falling back to the legacy `show_thinking`
+    /// boolean (true => Full, false => Off) when unset.
+    pub fn reasoning_display(&self) -> ReasoningDisplayMode {
+        self.reasoning_display.unwrap_or(if self.show_thinking {
+            ReasoningDisplayMode::Full
+        } else {
+            ReasoningDisplayMode::Off
+        })
+    }
+
+    /// Set the reasoning display mode and keep `show_thinking` in sync so the
+    /// provider request path (which still keys off `show_thinking`) requests
+    /// reasoning whenever any display mode is active.
+    pub fn set_reasoning_display(&mut self, mode: ReasoningDisplayMode) {
+        self.reasoning_display = Some(mode);
+        self.show_thinking = !matches!(mode, ReasoningDisplayMode::Off);
+    }
+
+    /// Whether reasoning content should be generated/requested at all.
+    pub fn reasoning_enabled(&self) -> bool {
+        !matches!(self.reasoning_display(), ReasoningDisplayMode::Off)
     }
 }
 

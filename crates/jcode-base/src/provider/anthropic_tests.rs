@@ -69,7 +69,8 @@ async fn test_available_models() {
     let provider = AnthropicProvider::new();
     let models = provider.available_models();
     assert!(models.contains(&"claude-opus-4-8"));
-    assert!(models.contains(&"claude-opus-4-8[1m]"));
+    // Opus 4.8 is native-1M, so there is no redundant `[1m]` alias.
+    assert!(!models.contains(&"claude-opus-4-8[1m]"));
     assert!(models.contains(&"claude-opus-4-6"));
     assert!(models.contains(&"claude-opus-4-6[1m]"));
     assert!(models.contains(&"claude-sonnet-4-6"));
@@ -245,7 +246,9 @@ fn test_anthropic_fast_mode_is_limited_to_opus_48() {
     assert!(provider.set_service_tier("priority").is_err());
     assert_eq!(provider.service_tier(), None);
 
+    // A stale `[1m]` alias for a native-1M model is migrated to canonical form.
     provider.set_model("claude-opus-4-8[1m]").unwrap();
+    assert_eq!(provider.model(), "claude-opus-4-8");
     provider.set_service_tier("priority").unwrap();
     assert_eq!(provider.service_tier().as_deref(), Some("priority"));
 
@@ -474,13 +477,11 @@ async fn test_dangling_tool_use_repair() {
                 ContentBlock::ToolUse {
                     id: "tool_123".to_string(),
                     name: "bash".to_string(),
-                    input: serde_json::json!({"command": "ls"}),
-                },
+                    input: serde_json::json!({"command": "ls"}), thought_signature: None, },
                 ContentBlock::ToolUse {
                     id: "tool_456".to_string(),
                     name: "read".to_string(),
-                    input: serde_json::json!({"file_path": "/tmp/test"}),
-                },
+                    input: serde_json::json!({"file_path": "/tmp/test"}), thought_signature: None, },
             ],
             timestamp: None,
             tool_duration_ms: None,
@@ -544,8 +545,7 @@ async fn test_no_repair_when_tool_results_present() {
             content: vec![ContentBlock::ToolUse {
                 id: "tool_123".to_string(),
                 name: "bash".to_string(),
-                input: serde_json::json!({"command": "ls"}),
-            }],
+                input: serde_json::json!({"command": "ls"}), thought_signature: None, }],
             timestamp: None,
             tool_duration_ms: None,
         },
@@ -619,18 +619,15 @@ async fn test_parallel_image_tool_results_stay_contiguous() {
                 ContentBlock::ToolUse {
                     id: "tool_a".to_string(),
                     name: "read".to_string(),
-                    input: serde_json::json!({"file_path": "a.png"}),
-                },
+                    input: serde_json::json!({"file_path": "a.png"}), thought_signature: None, },
                 ContentBlock::ToolUse {
                     id: "tool_b".to_string(),
                     name: "read".to_string(),
-                    input: serde_json::json!({"file_path": "b.png"}),
-                },
+                    input: serde_json::json!({"file_path": "b.png"}), thought_signature: None, },
                 ContentBlock::ToolUse {
                     id: "tool_c".to_string(),
                     name: "read".to_string(),
-                    input: serde_json::json!({"file_path": "c.png"}),
-                },
+                    input: serde_json::json!({"file_path": "c.png"}), thought_signature: None, },
             ],
             timestamp: None,
             tool_duration_ms: None,
@@ -1163,8 +1160,7 @@ async fn test_sanitize_tool_ids_with_dots() {
             content: vec![ContentBlock::ToolUse {
                 id: "chatcmpl-BF2xX.tool_call.0".to_string(),
                 name: "bash".to_string(),
-                input: serde_json::json!({"command": "ls"}),
-            }],
+                input: serde_json::json!({"command": "ls"}), thought_signature: None, }],
             timestamp: None,
             tool_duration_ms: None,
         },
@@ -1217,8 +1213,7 @@ async fn test_sanitize_dangling_tool_ids_with_dots() {
             content: vec![ContentBlock::ToolUse {
                 id: "call.with.dots".to_string(),
                 name: "bash".to_string(),
-                input: serde_json::json!({"command": "crash"}),
-            }],
+                input: serde_json::json!({"command": "crash"}), thought_signature: None, }],
             timestamp: None,
             tool_duration_ms: None,
         },

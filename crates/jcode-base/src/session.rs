@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::path::Path;
 mod crash;
 mod journal;
+mod maintenance;
 mod memory_profile;
 mod model;
 mod persistence;
@@ -17,6 +18,7 @@ pub use crash::{
     CrashedSessionsInfo, detect_crashed_sessions, find_recent_crashed_sessions,
     find_session_by_name_or_id, recover_crashed_sessions, recover_crashed_sessions_by_ids,
 };
+pub use maintenance::prune_old_session_backups;
 pub use jcode_session_types::{
     EnvSnapshot, GitState, SessionImproveMode, SessionStatus, StoredCompactionState,
     StoredDisplayRole, StoredMemoryInjection, StoredMessage, StoredTokenUsage,
@@ -176,6 +178,8 @@ struct SessionStartupStub {
     #[serde(default)]
     model: Option<String>,
     #[serde(default)]
+    route_api_method: Option<String>,
+    #[serde(default)]
     reasoning_effort: Option<String>,
     #[serde(default)]
     subagent_model: Option<String>,
@@ -283,6 +287,7 @@ impl Session {
         session.provider_session_id = stub.provider_session_id;
         session.provider_key = stub.provider_key;
         session.model = stub.model;
+        session.route_api_method = stub.route_api_method;
         session.reasoning_effort = stub.reasoning_effort;
         session.subagent_model = stub.subagent_model;
         session.improve_mode = stub.improve_mode;
@@ -317,6 +322,7 @@ impl Session {
         session.provider_session_id = snapshot.provider_session_id;
         session.provider_key = snapshot.provider_key;
         session.model = snapshot.model;
+        session.route_api_method = snapshot.route_api_method;
         session.reasoning_effort = snapshot.reasoning_effort;
         session.subagent_model = snapshot.subagent_model;
         session.improve_mode = snapshot.improve_mode;
@@ -1013,7 +1019,9 @@ impl Session {
         for msg in &mut redacted.messages {
             for block in &mut msg.content {
                 match block {
-                    ContentBlock::Text { text, .. } | ContentBlock::Reasoning { text } => {
+                    ContentBlock::Text { text, .. }
+                    | ContentBlock::Reasoning { text }
+                    | ContentBlock::ReasoningTrace { text } => {
                         *text = crate::message::redact_secrets(text);
                     }
                     ContentBlock::AnthropicThinking { thinking, .. } => {
@@ -1427,6 +1435,8 @@ struct RemoteStartupSessionSnapshot {
     provider_key: Option<String>,
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    route_api_method: Option<String>,
     #[serde(default)]
     reasoning_effort: Option<String>,
     #[serde(default)]

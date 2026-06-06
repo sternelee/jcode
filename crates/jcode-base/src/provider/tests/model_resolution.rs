@@ -1073,8 +1073,10 @@ fn test_anthropic_auth_mode_prefixed_model_switch_changes_credentials() {
         assert_eq!(
             rt.block_on(anthropic.test_access_token_and_oauth_mode())
                 .expect("default token"),
-            ("sk-ant-test-api-key".to_string(), false),
-            "default Anthropic credentials should keep existing API-key-first behavior"
+            ("oauth-access-token".to_string(), true),
+            "default (Auto) Anthropic credentials prefer OAuth/subscription when an \
+             OAuth account is available, matching the canonical OAuth-first Auto \
+             behavior shared with the OpenAI provider and resolve_dual_credential_auth"
         );
 
         provider
@@ -1540,6 +1542,14 @@ fn test_context_limit_claude() {
             context_limit_for_model("claude-sonnet-4-6[1m]"),
             Some(1_048_576)
         );
+        // Opus 4.8 / 4.7 expose a 1M window natively (no `[1m]` opt-in needed),
+        // matching the live Anthropic catalog's `max_input_tokens: 1000000`.
+        assert_eq!(context_limit_for_model("claude-opus-4-8"), Some(1_000_000));
+        assert_eq!(
+            context_limit_for_model("claude-opus-4-8[1m]"),
+            Some(1_000_000)
+        );
+        assert_eq!(context_limit_for_model("claude-opus-4-7"), Some(1_000_000));
     });
 }
 

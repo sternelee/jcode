@@ -3265,7 +3265,7 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
 name = "jcode"
-version = "0.20.0"
+version = "0.23.0"
 dependencies = [
  "agentgrep",
  "anyhow",
@@ -3400,13 +3400,6 @@ dependencies = [
  "arboard",
  "async-stream",
  "async-trait",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-bedrock",
- "aws-sdk-bedrockruntime",
- "aws-sdk-sts",
- "aws-smithy-types",
- "aws-types",
  "base64 0.22.1",
  "bytes",
  "chrono",
@@ -3423,7 +3416,6 @@ dependencies = [
  "jcode-agent-runtime",
  "jcode-ambient-types",
  "jcode-auth-types",
- "jcode-azure-auth",
  "jcode-background-types",
  "jcode-base",
  "jcode-batch-types",
@@ -3443,10 +3435,7 @@ dependencies = [
  "jcode-plan",
  "jcode-protocol",
  "jcode-provider-core",
- "jcode-provider-gemini",
  "jcode-provider-metadata",
- "jcode-provider-openai",
- "jcode-provider-openrouter",
  "jcode-selfdev-types",
  "jcode-session-types",
  "jcode-side-panel-types",
@@ -3457,17 +3446,6 @@ dependencies = [
  "jcode-terminal-launch",
  "jcode-tool-core",
  "jcode-tool-types",
- "jcode-tui-account-picker",
- "jcode-tui-core",
- "jcode-tui-markdown",
- "jcode-tui-mermaid",
- "jcode-tui-messages",
- "jcode-tui-render",
- "jcode-tui-session-picker",
- "jcode-tui-style",
- "jcode-tui-tool-display",
- "jcode-tui-usage-overlay",
- "jcode-tui-workspace",
  "jcode-update-core",
  "jcode-usage-types",
  "libc",
@@ -3528,19 +3506,10 @@ version = "0.1.0"
 dependencies = [
  "agentgrep",
  "anyhow",
- "arboard",
  "async-trait",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-bedrock",
- "aws-sdk-bedrockruntime",
- "aws-sdk-sts",
- "aws-smithy-types",
- "aws-types",
  "base64 0.22.1",
  "bytes",
  "chrono",
- "clap",
  "crossterm",
  "dirs",
  "flate2",
@@ -3551,14 +3520,12 @@ dependencies = [
  "ignore",
  "image",
  "jcode-agent-runtime",
- "jcode-ambient-types",
  "jcode-app-core",
  "jcode-auth-types",
  "jcode-azure-auth",
  "jcode-background-types",
  "jcode-batch-types",
  "jcode-build-meta",
- "jcode-build-support",
  "jcode-compaction-core",
  "jcode-config-types",
  "jcode-core",
@@ -3568,55 +3535,39 @@ dependencies = [
  "jcode-logging",
  "jcode-memory-types",
  "jcode-message-types",
- "jcode-notify-email",
- "jcode-overnight-core",
  "jcode-plan",
  "jcode-protocol",
+ "jcode-provider-bedrock",
  "jcode-provider-core",
+ "jcode-provider-env",
  "jcode-provider-gemini",
  "jcode-provider-metadata",
  "jcode-provider-openai",
  "jcode-provider-openrouter",
+ "jcode-render-core",
  "jcode-selfdev-types",
  "jcode-session-types",
  "jcode-side-panel-types",
  "jcode-storage",
- "jcode-swarm-core",
  "jcode-task-types",
  "jcode-terminal-image",
  "jcode-terminal-launch",
  "jcode-tool-core",
  "jcode-tool-types",
- "jcode-tui-account-picker",
- "jcode-tui-core",
- "jcode-tui-markdown",
- "jcode-tui-mermaid",
- "jcode-tui-messages",
- "jcode-tui-render",
- "jcode-tui-session-picker",
- "jcode-tui-style",
- "jcode-tui-tool-display",
- "jcode-tui-usage-overlay",
- "jcode-tui-workspace",
- "jcode-update-core",
  "jcode-usage-types",
  "libc",
  "open",
  "proctitle",
  "qrcode",
  "rand 0.9.3",
- "ratatui",
  "regex",
  "reqwest 0.12.28",
- "rustls 0.23.37",
  "serde",
  "serde_json",
  "serde_yaml",
  "sha2 0.10.9",
  "similar",
- "tar",
  "tempfile",
- "thiserror 1.0.69",
  "tikv-jemalloc-ctl",
  "tikv-jemalloc-sys",
  "tikv-jemallocator",
@@ -3624,7 +3575,6 @@ dependencies = [
  "tokio-stream",
  "tokio-tungstenite",
  "toml",
- "unicode-width 0.2.0",
  "url",
  "urlencoding",
  "uuid",
@@ -3750,7 +3700,7 @@ name = "jcode-memory-types"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "jcode-core",
+ "rand 0.9.3",
  "serde",
  "serde_json",
 ]
@@ -3829,6 +3779,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "jcode-productivity-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "jcode-storage",
+ "rayon",
+ "resvg",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "usvg",
+]
+
+[[package]]
 name = "jcode-protocol"
 version = "0.1.0"
 dependencies = [
@@ -3847,17 +3812,60 @@ dependencies = [
 ]
 
 [[package]]
+name = "jcode-provider-bedrock"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-bedrock",
+ "aws-sdk-bedrockruntime",
+ "aws-sdk-sts",
+ "aws-smithy-types",
+ "aws-types",
+ "base64 0.22.1",
+ "chrono",
+ "futures",
+ "jcode-core",
+ "jcode-logging",
+ "jcode-message-types",
+ "jcode-provider-core",
+ "jcode-provider-env",
+ "jcode-storage",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "jcode-provider-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "futures",
+ "jcode-logging",
  "jcode-message-types",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
+]
+
+[[package]]
+name = "jcode-provider-env"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jcode-core",
+ "jcode-logging",
+ "jcode-provider-metadata",
+ "jcode-storage",
+ "tempfile",
 ]
 
 [[package]]
@@ -3880,9 +3888,18 @@ dependencies = [
 name = "jcode-provider-openai"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bytes",
+ "futures",
+ "jcode-core",
+ "jcode-logging",
  "jcode-message-types",
  "jcode-provider-core",
+ "reqwest 0.12.28",
+ "serde",
  "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -3892,6 +3909,15 @@ dependencies = [
  "dirs",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "jcode-render-core"
+version = "0.1.0"
+dependencies = [
+ "pulldown-cmark",
+ "serde",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -4004,12 +4030,14 @@ dependencies = [
  "jcode-build-meta",
  "jcode-core",
  "jcode-logging",
+ "jcode-productivity-core",
  "jcode-protocol",
  "jcode-provider-core",
  "jcode-selfdev-types",
  "jcode-session-types",
  "jcode-terminal-image",
  "jcode-tui-account-picker",
+ "jcode-tui-anim",
  "jcode-tui-core",
  "jcode-tui-markdown",
  "jcode-tui-mermaid",
@@ -4019,6 +4047,7 @@ dependencies = [
  "jcode-tui-style",
  "jcode-tui-tool-display",
  "jcode-tui-usage-overlay",
+ "jcode-tui-visual-debug",
  "jcode-tui-workspace",
  "libc",
  "open",
@@ -4039,8 +4068,16 @@ dependencies = [
 name = "jcode-tui-account-picker"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "crossterm",
+ "ratatui",
  "serde",
+ "serde_json",
 ]
+
+[[package]]
+name = "jcode-tui-anim"
+version = "0.1.0"
 
 [[package]]
 name = "jcode-tui-core"
@@ -4055,6 +4092,7 @@ dependencies = [
 name = "jcode-tui-markdown"
 version = "0.1.0"
 dependencies = [
+ "jcode-render-core",
  "jcode-tui-mermaid",
  "jcode-tui-workspace",
  "pulldown-cmark",
@@ -4100,6 +4138,7 @@ dependencies = [
 name = "jcode-tui-render"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "ratatui",
  "unicode-width 0.2.0",
 ]
@@ -4132,8 +4171,25 @@ dependencies = [
 name = "jcode-tui-usage-overlay"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "chrono",
+ "crossterm",
+ "jcode-usage-types",
  "ratatui",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "jcode-tui-visual-debug"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "jcode-logging",
+ "ratatui",
+ "regex",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6206,6 +6262,7 @@ dependencies = [
  "pin-project-lite",
  "quinn",
  "rustls 0.23.37",
+ "rustls-native-certs 0.8.3",
  "rustls-pki-types",
  "serde",
  "serde_json",

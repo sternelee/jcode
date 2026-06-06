@@ -98,54 +98,32 @@ mod render_lazy;
 #[path = "markdown_render_support.rs"]
 mod render_support;
 
+mod render_core_adapter;
+pub use render_core_adapter::{
+    document_to_lines, render_markdown_via_core, render_markdown_via_core_wrapped,
+    styled_line_to_line,
+};
+
 pub use render_full::render_markdown_with_width;
 pub use render_lazy::render_markdown_lazy;
 pub use render_support::extract_copy_targets_from_rendered_lines;
 
-/// Invisible sentinel prepended (inside `*…*`) to streamed reasoning/thinking
-/// lines. The renderer strips it and styles the line dim + italic with no
-/// blockquote gutter. Kept zero-width so it stays invisible if it ever leaks
-/// into copied text. Shared with the TUI/server reasoning formatters.
-pub const REASONING_SENTINEL: &str = "\u{2063}";
-
-/// Escape characters that pulldown-cmark would otherwise interpret as inline
-/// markdown (emphasis, code, links, etc.). Reasoning lines are rendered inside a
-/// single `*…*` emphasis run; without escaping, a stray `*`, `` ` ``, `[`, or
-/// `_` in the model's thinking would prematurely close or nest that run and the
-/// dim/italic styling would break partway through the line.
-fn escape_reasoning_inline_markdown(line: &str) -> String {
-    let mut out = String::with_capacity(line.len() + 8);
-    for ch in line.chars() {
-        match ch {
-            '\\' | '*' | '_' | '`' | '[' | ']' | '<' | '>' | '&' | '~' | '|' | '$' => {
-                out.push('\\');
-                out.push(ch);
-            }
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
-/// Wrap one complete reasoning/thinking line as dim+italic markdown: an
-/// invisible [`REASONING_SENTINEL`] inside an `*…*` emphasis run that the
-/// renderer strips and styles dim, with no blockquote gutter. The line body is
-/// escaped so embedded markdown cannot break the styling. Empty lines become a
-/// bare newline (no empty emphasis run). The result always ends in `\n`.
+/// Reasoning-line markdown formatters and the zero-width sentinel they use.
 ///
-/// Shared by the server and TUI reasoning formatters so the wrapping/escaping
-/// rules stay in lockstep with the renderer that consumes them.
-pub fn reasoning_line_markup(line: &str) -> String {
-    if line.is_empty() {
-        "\n".to_string()
-    } else {
-        format!(
-            "*{}{}*\n",
-            REASONING_SENTINEL,
-            escape_reasoning_inline_markdown(line)
-        )
-    }
-}
+/// These pure-string helpers were moved to `jcode-render-core` so the
+/// foundation/streaming layer can format reasoning without depending on any
+/// `jcode-tui-*` crate. Re-exported here so existing
+/// `jcode_tui_markdown::{reasoning_line_markup, reasoning_partial_markup,
+/// REASONING_SENTINEL}` paths keep working.
+pub use jcode_render_core::{REASONING_SENTINEL, reasoning_line_markup, reasoning_partial_markup};
+
+/// One-line collapsed reasoning summary markup (e.g. `▸ thought (3 lines)`).
+///
+/// Moved to `jcode-render-core` (pure/backend-neutral) so the foundation/
+/// streaming layer can format it without depending on any `jcode-tui-*` crate.
+/// Re-exported here so the existing
+/// `jcode_tui_markdown::reasoning_summary_line_markup` path keeps working.
+pub use jcode_render_core::reasoning_summary_line_markup;
 
 use render_support::{
     highlight_code_cached, line_plain_text, placeholder_code_block, ranges_overlap, render_table,

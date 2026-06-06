@@ -99,7 +99,7 @@ fn session_picker_enter_queues_current_terminal_resume_and_closes_overlay() {
 
     assert!(app.session_picker_overlay.is_none());
     assert_eq!(
-        crate::tui::workspace_client::take_pending_resume_session().as_deref(),
+        app.workspace_client.take_pending_resume_session().as_deref(),
         Some("session_here_123")
     );
 }
@@ -974,7 +974,7 @@ fn test_splitview_mirrors_chat_and_streaming_text() {
         DisplayMessage::assistant("We decided to ship it.".to_string()),
     ];
     app.bump_display_messages_version();
-    app.streaming_text = "Working on the follow-up now...".to_string();
+    app.streaming.streaming_text = "Working on the follow-up now...".to_string();
     app.set_split_view_enabled(true, true);
 
     let page = app
@@ -1047,8 +1047,7 @@ fn test_observe_updates_latest_tool_context_only() {
         id: "tool_1".to_string(),
         name: "read".to_string(),
         input: serde_json::json!({"file_path": "src/main.rs", "start_line": 1, "end_line": 10}),
-        intent: None,
-    };
+        intent: None, thought_signature: None, };
     app.observe_tool_call(&tool_call);
 
     let page = app.side_panel.focused_page().expect("missing observe page");
@@ -1087,8 +1086,7 @@ fn test_observe_ignores_noise_tools_and_preserves_latest_useful_context() {
         id: "tool_read".to_string(),
         name: "read".to_string(),
         input: serde_json::json!({"file_path": "src/main.rs"}),
-        intent: None,
-    };
+        intent: None, thought_signature: None, };
     app.observe_tool_result(&read_tool, "fn main() {}", false, Some("read"));
     let before = app
         .side_panel
@@ -1101,8 +1099,7 @@ fn test_observe_ignores_noise_tools_and_preserves_latest_useful_context() {
         id: "tool_side_panel".to_string(),
         name: "side_panel".to_string(),
         input: serde_json::json!({"action": "write", "page_id": "plan"}),
-        intent: None,
-    };
+        intent: None, thought_signature: None, };
     app.observe_tool_call(&noise_tool);
     app.observe_tool_result(&noise_tool, "ok", false, Some("side_panel"));
 

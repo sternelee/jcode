@@ -151,6 +151,10 @@ pub(super) fn handle_bus_event(
             super::commands::handle_git_status_completed(app, result);
             true
         }
+        Ok(BusEvent::ProductivityReportReady(event)) => {
+            app.handle_productivity_report_ready(event);
+            true
+        }
         Ok(BusEvent::MermaidRenderCompleted) => true,
         Ok(BusEvent::UsageReport(results)) => {
             app.handle_usage_report(results);
@@ -455,8 +459,8 @@ fn handle_input_shell_completed(app: &mut App, shell: InputShellCompleted) {
 }
 
 pub(super) fn finish_turn(app: &mut App) {
-    app.total_input_tokens += app.streaming_input_tokens;
-    app.total_output_tokens += app.streaming_output_tokens;
+    app.token_accounting.total_input_tokens += app.streaming.streaming_input_tokens;
+    app.token_accounting.total_output_tokens += app.streaming.streaming_output_tokens;
     app.update_cost_impl();
     app.is_processing = false;
     app.status = ProcessingStatus::Idle;

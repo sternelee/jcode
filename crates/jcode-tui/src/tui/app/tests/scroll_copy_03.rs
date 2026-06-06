@@ -136,7 +136,7 @@ fn test_prompt_preview_reserves_rows_without_overwriting_visible_history() {
     app.scroll_offset = 0;
     app.auto_scroll_paused = false;
     app.is_processing = false;
-    app.streaming_text.clear();
+    app.streaming.streaming_text.clear();
     app.status = ProcessingStatus::Idle;
     app.session.short_name = Some("test".to_string());
 
@@ -395,7 +395,7 @@ fn test_scroll_down_past_bottom_does_not_accumulate_phantom_offset() {
     // Simulate streaming so scroll_max_estimate() inflates above rendered_max.
     app.is_processing = true;
     app.status = ProcessingStatus::Streaming;
-    app.streaming_text = "x".repeat(20_000);
+    app.streaming.streaming_text = "x".repeat(20_000);
 
     // Hammer scroll-down well past the bottom.
     for _ in 0..200 {
@@ -484,6 +484,63 @@ fn test_copy_selection_from_bottom_rebases_scroll_instead_of_jumping_to_top() {
     assert!(
         !selected_text.contains("Intro line 01"),
         "starting selection from bottom should not teleport to the top"
+    );
+}
+
+#[test]
+fn repro_ctrl_shift_jk_scroll_with_text_in_input() {
+    // Kitty keyboard protocol reports Ctrl+Shift+J / Ctrl+Shift+K as
+    // Char('j'/'k') + CONTROL|SHIFT (captured raw bytes: ESC[106;6u / ESC[107;6u).
+    let _render_lock = scroll_render_test_lock();
+    let (mut app, mut terminal) = create_scroll_test_app(100, 30, 0, 40);
+    render_and_snap(&app, &mut terminal);
+
+    // Plain Ctrl+K / Ctrl+J (control only) -> should scroll.
+    app.handle_key(KeyCode::Char('k'), KeyModifiers::CONTROL)
+        .unwrap();
+    assert!(app.auto_scroll_paused, "Ctrl+K should scroll up");
+    let plain_offset = app.scroll_offset;
+
+    // Reset to bottom.
+    app.follow_chat_bottom();
+
+    // Now put text in the input box, like a real user mid-prompt.
+    app.input = "some draft text".to_string();
+
+    // Ctrl+Shift+K with text present.
+    app.handle_key(KeyCode::Char('k'), KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+        .unwrap();
+    assert!(
+        app.auto_scroll_paused,
+        "Ctrl+Shift+K should scroll up even with text in input (offset moved like plain: {plain_offset})"
+    );
+    assert_eq!(
+        app.input, "some draft text",
+        "Ctrl+Shift+K must not kill input text"
+    );
+    let shift_up_offset = app.scroll_offset;
+
+    // Ctrl+Shift+J should scroll back down.
+    app.handle_key(KeyCode::Char('j'), KeyModifiers::CONTROL | KeyModifiers::SHIFT)
+        .unwrap();
+    assert!(
+        app.scroll_offset > shift_up_offset || !app.auto_scroll_paused,
+        "Ctrl+Shift+J should scroll down toward the bottom"
+    );
+    assert_eq!(
+        app.input, "some draft text",
+        "Ctrl+Shift+J must not alter input text"
+    );
+
+    // Plain Ctrl+K with text still acts as kill-to-end-of-line (emacs habit).
+    app.follow_chat_bottom();
+    app.input = "draft".to_string();
+    app.cursor_pos = 0;
+    app.handle_key(KeyCode::Char('k'), KeyModifiers::CONTROL)
+        .unwrap();
+    assert_eq!(
+        app.input, "",
+        "plain Ctrl+K should still kill to end of line"
     );
 }
 

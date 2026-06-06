@@ -56,7 +56,7 @@ fn create_scroll_test_app(
     app.scroll_offset = 0;
     app.auto_scroll_paused = false;
     app.is_processing = false;
-    app.streaming_text.clear();
+    app.streaming.streaming_text.clear();
     app.status = ProcessingStatus::Idle;
     // Set deterministic session name for snapshot stability
     app.session.short_name = Some("test".to_string());
@@ -90,7 +90,7 @@ fn create_copy_test_app() -> (App, ratatui::Terminal<ratatui::backend::TestBacke
     app.scroll_offset = 0;
     app.auto_scroll_paused = false;
     app.is_processing = false;
-    app.streaming_text.clear();
+    app.streaming.streaming_text.clear();
     app.status = ProcessingStatus::Idle;
     app.session.short_name = Some("test".to_string());
 
@@ -109,7 +109,7 @@ fn create_error_copy_test_app() -> (App, ratatui::Terminal<ratatui::backend::Tes
     app.scroll_offset = 0;
     app.auto_scroll_paused = false;
     app.is_processing = false;
-    app.streaming_text.clear();
+    app.streaming.streaming_text.clear();
     app.status = ProcessingStatus::Idle;
     app.session.short_name = Some("test".to_string());
 
@@ -128,15 +128,14 @@ fn create_tool_error_copy_test_app() -> (App, ratatui::Terminal<ratatui::backend
                 id: "tool_1".to_string(),
                 name: "bash".to_string(),
                 input: serde_json::json!({"command": "cat /root/secret"}),
-                intent: None,
-            },
+                intent: None, thought_signature: None, },
         ),
     ];
     app.bump_display_messages_version();
     app.scroll_offset = 0;
     app.auto_scroll_paused = false;
     app.is_processing = false;
-    app.streaming_text.clear();
+    app.streaming.streaming_text.clear();
     app.status = ProcessingStatus::Idle;
     app.session.short_name = Some("test".to_string());
 
@@ -156,15 +155,14 @@ fn create_tool_failed_output_copy_test_app()
                 id: "tool_1".to_string(),
                 name: "bash".to_string(),
                 input: serde_json::json!({"command": "cat /root/secret"}),
-                intent: None,
-            },
+                intent: None, thought_signature: None, },
         ),
     ];
     app.bump_display_messages_version();
     app.scroll_offset = 0;
     app.auto_scroll_paused = false;
     app.is_processing = false;
-    app.streaming_text.clear();
+    app.streaming.streaming_text.clear();
     app.status = ProcessingStatus::Idle;
     app.session.short_name = Some("test".to_string());
 
@@ -339,10 +337,10 @@ fn test_streaming_repaint_does_not_leave_bracket_artifact() {
 
     app.is_processing = true;
     app.status = ProcessingStatus::Streaming;
-    app.streaming_text = "[".to_string();
+    app.streaming.streaming_text = "[".to_string();
     let _ = render_and_snap(&app, &mut terminal);
 
-    app.streaming_text = "Process A: |██████████|".to_string();
+    app.streaming.streaming_text = "Process A: |██████████|".to_string();
     let text = render_and_snap(&app, &mut terminal);
 
     assert!(
