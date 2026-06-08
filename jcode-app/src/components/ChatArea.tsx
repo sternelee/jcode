@@ -67,6 +67,11 @@ interface ChatAreaProps {
 	onEditMessage?: (messageIndex: number, newContent: string) => void;
 	onQuoteMessage?: (content: string, role: string) => void;
 	currentWorkingDir?: string | null;
+	onExecuteShellCommand?: (
+		command: string,
+		workingDir?: string | null,
+		sessionId?: string,
+	) => Promise<void>;
 }
 
 // ── Member role color map ────────────────────────────────────────────────
@@ -143,6 +148,7 @@ export function ChatArea({
 	onEditMessage,
 	onQuoteMessage,
 	currentWorkingDir,
+	onExecuteShellCommand,
 }: ChatAreaProps) {
 	const [text, setText] = useState("");
 	const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -374,6 +380,17 @@ export function ChatArea({
 		if (!content && attachedImages.length === 0) return;
 		if (softInterruptMode && onSendSoftInterrupt) {
 			onSendSoftInterrupt(content);
+			setText("");
+			setMentionQuery(null);
+			setAttachedImages([]);
+			return;
+		}
+		// Handle `!` shell commands like TUI
+		if (content.startsWith('!') && onExecuteShellCommand) {
+			const command = content.slice(1).trim();
+			if (command) {
+				void onExecuteShellCommand(command, currentWorkingDir);
+			}
 			setText("");
 			setMentionQuery(null);
 			setAttachedImages([]);
@@ -1323,7 +1340,7 @@ export function ChatArea({
 								value={text}
 								onChange={handleChange}
 								onKeyDown={handleKeyDown}
-								placeholder="Type a message… (@ to mention)"
+								placeholder="Type a message… (! for shell, @ to mention)"
 								rows={1}
 								className="w-full px-4 pt-3 pb-2 text-[14px] text-foreground placeholder-muted-foreground/50 outline-none resize-none bg-transparent"
 								style={{ minHeight: 44, maxHeight: 120 }}

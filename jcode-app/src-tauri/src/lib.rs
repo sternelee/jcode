@@ -3485,6 +3485,62 @@ async fn trigger_ambient() -> Result<(), String> {
     state.save().map_err(|e| e.to_string())
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShellCommandResult {
+    command: String,
+    output: String,
+    exit_code: Option<i32>,
+    duration_ms: u64,
+}
+
+/// Execute a shell command (like TUI's `!` prefix) and return the output.
+#[tauri::command]
+async fn execute_shell_command(
+    command: String,
+    working_dir: Option<String>,
+) -> Result<ShellCommandResult, String> {
+    let started = std::time::Instant::now();
+    let mut cmd = std::process::Command::new("bash");
+    cmd.arg("-c").arg(&command);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    if let Some(ref dir) = working_dir {
+        cmd.current_dir(dir);
+    }
+    match cmd.output() {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let mut combined = String::new();
+            if !stdout.is_empty() {
+                combined.push_str(&stdout);
+            }
+            if !stderr.is_empty() {
+                if !combined.is_empty() && !combined.ends_with('\n') {
+                    combined.push('\n');
+                }
+                combined.push_str("[stderr]\n");
+                combined.push_str(&stderr);
+            }
+            // Truncate very large output
+            const MAX_LEN: usize = 50_000;
+            if combined.len() > MAX_LEN {
+                combined.truncate(MAX_LEN);
+                combined.push_str("\n… output truncated");
+            }
+            Ok(ShellCommandResult {
+                command,
+                output: combined,
+                exit_code: output.status.code(),
+                duration_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+            })
+        }
+        Err(e) => Err(format!("Failed to run command: {e}")),
+    }
+}
+
 #[tauri::command]
 async fn stop_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
@@ -3578,6 +3634,7 @@ pub fn run() {
             delete_skill,
             reload_skills,
             git_status,
+            execute_shell_command,
             save_session_state,
             get_last_session_state,
             clear_session_state,

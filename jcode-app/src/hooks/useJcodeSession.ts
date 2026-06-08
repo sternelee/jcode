@@ -989,6 +989,57 @@ export function useJcodeSession() {
 		}
 	}, []);
 
+	const executeShellCommand = useCallback(
+		async (command: string, workingDir?: string | null) => {
+			return await invoke<{
+				command: string;
+				output: string;
+				exitCode: number | null;
+				durationMs: number;
+			}>("execute_shell_command", {
+				command,
+				workingDir: workingDir ?? null,
+			});
+		},
+		[],
+	);
+
+	const executeShellCommandAndDisplay = useCallback(
+		async (command: string, workingDir?: string | null, sessionId?: string) => {
+			dispatch({
+				type: "ADD_USER_MESSAGE",
+				content: `!${command}`,
+				sessionId,
+			});
+			try {
+				const result = await invoke<{
+					command: string;
+					output: string;
+					exitCode: number | null;
+					durationMs: number;
+				}>("execute_shell_command", {
+					command,
+					workingDir: workingDir ?? null,
+				});
+				const exitInfo =
+					result.exitCode !== null ? `exit ${result.exitCode}` : "done";
+				const display = `$ ${result.command}\n${result.output}\n[${exitInfo} in ${result.durationMs}ms]`;
+				dispatch({
+					type: "ADD_SYSTEM_MESSAGE",
+					content: display,
+					sessionId,
+				});
+			} catch (e) {
+				dispatch({
+					type: "ADD_SYSTEM_MESSAGE",
+					content: `$ ${command}\nError: ${String(e)}`,
+					sessionId,
+				});
+			}
+		},
+		[],
+	);
+
 	return {
 		state,
 		connect,
@@ -1045,6 +1096,8 @@ export function useJcodeSession() {
 		getVersionInfo,
 		getWorkspaceMemoryPreferences,
 		setWorkspaceMemoryPreference,
+		executeShellCommand,
+		executeShellCommandAndDisplay,
 	};
 }
 

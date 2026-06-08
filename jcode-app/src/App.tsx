@@ -76,6 +76,7 @@ export default function App() {
 		getUsageInfo,
 		getWorkspaceMemoryPreferences,
 		setWorkspaceMemoryPreference,
+		executeShellCommandAndDisplay,
 	} = useJcodeSession();
 
 	const [activeNavTab, setActiveNavTab] = useState("chat");
@@ -1003,6 +1004,7 @@ export default function App() {
 							onEditMessage={handleEditMessage}
 							onQuoteMessage={handleQuoteMessage}
 							currentWorkingDir={state.workingDir}
+							onExecuteShellCommand={executeShellCommandAndDisplay}
 						/>
 						<SidePanel
 							snapshot={
