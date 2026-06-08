@@ -1,36 +1,31 @@
 use jcode::protocol::{Request, ServerEvent};
-use jcode::server::Client as JcodeClient;
+use jcode::transport::WriteHalf;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
 
-/// Wrapper around jcode::server::Client that handles connection,
+/// Wrapper around a jcode server connection that handles event reading,
 /// request/response pairing, and background event forwarding.
 pub struct ServerClient {
-    inner: Arc<Mutex<Option<JcodeClient>>>,
+    writer: Arc<Mutex<Option<WriteHalf>>>,
+    pending_requests: Arc<Mutex<HashMap<u64, tokio::sync::mpsc::UnboundedSender<ServerEvent>>>>,
     app_handle: Arc<std::sync::RwLock<Option<AppHandle>>>,
     active_session_id: Arc<std::sync::RwLock<Option<String>>>,
-    event_loop_started: AtomicBool,
+    reader_running: Arc<AtomicBool>,
 }
 
 impl ServerClient {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(None)),
+            writer: Arc::new(Mutex::new(None)),
+            pending_requests: Arc::new(Mutex::new(HashMap::new())),
             app_handle: Arc::new(std::sync::RwLock::new(None)),
             active_session_id: Arc::new(std::sync::RwLock::new(None)),
-            event_loop_started: AtomicBool::new(false),
+            reader_running: Arc::new(AtomicBool::new(false)),
         }
-    }
-
-    /// Connect (if needed) and start the background event loop once.
-    async fn ensure_connected(&self) -> Result<bool, String> {
-        let connected = self.connect().await?;
-        if connected && !self.event_loop_started.swap(true, Ordering::SeqCst) {
-            self.start_event_loop();
-        }
-        Ok(connected)
     }
 
     pub fn set_active_session(&self, session_id: Option<String>) {
@@ -46,216 +41,162 @@ impl ServerClient {
     /// Attempt to connect to the jcode server socket.
     /// Returns true if connected or already connected.
     pub async fn connect(&self) -> Result<bool, String> {
-        let mut guard = self.inner.lock().await;
-        if guard.is_some() {
-            // Probe with ping to ensure still alive
-            if let Some(ref mut client) = *guard {
-                match tokio::time::timeout(std::time::Duration::from_secs(2), client.ping()).await {
-                    Ok(Ok(true)) => return Ok(true),
-                    _ => {
-                        // Connection stale, drop and reconnect
-                        *guard = None;
-                    }
-                }
+        {
+            let guard = self.writer.lock().await;
+            if guard.is_some() {
+                return Ok(true);
             }
         }
 
-        // Reap stale socket before connecting so a leftover file from a
-        // crashed or reloaded server does not wedge us forever.
         let socket_path = jcode::server::socket_path();
         let was_stale = jcode::server::reap_stale_socket_if_dead(&socket_path).await;
         if was_stale {
             eprintln!("[server_client] reaped stale socket at {}", socket_path.display());
         }
 
-        match JcodeClient::connect().await {
-            Ok(client) => {
-                *guard = Some(client);
-                Ok(true)
-            }
-            Err(e) => {
-                eprintln!("[server_client] connect failed: {e}");
-                Ok(false)
-            }
+        let stream = jcode::server::connect_socket(&socket_path)
+            .await
+            .map_err(|e| format!("Failed to connect to server: {e}"))?;
+        let (read_half, write_half) = stream.into_split();
+
+        *self.writer.lock().await = Some(write_half);
+
+        if !self.reader_running.swap(true, Ordering::SeqCst) {
+            let pending = self.pending_requests.clone();
+            let app_handle = self.app_handle.clone();
+            let active_session_id = self.active_session_id.clone();
+            let writer = self.writer.clone();
+            let reader_running = self.reader_running.clone();
+
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(read_half);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    let read_result = tokio::time::timeout(
+                        std::time::Duration::from_secs(60),
+                        reader.read_line(&mut line),
+                    )
+                    .await;
+
+                    match read_result {
+                        Ok(Ok(0)) => {
+                            eprintln!("[server_client] event loop: EOF");
+                            let _ = writer.lock().await.take();
+                            break;
+                        }
+                        Ok(Ok(_)) => {
+                            let event: ServerEvent = match serde_json::from_str(&line) {
+                                Ok(e) => e,
+                                Err(e) => {
+                                    eprintln!("[server_client] failed to parse event: {e}");
+                                    continue;
+                                }
+                            };
+
+                            let request_id = Self::event_id(&event);
+                            let mut handled = false;
+                            if let Some(id) = request_id {
+                                let mut pending_guard = pending.lock().await;
+                                if let Some(tx) = pending_guard.get(&id) {
+                                    if tx.send(event.clone()).is_err() {
+                                        pending_guard.remove(&id);
+                                    } else {
+                                        handled = true;
+                                    }
+                                }
+                            }
+
+                            if !handled {
+                                Self::emit_event(&app_handle, &active_session_id, event);
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            eprintln!("[server_client] event loop read error: {e}");
+                            let _ = writer.lock().await.take();
+                            break;
+                        }
+                        Err(_) => {
+                            // Timeout — check if we were explicitly disconnected
+                            if writer.lock().await.is_none() {
+                                break;
+                            }
+                        }
+                    }
+                }
+                reader_running.store(false, Ordering::SeqCst);
+                eprintln!("[server_client] event loop disconnected");
+            });
         }
+
+        Ok(true)
     }
 
     /// Disconnect from the server.
     pub async fn disconnect(&self) {
-        let mut guard = self.inner.lock().await;
+        let mut guard = self.writer.lock().await;
         *guard = None;
     }
 
     /// Returns true if we have an active connection.
     pub async fn is_connected(&self) -> bool {
-        self.inner.lock().await.is_some()
+        self.writer.lock().await.is_some()
     }
 
     /// Send a request and wait for the matching response event.
-    /// Skips acks and unrelated broadcast events.
+    /// The event loop routes matching events here instead of forwarding
+    /// them to the frontend. Acks are skipped automatically.
     pub async fn request(&self, req: Request) -> Result<ServerEvent, String> {
-        self.ensure_connected().await?;
         let request_id = req.id();
-        let mut guard = self.inner.lock().await;
-        let mut client = guard.as_mut().ok_or("Not connected to server")?;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
-        client
-            .send_request(req)
-            .await
-            .map_err(|e| format!("Failed to send request: {e}"))?;
+        {
+            let mut pending = self.pending_requests.lock().await;
+            pending.insert(request_id, tx);
+        }
+
+        self.send(req).await?;
 
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
 
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
+                self.pending_requests.lock().await.remove(&request_id);
                 return Err("Server request timed out".to_string());
             }
 
-            let event = tokio::time::timeout(remaining, client.read_event()).await;
-            let event = event.map_err(|_| "Server read timed out".to_string())?;
-            let event = event.map_err(|e| format!("Server read error: {e}"))?;
-
-            match event {
-                ServerEvent::Ack { .. } => continue,
-                ServerEvent::Pong { id } if id != request_id => continue,
-                // Forward broadcast events that are not tied to our request
-                ref ev if Self::is_broadcast_event(ev) && Self::event_id(ev) != Some(request_id) => {
-                    drop(guard);
-                    Self::emit_event(&self.app_handle, &self.active_session_id, event);
-                    guard = self.inner.lock().await;
-                    client = guard.as_mut().ok_or("Not connected to server")?;
-                    continue;
+            match tokio::time::timeout(remaining, rx.recv()).await {
+                Ok(Some(event)) => match event {
+                    ServerEvent::Ack { .. } => continue,
+                    _ => {
+                        self.pending_requests.lock().await.remove(&request_id);
+                        return Ok(event);
+                    }
+                },
+                Ok(None) => {
+                    return Err("Response channel closed".to_string());
                 }
-                _ => return Ok(event),
+                Err(_) => {
+                    self.pending_requests.lock().await.remove(&request_id);
+                    return Err("Server request timed out".to_string());
+                }
             }
         }
     }
 
-    /// Send a request without waiting for response (fire-and-forget)
+    /// Send a request without waiting for response (fire-and-forget).
+    /// Events generated by this request are read by the background event
+    /// loop and forwarded to the frontend.
     pub async fn send(&self, req: Request) -> Result<(), String> {
-        self.ensure_connected().await?;
-        let mut guard = self.inner.lock().await;
-        let client = guard.as_mut().ok_or("Not connected to server")?;
-        client
-            .send_request(req)
+        let json = serde_json::to_string(&req).map_err(|e| e.to_string())? + "\n";
+        let mut guard = self.writer.lock().await;
+        let writer = guard.as_mut().ok_or("Not connected to server")?;
+        writer
+            .write_all(json.as_bytes())
             .await
-            .map_err(|e| format!("Failed to send request: {e}"))?;
+            .map_err(|e| format!("Failed to write request: {e}"))?;
         Ok(())
-    }
-
-    /// Start a background task that reads events from the server and
-    /// forwards them to the frontend as Tauri events.
-    pub fn start_event_loop(&self) {
-        let inner = self.inner.clone();
-        let app_handle = self.app_handle.clone();
-        let active_session_id = self.active_session_id.clone();
-
-        tokio::spawn(async move {
-            loop {
-                // Wait until connected
-                let mut client_guard = inner.lock().await;
-                let client = match client_guard.as_mut() {
-                    Some(c) => c,
-                    None => {
-                        drop(client_guard);
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                        continue;
-                    }
-                };
-
-                // Subscribe to events
-                let subscribe_result = client.subscribe().await;
-                if let Err(e) = subscribe_result {
-                    eprintln!("[server_client] subscribe failed: {e}");
-                    drop(client_guard);
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    continue;
-                }
-
-                eprintln!("[server_client] event loop started");
-                drop(client_guard);
-
-                // Read events
-                loop {
-                    let mut client_guard = inner.lock().await;
-                    let client = match client_guard.as_mut() {
-                        Some(c) => c,
-                        None => break,
-                    };
-
-                    let read_result = tokio::time::timeout(
-                        std::time::Duration::from_secs(60),
-                        client.read_event(),
-                    )
-                    .await;
-
-                    match read_result {
-                        Ok(Ok(event)) => {
-                            drop(client_guard);
-                            Self::emit_event(&app_handle, &active_session_id, event);
-                        }
-                        Ok(Err(e)) => {
-                            eprintln!("[server_client] read error: {e}");
-                            drop(client_guard);
-                            break;
-                        }
-                        Err(_) => {
-                            // Timeout, just loop and check connection
-                            drop(client_guard);
-                        }
-                    }
-                }
-
-                eprintln!("[server_client] event loop disconnected, retrying...");
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            }
-        });
-    }
-
-    fn is_broadcast_event(event: &ServerEvent) -> bool {
-        matches!(
-            event,
-            ServerEvent::SwarmStatus { .. }
-                | ServerEvent::SwarmPlan { .. }
-                | ServerEvent::SwarmPlanProposal { .. }
-                | ServerEvent::Notification { .. }
-                | ServerEvent::SoftInterruptInjected { .. }
-                | ServerEvent::MemoryInjected { .. }
-                | ServerEvent::Compaction { .. }
-                | ServerEvent::BatchProgress { .. }
-                | ServerEvent::SidePaneImages { .. }
-                | ServerEvent::Done { .. }
-                | ServerEvent::Error { .. }
-                | ServerEvent::TextDelta { .. }
-                | ServerEvent::ToolStart { .. }
-                | ServerEvent::ToolExec { .. }
-                | ServerEvent::ToolDone { .. }
-                | ServerEvent::ToolInput { .. }
-                | ServerEvent::ConnectionPhase { .. }
-                | ServerEvent::StatusDetail { .. }
-                | ServerEvent::MessageEnd
-                | ServerEvent::UpstreamProvider { .. }
-                | ServerEvent::ConnectionType { .. }
-                | ServerEvent::ModelChanged { .. }
-                | ServerEvent::ReasoningEffortChanged { .. }
-                | ServerEvent::ServiceTierChanged { .. }
-                | ServerEvent::TransportChanged { .. }
-                | ServerEvent::CompactionModeChanged { .. }
-                | ServerEvent::AvailableModelsUpdated { .. }
-                | ServerEvent::McpStatus { .. }
-                | ServerEvent::Reloading { .. }
-                | ServerEvent::ReloadProgress { .. }
-                | ServerEvent::SessionRenamed { .. }
-                | ServerEvent::State { .. }
-                | ServerEvent::TokenUsage { .. }
-                | ServerEvent::KvCacheRequest { .. }
-                | ServerEvent::GeneratedImage { .. }
-                | ServerEvent::InputShellResult { .. }
-                | ServerEvent::Transcript { .. }
-                | ServerEvent::SidePanelState { .. }
-                | ServerEvent::Interrupted
-        )
     }
 
     fn event_id(event: &ServerEvent) -> Option<u64> {
@@ -315,7 +256,6 @@ impl ServerClient {
             }
         }
 
-        // Emit as "server-event" for compatibility with existing frontend
         let _ = handle.emit("server-event", &payload);
     }
 }
