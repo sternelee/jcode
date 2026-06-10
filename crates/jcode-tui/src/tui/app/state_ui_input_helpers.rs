@@ -61,6 +61,10 @@ const REGISTERED_COMMANDS: &[RegisteredCommand] = &[
     RegisteredCommand::public("/ssh", "Connect to a remote machine using system SSH"),
     RegisteredCommand::public("/git", "Show git status for the session working directory"),
     RegisteredCommand::public("/commit", "Make logical commits from current changes"),
+    RegisteredCommand::public(
+        "/commit-push",
+        "Make logical commits from current changes, then push",
+    ),
     RegisteredCommand::public("/transcript", "Open the current session transcript file"),
     RegisteredCommand::public("/subagent-model", "Show/change subagent model policy"),
     RegisteredCommand::public("/autoreview", "Show/toggle automatic end-of-turn review"),
@@ -71,7 +75,10 @@ const REGISTERED_COMMANDS: &[RegisteredCommand] = &[
     RegisteredCommand::public("/fast", "Toggle fast mode"),
     RegisteredCommand::public("/transport", "Show/change connection transport"),
     RegisteredCommand::public("/alignment", "Show/change default text alignment"),
-    RegisteredCommand::public("/reasoning", "Show/change reasoning display (off/full/current)"),
+    RegisteredCommand::public(
+        "/reasoning",
+        "Show/change reasoning display (off/full/current)",
+    ),
     RegisteredCommand::public("/clear", "Clear conversation history"),
     RegisteredCommand::public("/rewind", "Rewind conversation to previous message"),
     RegisteredCommand::public("/poke", "Poke model to resume with incomplete todos"),
@@ -146,6 +153,11 @@ const REGISTERED_COMMANDS: &[RegisteredCommand] = &[
     RegisteredCommand::public("/record", "Record a demo capture"),
     RegisteredCommand::remote("/client-reload", "Force reload client binary"),
     RegisteredCommand::remote("/server-reload", "Force reload server binary"),
+    RegisteredCommand::remote(
+        "/continue",
+        "Continue every interrupted live session that would auto-resume",
+    ),
+    RegisteredCommand::remote("/resumeall", "Alias for /continue"),
     RegisteredCommand::hidden("/z", "Secret premium-mode command"),
     RegisteredCommand::hidden("/zz", "Secret premium-mode command"),
     RegisteredCommand::hidden("/zzz", "Secret premium-mode command"),
@@ -1155,15 +1167,9 @@ impl App {
                 });
                 OnboardingWelcomeKind::Login { import: prompt }
             }
-            Some(OnboardingPhase::TelemetryConsent {
-                yes_highlighted,
-                shown_at,
-            }) => {
-                let total = crate::tui::app::onboarding_flow::DECISION_TIMEOUT.as_secs();
-                let seconds_left = total.saturating_sub(shown_at.elapsed().as_secs());
-                OnboardingWelcomeKind::TelemetryConsent {
+            Some(OnboardingPhase::LoginOpenAi { yes_highlighted }) => {
+                OnboardingWelcomeKind::LoginOpenAi {
                     yes_highlighted: *yes_highlighted,
-                    seconds_left,
                 }
             }
             Some(OnboardingPhase::ModelSelect) => OnboardingWelcomeKind::Suggestions,
@@ -1185,15 +1191,15 @@ impl App {
     }
 
     /// Whether the guided onboarding flow is in a phase that should take over
-    /// the welcome screen body (login, telemetry, or continue prompt). The
-    /// transcript-pick phase uses the session-picker overlay instead, and the
-    /// suggestions phase is the default welcome body.
+    /// the welcome screen body (login, OpenAI-login prompt, or continue prompt).
+    /// The transcript-pick phase uses the session-picker overlay instead, and
+    /// the suggestions phase is the default welcome body.
     fn onboarding_flow_drives_welcome(&self) -> bool {
         use crate::tui::app::onboarding_flow::OnboardingPhase;
         matches!(
             self.onboarding_phase(),
             Some(OnboardingPhase::Login { .. })
-                | Some(OnboardingPhase::TelemetryConsent { .. })
+                | Some(OnboardingPhase::LoginOpenAi { .. })
                 | Some(OnboardingPhase::ContinuePrompt { .. })
         )
     }
@@ -1223,16 +1229,7 @@ impl App {
         let is_new_user = if preview_mode {
             true
         } else {
-            crate::storage::jcode_dir()
-                .ok()
-                .and_then(|dir| {
-                    let path = dir.join("setup_hints.json");
-                    std::fs::read_to_string(&path).ok()
-                })
-                .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
-                .and_then(|v| v.get("launch_count")?.as_u64())
-                .map(|count| count <= 5)
-                .unwrap_or(true)
+            Self::is_new_user_install()
         };
 
         if !is_new_user {

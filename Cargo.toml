@@ -1,6 +1,6 @@
 [package]
 name = "jcode"
-version = "0.23.0"
+version = "0.24.0"
 description = "Possibly the greatest coding agent ever built — blazing-fast TUI, multi-model, swarm coordination, 30+ tools"
 edition = "2024"
 autobins = false
@@ -240,6 +240,9 @@ jcode-build-meta = { path = "crates/jcode-build-meta" }
 # bin) re-exports everything via `pub use jcode_tui::*`. default-features=false
 # so the root feature set fully controls the downstream features (see
 # [features]).
+
+
+jcode-side-panel-types = { path = "crates/jcode-side-panel-types" }
 jcode-tui = { path = "crates/jcode-tui", default-features = false }
 jcode-compaction-core = { path = "crates/jcode-compaction-core" }
 jcode-config-types = { path = "crates/jcode-config-types" }
@@ -253,7 +256,7 @@ jcode-plan = { path = "crates/jcode-plan" }
 jcode-protocol = { path = "crates/jcode-protocol" }
 jcode-selfdev-types = { path = "crates/jcode-selfdev-types" }
 jcode-session-types = { path = "crates/jcode-session-types" }
-jcode-side-panel-types = { path = "crates/jcode-side-panel-types" }
+jcode-setup-hints = { path = "crates/jcode-setup-hints" }
 jcode-storage = { path = "crates/jcode-storage" }
 jcode-swarm-core = { path = "crates/jcode-swarm-core" }
 jcode-task-types = { path = "crates/jcode-task-types" }

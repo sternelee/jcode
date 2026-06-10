@@ -18,12 +18,12 @@ pub use crash::{
     CrashedSessionsInfo, detect_crashed_sessions, find_recent_crashed_sessions,
     find_session_by_name_or_id, recover_crashed_sessions, recover_crashed_sessions_by_ids,
 };
-pub use maintenance::prune_old_session_backups;
 pub use jcode_session_types::{
     EnvSnapshot, GitState, SessionImproveMode, SessionStatus, StoredCompactionState,
     StoredDisplayRole, StoredMemoryInjection, StoredMessage, StoredTokenUsage,
 };
 use journal::{PersistVectorMode, SessionJournalMeta, SessionPersistState};
+pub use maintenance::prune_old_session_backups;
 pub use memory_profile::SessionMemoryProfileSnapshot;
 use memory_profile::{
     ContentBlockMemoryStats, SessionMemoryProfileCache, summarize_blocks, summarize_message_content,
@@ -1176,6 +1176,30 @@ impl Session {
             self.mark_memory_profile_dirty();
             self.mark_messages_full_dirty();
         }
+    }
+
+    /// Drop oversized inline images from the stored transcript, oldest-first,
+    /// until the total remaining base64 image payload fits within
+    /// `target_total_chars`. Used to recover from provider HTTP 413
+    /// "request too large" errors, which are driven by base64 image payload size
+    /// rather than the token context window.
+    ///
+    /// Mutates and persists the authoritative transcript (replacing each dropped
+    /// image with a short text marker) and invalidates the provider-message
+    /// cache so the next API call reflects the reduced payload. Returns the
+    /// number of images that were stripped.
+    pub fn strip_oversized_images(&mut self, target_total_chars: usize) -> usize {
+        let mut contents: Vec<&mut Vec<ContentBlock>> =
+            self.messages.iter_mut().map(|m| &mut m.content).collect();
+        let stripped = jcode_compaction_core::strip_large_images_in_contents(
+            &mut contents,
+            target_total_chars,
+        );
+        if stripped > 0 {
+            self.mark_memory_profile_dirty();
+            self.mark_messages_full_dirty();
+        }
+        stripped
     }
 
     pub fn visible_conversation_message_count(&self) -> usize {

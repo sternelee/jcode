@@ -18,7 +18,9 @@ fn test_prepare_messages_live_batch_rows_do_not_soft_wrap_on_narrow_width() {
                 input: serde_json::json!({
                     "command": "cargo test --package jcode --lib tui::ui::tests::render_tool_message_batch_rows_do_not_soft_wrap_on_narrow_width -- --nocapture"
                 }),
-                intent: None, thought_signature: None, }],
+                intent: None,
+                thought_signature: None,
+            }],
             subcalls: vec![crate::bus::BatchSubcallProgress {
                 index: 1,
                 tool_call: ToolCall {
@@ -27,7 +29,9 @@ fn test_prepare_messages_live_batch_rows_do_not_soft_wrap_on_narrow_width() {
                     input: serde_json::json!({
                         "command": "cargo test --package jcode --lib tui::ui::tests::render_tool_message_batch_rows_do_not_soft_wrap_on_narrow_width -- --nocapture"
                     }),
-                    intent: None, thought_signature: None, },
+                    intent: None,
+                    thought_signature: None,
+                },
                 state: crate::bus::BatchSubcallState::Running,
             }],
         }),
@@ -75,7 +79,9 @@ fn test_prepare_messages_centered_live_batch_rows_keep_dedicated_padding_span() 
                 input: serde_json::json!({
                     "command": "cargo test --package jcode --lib tui::ui::tests::render_tool_message_batch_rows_do_not_soft_wrap_on_narrow_width -- --nocapture --exact with-extra-flags-and-output-to-stretch-the-line"
                 }),
-                intent: None, thought_signature: None, }],
+                intent: None,
+                thought_signature: None,
+            }],
             subcalls: vec![crate::bus::BatchSubcallProgress {
                 index: 1,
                 tool_call: ToolCall {
@@ -84,7 +90,9 @@ fn test_prepare_messages_centered_live_batch_rows_keep_dedicated_padding_span() 
                     input: serde_json::json!({
                         "command": "cargo test --package jcode --lib tui::ui::tests::render_tool_message_batch_rows_do_not_soft_wrap_on_narrow_width -- --nocapture --exact with-extra-flags-and-output-to-stretch-the-line"
                     }),
-                    intent: None, thought_signature: None, },
+                    intent: None,
+                    thought_signature: None,
+                },
                 state: crate::bus::BatchSubcallState::Running,
             }],
         }),
@@ -140,7 +148,9 @@ fn test_prepare_messages_shows_live_batch_progress_in_chat_history() {
                 id: "batch-2-bash".to_string(),
                 name: "bash".to_string(),
                 input: serde_json::json!({"command": "cargo build --release --workspace"}),
-                intent: None, thought_signature: None, }],
+                intent: None,
+                thought_signature: None,
+            }],
             subcalls: vec![
                 crate::bus::BatchSubcallProgress {
                     index: 1,
@@ -148,7 +158,9 @@ fn test_prepare_messages_shows_live_batch_progress_in_chat_history() {
                         id: "batch-1-read".to_string(),
                         name: "read".to_string(),
                         input: serde_json::json!({"file_path": "Cargo.toml"}),
-                        intent: None, thought_signature: None, },
+                        intent: None,
+                        thought_signature: None,
+                    },
                     state: crate::bus::BatchSubcallState::Succeeded,
                 },
                 crate::bus::BatchSubcallProgress {
@@ -157,7 +169,9 @@ fn test_prepare_messages_shows_live_batch_progress_in_chat_history() {
                         id: "batch-2-bash".to_string(),
                         name: "bash".to_string(),
                         input: serde_json::json!({"command": "cargo build --release --workspace"}),
-                        intent: None, thought_signature: None, },
+                        intent: None,
+                        thought_signature: None,
+                    },
                     state: crate::bus::BatchSubcallState::Running,
                 },
             ],
@@ -221,14 +235,18 @@ fn test_prepare_messages_places_live_batch_after_committed_assistant_text() {
                 id: "batch-1-read".to_string(),
                 name: "read".to_string(),
                 input: serde_json::json!({"file_path": "src/main.rs"}),
-                intent: None, thought_signature: None, }],
+                intent: None,
+                thought_signature: None,
+            }],
             subcalls: vec![crate::bus::BatchSubcallProgress {
                 index: 1,
                 tool_call: ToolCall {
                     id: "batch-1-read".to_string(),
                     name: "read".to_string(),
                     input: serde_json::json!({"file_path": "src/main.rs"}),
-                    intent: None, thought_signature: None, },
+                    intent: None,
+                    thought_signature: None,
+                },
                 state: crate::bus::BatchSubcallState::Running,
             }],
         }),
@@ -270,14 +288,18 @@ fn test_prepare_messages_live_batch_spinner_advances_between_frames() {
             id: "batch-1-bash".to_string(),
             name: "bash".to_string(),
             input: serde_json::json!({"command": "sleep 1"}),
-            intent: None, thought_signature: None, }],
+            intent: None,
+            thought_signature: None,
+        }],
         subcalls: vec![crate::bus::BatchSubcallProgress {
             index: 1,
             tool_call: ToolCall {
                 id: "batch-1-bash".to_string(),
                 name: "bash".to_string(),
                 input: serde_json::json!({"command": "sleep 1"}),
-                intent: None, thought_signature: None, },
+                intent: None,
+                thought_signature: None,
+            },
             state: crate::bus::BatchSubcallState::Running,
         }],
     };
@@ -342,14 +364,18 @@ fn test_prepare_messages_live_batch_centered_mode_uses_left_aligned_padding() {
                 id: "batch-1-read".to_string(),
                 name: "read".to_string(),
                 input: serde_json::json!({"file_path": "Cargo.toml"}),
-                intent: None, thought_signature: None, }],
+                intent: None,
+                thought_signature: None,
+            }],
             subcalls: vec![crate::bus::BatchSubcallProgress {
                 index: 1,
                 tool_call: ToolCall {
                     id: "batch-1-read".to_string(),
                     name: "read".to_string(),
                     input: serde_json::json!({"file_path": "Cargo.toml"}),
-                    intent: None, thought_signature: None, },
+                    intent: None,
+                    thought_signature: None,
+                },
                 state: crate::bus::BatchSubcallState::Running,
             }],
         }),
@@ -462,7 +488,9 @@ fn test_prepare_messages_tool_row_refreshes_after_message_version_bump() {
         id: "tool-1".to_string(),
         name: "read".to_string(),
         input: serde_json::json!({"file_path": "src/main.rs"}),
-        intent: None, thought_signature: None, };
+        intent: None,
+        thought_signature: None,
+    };
 
     let placeholder = DisplayMessage {
         role: "tool".to_string(),
@@ -637,7 +665,9 @@ fn test_render_tool_message_batch_nested_subcall_params_still_render() {
                     {"tool": "grep", "parameters": {"pattern": "TODO", "path": "src"}}
                 ]
             }),
-            intent: None, thought_signature: None, }),
+            intent: None,
+            thought_signature: None,
+        }),
     };
 
     let lines = render_tool_message(&msg, 120, crate::config::DiffDisplayMode::Off);
@@ -672,7 +702,9 @@ fn test_render_tool_message_batch_flat_grep_subcall_uses_pattern_and_path() {
                     {"tool": "grep", "pattern": "TODO", "path": "src"}
                 ]
             }),
-            intent: None, thought_signature: None, }),
+            intent: None,
+            thought_signature: None,
+        }),
     };
 
     let lines = render_tool_message(&msg, 120, crate::config::DiffDisplayMode::Off);
@@ -709,7 +741,9 @@ fn test_render_tool_message_batch_subcall_lines_alignment_unset() {
                     {"tool": "grep", "pattern": "TODO", "path": "src"}
                 ]
             }),
-            intent: None, thought_signature: None, }),
+            intent: None,
+            thought_signature: None,
+        }),
     };
 
     // In non-centered mode, lines have no alignment set
@@ -746,8 +780,12 @@ fn test_prepare_messages_renders_reasoning_role_dim_italic_without_sentinel() {
 
     // A collapsing reasoning message carries sentinel-wrapped dim/italic markup.
     let mut content = String::new();
-    content.push_str(&jcode_tui_markdown::reasoning_line_markup("weighing the options"));
-    content.push_str(&jcode_tui_markdown::reasoning_line_markup("▸ thought for 3s"));
+    content.push_str(&jcode_tui_markdown::reasoning_line_markup(
+        "weighing the options",
+    ));
+    content.push_str(&jcode_tui_markdown::reasoning_line_markup(
+        "▸ thought for 3s",
+    ));
 
     let state = TestState {
         display_messages: vec![
@@ -794,4 +832,90 @@ fn test_prepare_messages_renders_reasoning_role_dim_italic_without_sentinel() {
         }),
         "summary line should render"
     );
+}
+
+#[test]
+fn test_prepare_messages_renders_retained_reasoning_section_above_stream() {
+    let _guard = crate::storage::lock_test_env();
+    clear_test_render_state_for_tests();
+
+    let mut retained = String::new();
+    retained.push_str(&jcode_tui_markdown::reasoning_line_markup("retained thinking"));
+
+    let state = TestState {
+        display_messages: vec![DisplayMessage::user("hi")],
+        streaming_text: "Answer body".to_string(),
+        status: ProcessingStatus::Streaming,
+        reasoning_retained: Some(retained),
+        ..Default::default()
+    };
+
+    let prepared = prepare::prepare_messages(&state, 100, 30);
+    let lines = prepared.materialize_all_lines();
+    let joined: Vec<String> = lines
+        .iter()
+        .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+        .collect();
+
+    let reasoning_idx = joined
+        .iter()
+        .position(|l| l.contains("retained thinking"))
+        .expect("retained reasoning rendered");
+    let answer_idx = joined
+        .iter()
+        .position(|l| l.contains("Answer body"))
+        .expect("answer rendered");
+    assert!(
+        reasoning_idx < answer_idx,
+        "retained reasoning must render above the live stream: {joined:?}"
+    );
+    // Sentinel is stripped from the visible reasoning text.
+    assert!(
+        !joined[reasoning_idx].contains(jcode_tui_markdown::REASONING_SENTINEL),
+        "sentinel must be stripped: {:?}",
+        joined[reasoning_idx]
+    );
+}
+
+#[test]
+fn test_collapsing_reasoning_shrinks_to_fewer_rows_as_progress_advances() {
+    let _guard = crate::storage::lock_test_env();
+    clear_test_render_state_for_tests();
+
+    // A multi-line collapsing trace shrinks vertically: more progress -> fewer
+    // visible rows, reaching zero at progress 1.0.
+    let mut markup = String::new();
+    for i in 0..6 {
+        markup.push_str(&jcode_tui_markdown::reasoning_line_markup(&format!(
+            "collapsing line {i}"
+        )));
+    }
+
+    let count_visible = |progress: f32| -> usize {
+        clear_test_render_state_for_tests();
+        let state = TestState {
+            display_messages: vec![DisplayMessage::user("hi")],
+            reasoning_collapse: Some((markup.clone(), progress)),
+            ..Default::default()
+        };
+        let prepared = prepare::prepare_messages(&state, 100, 40);
+        prepared
+            .materialize_all_lines()
+            .iter()
+            .filter(|l| {
+                let joined: String = l.spans.iter().map(|s| s.content.as_ref()).collect();
+                joined.contains("collapsing line")
+            })
+            .count()
+    };
+
+    let early = count_visible(0.0);
+    let mid = count_visible(0.5);
+    let done = count_visible(1.0);
+    assert!(early > 0, "trace should be visible at progress 0.0");
+    assert!(
+        mid < early,
+        "trace should shrink as it collapses: early={early} mid={mid}"
+    );
+    assert_eq!(done, 0, "trace must be fully gone at progress 1.0");
 }

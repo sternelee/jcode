@@ -176,23 +176,39 @@ pub(super) fn compute_visible_margins(
                 used = used.saturating_add(1).min(area.width);
             }
 
+            // Compute the true free space on each side from the line's *rendered*
+            // alignment. This matters even in left-aligned mode: the header lines
+            // (`server:`/`client:`/model/version, auth status, mcp list, changelog
+            // box, etc.) are always centered regardless of mode, so a centered line
+            // of width `used` leaves only ~half the slack on the right. Reporting
+            // the full `area.width - used` here would let a right-side info widget
+            // overlap the centered header text.
+            let total_margin = area.width.saturating_sub(used);
+            let default_alignment = if centered {
+                Alignment::Center
+            } else {
+                Alignment::Left
+            };
+            let effective_alignment = lines[row].alignment.unwrap_or(default_alignment);
+            let (left_margin, right_margin) = match effective_alignment {
+                Alignment::Left => (0, total_margin),
+                Alignment::Center => {
+                    let left = total_margin / 2;
+                    let right = total_margin.saturating_sub(left);
+                    (left, right)
+                }
+                Alignment::Right => (total_margin, 0),
+            };
+
             if centered {
-                let total_margin = area.width.saturating_sub(used);
-                let effective_alignment = lines[row].alignment.unwrap_or(Alignment::Center);
-                let (left_margin, right_margin) = match effective_alignment {
-                    Alignment::Left => (0, total_margin),
-                    Alignment::Center => {
-                        let left = total_margin / 2;
-                        let right = total_margin.saturating_sub(left);
-                        (left, right)
-                    }
-                    Alignment::Right => (total_margin, 0),
-                };
                 left_widths.push(left_margin);
                 right_widths.push(right_margin);
             } else {
+                // Left-aligned mode never places left-side widgets (content is
+                // flush-left), so the left gap is reported as 0; the right gap
+                // still respects per-line alignment so widgets clear the header.
                 left_widths.push(0);
-                right_widths.push(area.width.saturating_sub(used));
+                right_widths.push(right_margin);
             }
         } else if centered {
             let half = area.width / 2;
@@ -208,6 +224,7 @@ pub(super) fn compute_visible_margins(
         right_widths,
         left_widths,
         centered,
+        ..Default::default()
     }
 }
 
@@ -267,12 +284,27 @@ pub(super) fn draw_messages(
     super::set_last_max_scroll(max_scroll);
     update_user_prompt_positions(wrapped_user_prompt_starts);
 
+    // When older compacted history is being loaded in, the app hands us the
+    // reader's distance-from-bottom instead of an absolute offset. Distance from
+    // the bottom is invariant under a top-side prepend, so resolving it against
+    // the *current* total keeps the same content under the reader and the load
+    // is seamless (no jump to the new absolute top).
+    let anchored_scroll = app
+        .pending_history_anchor_lines_from_bottom()
+        .map(|lines_from_bottom| total_lines.saturating_sub(lines_from_bottom).min(max_scroll));
     let user_scroll = app.scroll_offset().min(max_scroll);
-    let scroll = if app.auto_scroll_paused() {
+    let scroll = if let Some(anchored) = anchored_scroll {
+        anchored
+    } else if app.auto_scroll_paused() {
         user_scroll.min(max_scroll)
     } else {
         max_scroll
     };
+
+    // Publish the resolved geometry so scroll handlers and the anchor-reconcile
+    // tick can adopt the exact on-screen position after a prepend.
+    super::set_last_total_wrapped_lines(total_lines);
+    super::set_last_resolved_chat_scroll(scroll);
 
     let prompt_preview_lines = if crate::config::config().display.prompt_preview && scroll > 0 {
         compute_prompt_preview_line_count(
@@ -349,6 +381,15 @@ pub(super) fn draw_messages(
         right_widths: vec![0; prompt_preview_lines as usize],
         left_widths: vec![0; prompt_preview_lines as usize],
         centered: content_margins.centered,
+        // Bind row `r` of the margin to transcript line `scroll_top + r` so a
+        // content-anchored info widget rides the transcript while the user scrolls
+        // instead of churning against a fixed screen row. The prompt-preview band at
+        // the top is synthetic (not part of the scrolled transcript), so offset by it
+        // to keep the content rows aligned. While pinned at the bottom (auto-follow),
+        // widgets stay screen-anchored as before.
+        scroll_top: scroll.saturating_sub(prompt_preview_lines as usize),
+        content_anchored: app.auto_scroll_paused(),
+        ..Default::default()
     };
     margins
         .right_widths
@@ -688,6 +729,13 @@ pub(super) fn draw_messages(
             let hash = region.hash;
             let total_height = region.height;
             let image_end = region.end_line;
+            let is_fit = region.render == jcode_tui_messages::ImageRegionRender::Fit;
+
+            // Inline raster images are materialized lazily: only decode + cache
+            // the ones actually on screen this frame.
+            if is_fit && image_end > scroll && abs_idx < visible_end {
+                super::inline_image_ui::materialize_visible(hash);
+            }
 
             if image_end > scroll && abs_idx < visible_end {
                 let marker_visible = abs_idx >= scroll && abs_idx < visible_end;
@@ -704,14 +752,26 @@ pub(super) fn draw_messages(
                             width: content_area.width,
                             height: render_height,
                         };
-                        let rows = crate::tui::mermaid::render_image_widget(
-                            hash,
-                            image_area,
-                            frame.buffer_mut(),
-                            centered,
-                            false,
-                        );
-                        if rows == 0 {
+                        let rows = if is_fit {
+                            // Scale-to-fit with a left border bar, so resizes and
+                            // font-metric mismatches never slice the image.
+                            crate::tui::mermaid::render_image_widget_fit(
+                                hash,
+                                image_area,
+                                frame.buffer_mut(),
+                                centered,
+                                true,
+                            )
+                        } else {
+                            crate::tui::mermaid::render_image_widget(
+                                hash,
+                                image_area,
+                                frame.buffer_mut(),
+                                centered,
+                                false,
+                            )
+                        };
+                        if rows == 0 && !is_fit {
                             frame.render_widget(
                                 Paragraph::new(Line::from(Span::styled(
                                     "↗ mermaid diagram unavailable",
@@ -734,13 +794,25 @@ pub(super) fn draw_messages(
                             width: content_area.width,
                             height: render_height,
                         };
-                        crate::tui::mermaid::render_image_widget(
-                            hash,
-                            image_area,
-                            frame.buffer_mut(),
-                            centered,
-                            true,
-                        );
+                        if is_fit {
+                            // Top scrolled off: scale-to-fit into the visible
+                            // portion rather than cropping arbitrarily.
+                            crate::tui::mermaid::render_image_widget_fit(
+                                hash,
+                                image_area,
+                                frame.buffer_mut(),
+                                centered,
+                                true,
+                            );
+                        } else {
+                            crate::tui::mermaid::render_image_widget(
+                                hash,
+                                image_area,
+                                frame.buffer_mut(),
+                                centered,
+                                true,
+                            );
+                        }
                     }
                 }
             }
@@ -883,7 +955,40 @@ pub(super) fn draw_messages(
         );
     }
 
+    // Derive the look-ahead "reliable" width profile that gates where *new* info
+    // widgets may dock, so a freshly placed widget won't be covered by a wide line
+    // one scroll line later. We use a small windowed minimum over the assembled
+    // per-row free widths (the rows already on screen above/below each candidate
+    // row), which keeps it cheap and needs no off-screen line materialization.
+    // Pinned widgets still size to the instantaneous widths for full coverage.
+    margins.right_reliable = windowed_min(&margins.right_widths, INFO_WIDGET_LOOKAHEAD_ROWS);
+    if margins.centered {
+        margins.left_reliable = windowed_min(&margins.left_widths, INFO_WIDGET_LOOKAHEAD_ROWS);
+    }
+
     margins
+}
+
+/// Look-ahead window (in rows) used to compute the "reliable" margin profile that
+/// gates where new info widgets may dock. Small by design: it only needs to cover
+/// the distance content travels in the few frames between a widget being placed and
+/// a nearby long line scrolling into its rows.
+const INFO_WIDGET_LOOKAHEAD_ROWS: usize = 2;
+
+/// Per-index minimum over `[i-window, i+window]`. Returns an empty vec for empty
+/// input (callers treat empty reliable profiles as "no look-ahead").
+fn windowed_min(widths: &[u16], window: usize) -> Vec<u16> {
+    if widths.is_empty() {
+        return Vec::new();
+    }
+    let n = widths.len();
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let lo = i.saturating_sub(window);
+        let hi = (i + window).min(n - 1);
+        out.push(widths[lo..=hi].iter().copied().min().unwrap_or(0));
+    }
+    out
 }
 
 fn compute_prompt_preview_line_count(

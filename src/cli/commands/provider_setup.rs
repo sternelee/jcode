@@ -178,6 +178,7 @@ pub fn configure_provider_profile(options: ProviderAddOptions) -> Result<Provide
             context_window: options.context_window,
             input: Vec::new(),
         }],
+        extra_body: None,
     };
 
     let config_path = Config::path().ok_or_else(|| anyhow::anyhow!("No config path"))?;

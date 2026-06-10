@@ -820,10 +820,7 @@ async fn handle_remote_key_internal(
                         app.push_display_message(DisplayMessage::system(
                             "Reloading client with newer binary...".to_string(),
                         ));
-                        let session_id = app
-                            .remote_session_id
-                            .clone()
-                            .unwrap_or_else(|| crate::id::new_id("ses"));
+                        let session_id = app.reload_handoff_session_id();
                         app.save_input_for_reload(&session_id);
                         app.reload_requested = Some(session_id);
                         app.should_quit = true;
@@ -835,10 +832,7 @@ async fn handle_remote_key_internal(
                     app.push_display_message(DisplayMessage::system(
                         "Reloading client...".to_string(),
                     ));
-                    let session_id = app
-                        .remote_session_id
-                        .clone()
-                        .unwrap_or_else(|| crate::id::new_id("ses"));
+                    let session_id = app.reload_handoff_session_id();
                     app.save_input_for_reload(&session_id);
                     app.reload_requested = Some(session_id);
                     app.should_quit = true;
@@ -848,6 +842,23 @@ async fn handle_remote_key_internal(
                 if trimmed == "/server-reload" {
                     app.append_reload_message("Reloading server...");
                     remote.reload().await?;
+                    return Ok(());
+                }
+
+                if trimmed == "/continue" || trimmed == "/resumeall" || trimmed == "/resume-all" {
+                    app.push_display_message(DisplayMessage::system(
+                        "Continuing all interrupted sessions...".to_string(),
+                    ));
+                    match remote.resume_all_sessions().await {
+                        Ok(_) => app.set_status_notice("Continuing interrupted sessions..."),
+                        Err(error) => {
+                            app.push_display_message(DisplayMessage::error(format!(
+                                "Failed to continue sessions: {}",
+                                error
+                            )));
+                            app.set_status_notice("Continue all failed");
+                        }
+                    }
                     return Ok(());
                 }
 
@@ -1750,29 +1761,39 @@ async fn handle_remote_key_internal(
                     return Ok(());
                 }
 
-                if trimmed == "/commit" {
-                    let prompt = app_mod::commands::build_commit_prompt();
+                if trimmed == "/commit" || trimmed == "/commit-push" || trimmed == "/commit-and-push"
+                {
+                    let is_push = trimmed != "/commit";
+                    let prompt = if is_push {
+                        app_mod::commands::build_commit_push_prompt()
+                    } else {
+                        app_mod::commands::build_commit_prompt()
+                    };
+                    let launch_notice = |interrupted: bool| {
+                        if is_push {
+                            app_mod::commands::commit_push_launch_notice(interrupted)
+                        } else {
+                            app_mod::commands::commit_launch_notice(interrupted)
+                        }
+                    };
+                    let cmd_label = if is_push { "/commit-push" } else { "/commit" };
                     if app.is_processing {
-                        app.push_display_message(DisplayMessage::system(
-                            app_mod::commands::commit_launch_notice(true),
-                        ));
+                        app.push_display_message(DisplayMessage::system(launch_notice(true)));
                         match remote.soft_interrupt(prompt.clone(), false).await {
                             Ok(request_id) => {
                                 app.track_pending_soft_interrupt(request_id, prompt);
-                                app.set_status_notice("Interrupting for /commit...");
+                                app.set_status_notice(format!("Interrupting for {}...", cmd_label));
                             }
                             Err(error) => {
                                 app.push_display_message(DisplayMessage::error(format!(
-                                    "Failed to start /commit: {}",
-                                    error
+                                    "Failed to start {}: {}",
+                                    cmd_label, error
                                 )));
-                                app.set_status_notice("/commit failed");
+                                app.set_status_notice(format!("{} failed", cmd_label));
                             }
                         }
                     } else {
-                        app.push_display_message(DisplayMessage::system(
-                            app_mod::commands::commit_launch_notice(false),
-                        ));
+                        app.push_display_message(DisplayMessage::system(launch_notice(false)));
                         input_dispatch::begin_remote_send(
                             app,
                             remote,

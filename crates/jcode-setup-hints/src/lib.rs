@@ -8,7 +8,7 @@
 //! Each nudge can be dismissed permanently with "Don't ask again".
 //! State is persisted in `~/.jcode/setup_hints.json`.
 
-use crate::storage;
+use jcode_storage as storage;
 #[cfg(target_os = "macos")]
 use anyhow::Context;
 use anyhow::Result;
@@ -39,6 +39,7 @@ use windows_setup::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct SetupHintsState {
     pub launch_count: u64,
     pub hotkey_configured: bool,
@@ -120,10 +121,24 @@ impl SetupHintsState {
     }
 
     pub fn load() -> Self {
-        Self::path()
-            .ok()
-            .and_then(|p| storage::read_json(&p).ok())
-            .unwrap_or_default()
+        let Ok(path) = Self::path() else {
+            return Self::default();
+        };
+        Self::load_from(&path)
+    }
+
+    /// Load state from `path`, falling back to its `.bak` sibling.
+    ///
+    /// The atomic writer keeps the previous version at `.bak`. If the primary
+    /// file is missing or unreadable (deleted, interrupted swap), fall back to
+    /// it instead of silently resetting state like `launch_count`, which
+    /// downstream heuristics (e.g. first-run onboarding) rely on.
+    fn load_from(path: &std::path::Path) -> Self {
+        if let Ok(state) = storage::read_json(path) {
+            return state;
+        }
+        let bak = path.with_extension("bak");
+        storage::read_json(&bak).unwrap_or_default()
     }
 
     pub fn save(&self) -> Result<()> {
@@ -284,7 +299,7 @@ fn startup_hints_for_launch(state: &SetupHintsState) -> Option<StartupHints> {
     }
 
     if state.launch_count <= 3 {
-        let config_path = crate::config::Config::path()
+        let config_path = storage::jcode_dir().ok().map(|d| d.join("config.toml"))
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "~/.jcode/config.toml".to_string());
 
@@ -394,7 +409,7 @@ pub fn run_setup_hotkey(_listen_macos_hotkey: bool) -> Result<()> {
                     "  Press \x1b[1mCmd+;\x1b[0m anywhere, system-wide, to launch a new jcode in {}.",
                     installed_terminal.label()
                 );
-                Ok(())
+                return Ok(());
             }
             Err(e) => {
                 eprintln!("  \x1b[31m✗\x1b[0m Failed: {}", e);
@@ -530,7 +545,7 @@ fn run_macos_hotkey_listener() -> Result<()> {
     // The listener runs as its own launchd process and never goes through the
     // normal startup path, so initialize logging here. Diagnostics land in the
     // standard jcode log plus the plist's StandardOut/ErrorPath.
-    crate::logging::init();
+    jcode_logging::init();
     macos_hotkey_log("starting macOS Cmd+; hotkey listener");
 
     let status = macos_run_loop::promote_to_ui_element();
@@ -578,7 +593,7 @@ fn run_macos_hotkey_listener() -> Result<()> {
 /// even before/without the structured logger.
 #[cfg(target_os = "macos")]
 fn macos_hotkey_log(message: &str) {
-    crate::logging::info(message);
+    jcode_logging::info(message);
     eprintln!("[jcode hotkey] {message}");
 }
 
@@ -636,7 +651,7 @@ pub fn maybe_show_setup_hints() -> Option<StartupHints> {
         match mac_hotkey_action_for_state(&state) {
             MacHotkeyAction::Install => {
                 if let Err(err) = auto_install_macos_hotkey_listener(&mut state) {
-                    crate::logging::warn(&format!(
+                    jcode_logging::warn(&format!(
                         "failed to auto-install macOS Cmd+; hotkey listener: {err}"
                     ));
                 }
@@ -646,7 +661,7 @@ pub fn maybe_show_setup_hints() -> Option<StartupHints> {
                 // updated listener (and current binary path) takes effect on
                 // update without requiring them to re-run setup.
                 if let Err(err) = migrate_macos_hotkey_listener(&mut state) {
-                    crate::logging::warn(&format!(
+                    jcode_logging::warn(&format!(
                         "failed to migrate macOS Cmd+; hotkey listener: {err}"
                     ));
                 }
@@ -671,7 +686,7 @@ pub fn maybe_show_setup_hints() -> Option<StartupHints> {
 
     #[cfg(target_os = "macos")]
     {
-        if !state.launch_count.is_multiple_of(3) {
+        if state.launch_count % 3 != 0 {
             return startup_hints;
         }
 
@@ -690,7 +705,7 @@ pub fn maybe_show_setup_hints() -> Option<StartupHints> {
             return nudge_macos_ghostty(&mut state);
         }
 
-        startup_hints
+        return startup_hints;
     }
 
     #[cfg(windows)]
@@ -726,7 +741,7 @@ pub fn run_setup_launcher() -> Result<()> {
                 );
                 eprintln!();
                 eprintln!("  Tip: pin Jcode.app to your Dock or launch it with Cmd+Space.");
-                Ok(())
+                return Ok(());
             }
             Err(e) => {
                 eprintln!("  \x1b[31m✗\x1b[0m Failed: {}", e);
@@ -759,7 +774,7 @@ fn create_desktop_shortcut(state: &mut SetupHintsState) -> Result<()> {
         state.desktop_shortcut_created = true;
         let _ = state.save();
 
-        crate::logging::info(&format!("Created macOS app bundle: {}", app_dir.display()));
+        jcode_logging::info(&format!("Created macOS app bundle: {}", app_dir.display()));
     }
 
     #[cfg(not(any(windows, target_os = "macos")))]
@@ -778,7 +793,7 @@ fn auto_install_macos_hotkey_listener(state: &mut SetupHintsState) -> Result<()>
     state.hotkey_dismissed = true;
     state.hotkey_listener_version = HOTKEY_LISTENER_VERSION;
     state.save()?;
-    crate::logging::info(&format!(
+    jcode_logging::info(&format!(
         "Installed macOS Cmd+; hotkey listener for {}",
         terminal.label()
     ));
@@ -799,7 +814,7 @@ fn migrate_macos_hotkey_listener(state: &mut SetupHintsState) -> Result<()> {
     let terminal = install_macos_hotkey_listener(preferred)?;
     state.hotkey_listener_version = HOTKEY_LISTENER_VERSION;
     state.save()?;
-    crate::logging::info(&format!(
+    jcode_logging::info(&format!(
         "Migrated macOS Cmd+; hotkey listener to v{} for {}",
         HOTKEY_LISTENER_VERSION,
         terminal.label()

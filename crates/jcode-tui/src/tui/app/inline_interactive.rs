@@ -1197,7 +1197,9 @@ impl App {
                     ("remote", self.is_remote.to_string()),
                     (
                         "simplified",
-                        crate::perf::tui_policy().simplified_model_picker.to_string(),
+                        crate::perf::tui_policy()
+                            .simplified_model_picker
+                            .to_string(),
                     ),
                     ("routes_in", routes.len().to_string()),
                     ("models", model_order.len().to_string()),
@@ -1457,7 +1459,7 @@ impl App {
             return Ok(false);
         }
         let is_default =
-            modifiers.contains(KeyModifiers::CONTROL) && key_char_eq_ignore_ascii_case(code, 'd');
+            modifiers.contains(KeyModifiers::CONTROL) && key_char_eq_ignore_ascii_case(code, 'b');
         let is_favorite =
             modifiers.contains(KeyModifiers::CONTROL) && key_char_eq_ignore_ascii_case(code, 'f');
         let is_cycle_favorite =
@@ -1610,7 +1612,8 @@ impl App {
     }
 
     pub(super) fn open_session_picker(&mut self) {
-        let (picker, status) = if let Some((server_groups, orphan_sessions)) =
+        let current_dir = self.session.working_dir.clone();
+        let (mut picker, status) = if let Some((server_groups, orphan_sessions)) =
             session_picker::load_cached_sessions_grouped()
         {
             (
@@ -1620,6 +1623,7 @@ impl App {
         } else {
             (SessionPicker::loading(), "Loading sessions...")
         };
+        picker.set_current_dir(current_dir);
         self.session_picker_overlay = Some(RefCell::new(picker));
         self.session_picker_mode = SessionPickerMode::Resume;
         self.set_status_notice(status);
@@ -1644,9 +1648,42 @@ impl App {
         server_groups: Vec<session_picker::ServerGroup>,
         orphan_sessions: Vec<session_picker::SessionInfo>,
     ) -> bool {
+        // When a picker overlay is already on screen (the common case: the cached
+        // list rendered instantly and this is the async full-refresh landing),
+        // reseed it in place so the user's selection, scroll, search, focus, and
+        // multi-select survive the swap. Rebuilding a fresh picker here used to
+        // yank the view out from under the user a second or two after they opened
+        // `/resume`, which felt like a lag/jump.
+        let has_overlay = self.session_picker_overlay.is_some();
+        if has_overlay {
+            let notice = match self.session_picker_mode {
+                SessionPickerMode::Resume => {
+                    if let Some(existing) = self.session_picker_overlay.as_ref() {
+                        existing
+                            .borrow_mut()
+                            .reseed_grouped(server_groups, orphan_sessions);
+                    }
+                    "Sessions loaded"
+                }
+                SessionPickerMode::CatchUp => {
+                    if let Some(existing) = self.session_picker_overlay.as_ref() {
+                        let mut picker = existing.borrow_mut();
+                        // Keep the catch-up filter active; reseed preserves it.
+                        picker.activate_catchup_filter();
+                        picker.reseed_grouped(server_groups, orphan_sessions);
+                    }
+                    "Catch Up sessions loaded"
+                }
+                SessionPickerMode::Onboarding { .. } => return false,
+            };
+            self.set_status_notice(notice);
+            return true;
+        }
+
         match self.session_picker_mode {
             SessionPickerMode::Resume => {
-                let picker = SessionPicker::new_grouped(server_groups, orphan_sessions);
+                let mut picker = SessionPicker::new_grouped(server_groups, orphan_sessions);
+                picker.set_current_dir(self.session.working_dir.clone());
                 self.session_picker_overlay = Some(RefCell::new(picker));
                 self.set_status_notice("Sessions loaded");
                 true
@@ -1654,6 +1691,7 @@ impl App {
             SessionPickerMode::CatchUp => {
                 let mut picker = SessionPicker::new_grouped(server_groups, orphan_sessions);
                 picker.activate_catchup_filter();
+                picker.set_current_dir(self.session.working_dir.clone());
                 self.session_picker_overlay = Some(RefCell::new(picker));
                 self.set_status_notice("Catch Up sessions loaded");
                 true
@@ -2359,7 +2397,7 @@ impl App {
                 }
             }
             code if modifiers.contains(KeyModifiers::CONTROL)
-                && key_char_eq_ignore_ascii_case(code, 'd') =>
+                && key_char_eq_ignore_ascii_case(code, 'b') =>
             {
                 if let Some(ref picker) = self.inline_interactive_state {
                     if !picker_is_runtime_model_picker(picker) {
@@ -2629,10 +2667,7 @@ impl App {
                                             ("spec", spec.clone()),
                                             ("active_model", active_model),
                                             ("provider", self.provider.name().to_string()),
-                                            (
-                                                "api_method",
-                                                route_selection.api_method.clone(),
-                                            ),
+                                            ("api_method", route_selection.api_method.clone()),
                                         ],
                                     );
                                 }
@@ -2642,10 +2677,7 @@ impl App {
                                         vec![
                                             ("spec", spec.clone()),
                                             ("provider", route.provider.clone()),
-                                            (
-                                                "api_method",
-                                                route_selection.api_method.clone(),
-                                            ),
+                                            ("api_method", route_selection.api_method.clone()),
                                             ("error", error.to_string()),
                                         ],
                                     );
@@ -3001,6 +3033,38 @@ mod tests {
             &copilot_route,
             Some("gpt-5.5"),
             Some("openai"),
+        ));
+    }
+
+    #[test]
+    fn model_picker_default_route_marks_anthropic_api_config_provider() {
+        // Regression: config `default_provider = "anthropic-api"` is the
+        // dual-auth spelling of the route keyed `anthropic-api-key`. The picker
+        // must still mark the Anthropic API-key route as the default ★ even
+        // though the two spellings normalize differently, and must NOT mark the
+        // OAuth route for the same model.
+        let api_route = picker_option_with_method("Anthropic", "anthropic-api-key");
+        let oauth_route = picker_option_with_method("Anthropic", "claude-oauth");
+
+        assert!(model_picker_route_is_default(
+            "claude-opus-4-8",
+            &api_route,
+            Some("claude-opus-4-8"),
+            Some("anthropic-api"),
+        ));
+        assert!(!model_picker_route_is_default(
+            "claude-opus-4-8",
+            &oauth_route,
+            Some("claude-opus-4-8"),
+            Some("anthropic-api"),
+        ));
+
+        // The equivalent `claude-api` spelling behaves identically.
+        assert!(model_picker_route_is_default(
+            "claude-opus-4-8",
+            &api_route,
+            Some("claude-opus-4-8"),
+            Some("claude-api"),
         ));
     }
 

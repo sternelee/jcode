@@ -417,6 +417,51 @@ fn test_scroll_down_past_bottom_does_not_accumulate_phantom_offset() {
 }
 
 #[test]
+fn test_scroll_acceleration_multiplier_scales_with_flick_speed() {
+    use std::time::Duration;
+    // A fast flick (short gap between wheel events) gets a subtle 2x boost; a
+    // slow, deliberate notch stays at 1x for precise positioning.
+    assert_eq!(App::scroll_acceleration_multiplier(Duration::from_millis(10)), 2);
+    assert_eq!(App::scroll_acceleration_multiplier(Duration::from_millis(100)), 1);
+    assert_eq!(App::scroll_acceleration_multiplier(Duration::from_millis(200)), 1);
+    assert_eq!(App::scroll_acceleration_multiplier(Duration::from_secs(5)), 1);
+}
+
+#[test]
+fn test_fast_flick_enqueues_more_lines_than_a_slow_notch() {
+    use std::time::Duration;
+    // "Scroll power": the lines committed per wheel notch scale with flick speed
+    // (shorter inter-event gap => bigger multiplier => more lines), capped so the
+    // hardest flick stays controllable. Shared by the chat and /resume preview.
+    let fast = App::scroll_intent_lines(App::scroll_acceleration_multiplier(Duration::from_millis(10)));
+    let slow =
+        App::scroll_intent_lines(App::scroll_acceleration_multiplier(Duration::from_millis(400)));
+    assert!(fast > slow, "a fast flick commits more lines than a slow notch ({fast} > {slow})");
+    assert_eq!(slow, 3, "a deliberate notch uses the base intent");
+    // Even a maximum-velocity multiplier stays within the controllable cap.
+    assert!(App::scroll_intent_lines(8) <= 5, "intent is capped");
+}
+
+#[test]
+fn test_momentum_drain_decelerates_to_one_line() {
+    // The drain rate eases out: a large queue glides several lines per frame,
+    // decelerating to a single line as it empties (natural momentum decay).
+    let mut app = create_test_app();
+    app.mouse_scroll_queue = 40;
+    let big = app.mouse_scroll_drain_amount();
+    app.mouse_scroll_queue = 4;
+    let small = app.mouse_scroll_drain_amount();
+    app.mouse_scroll_queue = 1;
+    let tail = app.mouse_scroll_drain_amount();
+    app.mouse_scroll_queue = 0;
+    let empty = app.mouse_scroll_drain_amount();
+
+    assert!(big > small, "large momentum should drain faster ({big} > {small})");
+    assert_eq!(tail, 1, "the last line should drain one at a time");
+    let _ = empty;
+}
+
+#[test]
 fn test_queued_wheel_down_at_bottom_does_not_accumulate_phantom_scroll() {
     // Touchpad/mouse momentum can queue many downward wheel steps. If they keep
     // "succeeding" against the already-pinned bottom, the queue (or offset) would
@@ -541,6 +586,231 @@ fn repro_ctrl_shift_jk_scroll_with_text_in_input() {
     assert_eq!(
         app.input, "",
         "plain Ctrl+K should still kill to end of line"
+    );
+}
+
+/// Build a long single-message app and seed the render statics so the
+/// history-anchor logic (which reads `last_total_wrapped_lines` /
+/// `last_resolved_chat_scroll`) has a populated frame to work against.
+fn anchor_test_app() -> (App, ratatui::Terminal<ratatui::backend::TestBackend>) {
+    create_scroll_test_app(80, 25, 0, 60)
+}
+
+#[test]
+fn test_history_anchor_keeps_distance_from_bottom_after_prepend() {
+    let _render_lock = scroll_render_test_lock();
+    let (mut app, mut terminal) = anchor_test_app();
+
+    // Render at a scrolled-up position so the statics reflect a real frame.
+    render_and_snap(&app, &mut terminal);
+    let total_before = crate::tui::ui::last_total_wrapped_lines();
+    assert!(total_before > 0, "expected a rendered transcript");
+
+    app.scroll_offset = 4;
+    app.auto_scroll_paused = true;
+    render_and_snap(&app, &mut terminal);
+    let total_before = crate::tui::ui::last_total_wrapped_lines();
+
+    // Simulate the reader sitting 4 lines from the top: capture an anchor as if a
+    // load were triggered, then "prepend" by growing the transcript.
+    app.capture_history_anchor(0);
+    let anchor = app
+        .pending_history_anchor
+        .expect("anchor should be captured");
+    let expected_from_bottom = total_before.saturating_sub(4);
+    assert_eq!(
+        anchor.lines_from_bottom, expected_from_bottom,
+        "anchor should record distance from the bottom"
+    );
+
+    // Grow the transcript (older content prepended) and re-render. The resolved
+    // scroll must keep the same distance from the bottom, not snap to the top.
+    app.display_messages.insert(
+        0,
+        DisplayMessage {
+            role: "assistant".to_string(),
+            content: App::build_scroll_test_content(0, 40, None),
+            tool_calls: vec![],
+            duration_secs: None,
+            title: None,
+            tool_data: None,
+        },
+    );
+    app.bump_display_messages_version();
+    render_and_snap(&app, &mut terminal);
+
+    let total_after = crate::tui::ui::last_total_wrapped_lines();
+    assert!(
+        total_after > total_before,
+        "prepend should grow the transcript ({} -> {})",
+        total_before,
+        total_after
+    );
+    let resolved = crate::tui::ui::last_resolved_chat_scroll();
+    let distance_after = total_after.saturating_sub(resolved);
+    assert_eq!(
+        distance_after, expected_from_bottom,
+        "viewport must stay the same distance from the bottom across the prepend"
+    );
+    assert_ne!(
+        resolved, 0,
+        "anchored viewport must not snap to the new absolute top"
+    );
+}
+
+#[test]
+fn test_history_anchor_reconciles_into_scroll_offset_after_render() {
+    let _render_lock = scroll_render_test_lock();
+    let (mut app, mut terminal) = anchor_test_app();
+
+    app.scroll_offset = 3;
+    app.auto_scroll_paused = true;
+    render_and_snap(&app, &mut terminal);
+
+    app.capture_history_anchor(0);
+    assert!(app.pending_history_anchor.is_some());
+
+    // Before any new frame, reconcile must wait (total unchanged).
+    assert!(
+        !app.reconcile_history_anchor(),
+        "reconcile should wait until a frame with new content has rendered"
+    );
+    assert!(app.pending_history_anchor.is_some());
+
+    // Prepend + render so the resolved scroll is published, then reconcile.
+    app.display_messages.insert(
+        0,
+        DisplayMessage {
+            role: "assistant".to_string(),
+            content: App::build_scroll_test_content(0, 30, None),
+            tool_calls: vec![],
+            duration_secs: None,
+            title: None,
+            tool_data: None,
+        },
+    );
+    app.bump_display_messages_version();
+    render_and_snap(&app, &mut terminal);
+    let resolved = crate::tui::ui::last_resolved_chat_scroll();
+
+    assert!(app.reconcile_history_anchor(), "reconcile should apply once");
+    assert!(
+        app.pending_history_anchor.is_none(),
+        "anchor should be consumed after reconcile"
+    );
+    assert_eq!(
+        app.scroll_offset, resolved,
+        "scroll_offset should adopt the resolved on-screen position"
+    );
+    assert!(app.auto_scroll_paused, "anchored view stays paused");
+}
+
+/// Build a session whose compacted prefix is large enough to actually truncate
+/// (the render window only hides history past ~80 messages / >5 turns), with one
+/// live prompt at the tail. Returns the app with the truncated window applied.
+fn compacted_history_app_with_remaining(turns: usize) -> App {
+    let mut app = create_test_app();
+    for turn in 0..turns {
+        app.session.add_message(
+            crate::message::Role::User,
+            vec![crate::message::ContentBlock::Text {
+                text: format!("old prompt {turn}"),
+                cache_control: None,
+            }],
+        );
+        app.session.add_message(
+            crate::message::Role::Assistant,
+            vec![crate::message::ContentBlock::Text {
+                text: format!("old response {turn}"),
+                cache_control: None,
+            }],
+        );
+    }
+    app.session.add_message(
+        crate::message::Role::User,
+        vec![crate::message::ContentBlock::Text {
+            text: "current prompt".to_string(),
+            cache_control: None,
+        }],
+    );
+    let compacted_count = turns * 2;
+    app.session.compaction = Some(crate::session::StoredCompactionState {
+        summary_text: "older turns".to_string(),
+        openai_encrypted_content: None,
+        covers_up_to_turn: turns,
+        original_turn_count: turns,
+        compacted_count,
+    });
+
+    let (rendered_messages, _images, _info) =
+        crate::session::render_messages_and_images_with_compacted_history(&app.session, 0);
+    let rendered = rendered_messages
+        .into_iter()
+        .map(|msg| DisplayMessage {
+            role: msg.role,
+            content: msg.content,
+            tool_calls: msg.tool_calls,
+            duration_secs: None,
+            title: None,
+            tool_data: msg.tool_data,
+        })
+        .collect();
+    app.replace_display_messages(rendered);
+    app
+}
+
+#[test]
+fn test_local_compacted_history_scroll_up_is_anchored_not_snapped() {
+    let _render_lock = scroll_render_test_lock();
+
+    let mut app = compacted_history_app_with_remaining(50);
+    assert!(
+        app.compacted_history_has_remaining(),
+        "older history should be hidden initially"
+    );
+
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).expect("failed to create test terminal");
+    render_and_snap(&app, &mut terminal);
+
+    // Scroll up to the top of the loaded window; this should both pull older
+    // history in and anchor the viewport rather than snapping to the new top.
+    app.scroll_offset = 0;
+    app.auto_scroll_paused = true;
+    app.scroll_up(3);
+
+    assert!(
+        app.display_messages().len() > 2,
+        "scroll-up near the top should have loaded older messages into the transcript"
+    );
+    // An anchor must have been captured so the next render keeps the view stable.
+    assert!(
+        app.pending_history_anchor.is_some(),
+        "scroll-up that loads history should capture a viewport anchor"
+    );
+}
+
+#[test]
+fn test_prompt_jump_loads_older_history_when_at_top() {
+    let _render_lock = scroll_render_test_lock();
+
+    let mut app = compacted_history_app_with_remaining(50);
+    assert!(app.compacted_history_has_remaining());
+    let messages_before = app.display_messages().len();
+
+    let backend = ratatui::backend::TestBackend::new(80, 12);
+    let mut terminal = ratatui::Terminal::new(backend).expect("failed to create test terminal");
+    render_and_snap(&app, &mut terminal);
+
+    // At the top with no earlier loaded prompt, a prompt-up jump should pull in
+    // the older compacted history instead of doing nothing.
+    app.scroll_offset = 0;
+    app.auto_scroll_paused = true;
+    app.scroll_to_prev_prompt();
+
+    assert!(
+        app.display_messages().len() > messages_before,
+        "prompt-up at the top should load older history"
     );
 }
 

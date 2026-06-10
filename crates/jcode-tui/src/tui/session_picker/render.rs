@@ -94,6 +94,8 @@ impl SessionPicker {
         let created_ago = format_time_ago(session.created_at);
         let in_batch_restore = self.crashed_session_ids.contains(&session.id);
         let is_marked = self.selected_session_ids.contains(&session.id);
+        let same_dir = self.session_in_current_dir(session);
+        let same_dir_clr: Color = rgb(120, 200, 140);
 
         let name_style = if is_selected {
             Style::default()
@@ -171,6 +173,14 @@ impl SessionPicker {
                     .add_modifier(Modifier::BOLD),
             ));
         }
+        if same_dir {
+            line1_spans.push(Span::styled(
+                "  ▸ here",
+                Style::default()
+                    .fg(same_dir_clr)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
         let line1 = Line::from(line1_spans);
 
         let tokens_display = Self::format_estimated_tokens(session.estimated_tokens);
@@ -232,7 +242,10 @@ impl SessionPicker {
                 format!("created: {}", created_ago),
                 Style::default().fg(dimmer),
             ),
-            Span::styled(dir_part, Style::default().fg(dimmer)),
+            Span::styled(
+                dir_part,
+                Style::default().fg(if same_dir { same_dir_clr } else { dimmer }),
+            ),
         ]);
 
         let mut rows = vec![line1, line2];
@@ -426,7 +439,7 @@ impl SessionPicker {
         let help = if self.loading_message.is_some() {
             " Esc cancel "
         } else if self.search_active {
-            " type to filter, Esc cancel "
+            " type to filter · Ctrl+J/K or ↑↓ nav · Ctrl+W word-del · Esc cancel "
         } else {
             match crate::config::config().keybindings.session_picker_enter {
                 crate::config::SessionPickerResumeAction::CurrentTerminal => {
@@ -445,6 +458,17 @@ impl SessionPicker {
         } else {
             border_dim
         };
+
+        // Measure total rendered rows and per-item heights so we can show a
+        // native scrollbar when the list overflows. `List` renders each item at
+        // its own line count (no wrapping), so summing item heights gives the
+        // exact content height, and a prefix sum maps the scroll offset (first
+        // visible item index) to a rendered-row offset for the scrollbar thumb.
+        let item_heights: Vec<usize> = items.iter().map(|item| item.height().max(1)).collect();
+        let total_item_rows: usize = item_heights.iter().sum();
+        let inner_height = area.height.saturating_sub(2) as usize;
+        let show_scrollbar =
+            super::super::ui::native_scrollbar_visible(true, total_item_rows, inner_height);
 
         let list = List::new(items)
             .block(
@@ -469,6 +493,28 @@ impl SessionPicker {
             });
 
         frame.render_stateful_widget(list, area, &mut self.list_state);
+
+        // Draw the scrollbar inside the right border, after the list has updated
+        // its scroll offset for this frame. Translate the first-visible item index
+        // to a rendered-row offset so the thumb tracks long, multi-line items.
+        if show_scrollbar && area.width > 2 {
+            let offset_item = self.list_state.offset().min(item_heights.len());
+            let row_offset: usize = item_heights[..offset_item].iter().sum();
+            let scrollbar_area = Rect {
+                x: area.x + area.width.saturating_sub(1),
+                y: area.y + 1,
+                width: 1,
+                height: area.height.saturating_sub(2),
+            };
+            super::super::ui::render_native_scrollbar(
+                frame,
+                scrollbar_area,
+                row_offset,
+                total_item_rows,
+                inner_height,
+                self.focus == PaneFocus::Sessions,
+            );
+        }
     }
 
     pub(super) fn render_crash_banner(&self, frame: &mut Frame, area: Rect) {

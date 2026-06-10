@@ -41,7 +41,7 @@ pub mod server;
 pub mod server_spawn;
 pub mod session_launch;
 pub mod session_rebuild;
-pub mod setup_hints;
+pub use jcode_setup_hints as setup_hints;
 pub mod ssh_remote;
 pub mod startup_profile;
 pub mod tool;

@@ -47,6 +47,7 @@ pub use catalog_routes::{
     remote_model_routes_lightweight_fallback, remote_model_should_offer_copilot_route,
     remote_openai_compatible_route_for_model, simplified_model_routes_for_picker,
 };
+pub use jcode_provider_core::cli_provider_arg_for_session_key;
 pub use jcode_provider_core::{
     ALL_CLAUDE_MODELS, ALL_OPENAI_MODELS, CHEAPNESS_REFERENCE_INPUT_TOKENS,
     CHEAPNESS_REFERENCE_OUTPUT_TOKENS, DEFAULT_CONTEXT_LIMIT, EventStream, JCODE_USER_AGENT,
@@ -57,7 +58,6 @@ pub use jcode_provider_core::{
     normalize_copilot_model_name, provider_from_model_key, shared_http_client,
     summarize_model_catalog_refresh,
 };
-pub use jcode_provider_core::cli_provider_arg_for_session_key;
 pub use jcode_provider_core::{ProviderFailoverPrompt, parse_failover_prompt_message};
 pub use route_builders::{
     build_anthropic_oauth_route, build_copilot_route, build_openai_api_key_route,
@@ -924,7 +924,49 @@ impl MultiProvider {
         }) && let Some(selection) =
             Self::resolve_config_provider_selection(pref, crate::config::config())
         {
-            return self.set_model_on_provider(selection.active_provider(), model);
+            // A dual-auth config provider key (`anthropic-api`, `claude-oauth`,
+            // `openai-api`, ...) also pins the OAuth-vs-API credential. Carry
+            // that through so the active credential -- and every surface that
+            // reads it (header auth tag, model picker) -- matches the route the
+            // user configured, instead of leaving the provider in Auto mode
+            // (which prefers OAuth) and silently mislabeling an API default.
+            //
+            // Bare provider keys (`claude`, `anthropic`, `openai`) intentionally
+            // do NOT pin a credential: they keep Auto mode (so an API-only user
+            // with `default_provider = "claude"` still resolves their key
+            // instead of failing to load absent OAuth credentials).
+            let pinned = jcode_provider_core::AuthRoute::parse_explicit_credential_prefix(pref);
+            let anthropic_credential_mode = pinned.and_then(|route| {
+                matches!(
+                    route.provider,
+                    jcode_provider_core::DualAuthProvider::Anthropic
+                )
+                .then(|| match route.mode {
+                    jcode_provider_core::AuthMode::ApiKey => {
+                        anthropic::AnthropicCredentialMode::ApiKey
+                    }
+                    jcode_provider_core::AuthMode::Oauth => {
+                        anthropic::AnthropicCredentialMode::OAuth
+                    }
+                })
+            });
+            let openai_credential_mode = pinned.and_then(|route| {
+                matches!(route.provider, jcode_provider_core::DualAuthProvider::OpenAI)
+                    .then(|| match route.mode {
+                        jcode_provider_core::AuthMode::ApiKey => {
+                            openai::OpenAICredentialMode::ApiKey
+                        }
+                        jcode_provider_core::AuthMode::Oauth => {
+                            openai::OpenAICredentialMode::OAuth
+                        }
+                    })
+            });
+            return self.set_model_on_provider_with_credential_modes(
+                selection.active_provider(),
+                model,
+                openai_credential_mode,
+                anthropic_credential_mode,
+            );
         }
 
         self.set_model(model)
@@ -1086,7 +1128,7 @@ impl Provider for MultiProvider {
             ActiveProvider::Cursor => self
                 .cursor_provider()
                 .map(|o| o.model())
-                .unwrap_or_else(|| "composer-1.5".to_string()),
+                .unwrap_or_else(|| "composer-2.5".to_string()),
             ActiveProvider::Bedrock => self
                 .bedrock_provider()
                 .map(|o| o.model())
@@ -1132,6 +1174,27 @@ impl Provider for MultiProvider {
                     }
                 })
             }
+            _ => None,
+        }
+    }
+
+    fn active_explicit_credential(&self) -> Option<jcode_provider_core::ResolvedCredential> {
+        use jcode_provider_core::ResolvedCredential;
+        // Only report an *explicit* in-memory pin. Auto mode returns `None` so
+        // callers fall back to their cheaper cached heuristic without forcing
+        // a disk read on every frame. This stays in lockstep with
+        // `active_resolved_credential`'s explicit arms above.
+        match self.active_provider() {
+            ActiveProvider::Claude => match self.anthropic_provider()?.credential_mode_snapshot() {
+                anthropic::AnthropicCredentialMode::OAuth => Some(ResolvedCredential::Oauth),
+                anthropic::AnthropicCredentialMode::ApiKey => Some(ResolvedCredential::ApiKey),
+                anthropic::AnthropicCredentialMode::Auto => None,
+            },
+            ActiveProvider::OpenAI => match self.openai_provider()?.credential_mode_snapshot() {
+                openai::OpenAICredentialMode::OAuth => Some(ResolvedCredential::Oauth),
+                openai::OpenAICredentialMode::ApiKey => Some(ResolvedCredential::ApiKey),
+                openai::OpenAICredentialMode::Auto => None,
+            },
             _ => None,
         }
     }
@@ -1217,24 +1280,28 @@ impl Provider for MultiProvider {
             // `openai:` prefixes route without pinning a credential.
             let pinned = jcode_provider_core::AuthRoute::parse_explicit_credential_prefix(prefix);
             let openai_credential_mode = pinned.and_then(|route| {
-                matches!(route.provider, jcode_provider_core::DualAuthProvider::OpenAI).then(
-                    || match route.mode {
-                        jcode_provider_core::AuthMode::ApiKey => openai::OpenAICredentialMode::ApiKey,
-                        jcode_provider_core::AuthMode::Oauth => openai::OpenAICredentialMode::OAuth,
-                    },
+                matches!(
+                    route.provider,
+                    jcode_provider_core::DualAuthProvider::OpenAI
                 )
+                .then(|| match route.mode {
+                    jcode_provider_core::AuthMode::ApiKey => openai::OpenAICredentialMode::ApiKey,
+                    jcode_provider_core::AuthMode::Oauth => openai::OpenAICredentialMode::OAuth,
+                })
             });
             let anthropic_credential_mode = pinned.and_then(|route| {
-                matches!(route.provider, jcode_provider_core::DualAuthProvider::Anthropic).then(
-                    || match route.mode {
-                        jcode_provider_core::AuthMode::ApiKey => {
-                            anthropic::AnthropicCredentialMode::ApiKey
-                        }
-                        jcode_provider_core::AuthMode::Oauth => {
-                            anthropic::AnthropicCredentialMode::OAuth
-                        }
-                    },
+                matches!(
+                    route.provider,
+                    jcode_provider_core::DualAuthProvider::Anthropic
                 )
+                .then(|| match route.mode {
+                    jcode_provider_core::AuthMode::ApiKey => {
+                        anthropic::AnthropicCredentialMode::ApiKey
+                    }
+                    jcode_provider_core::AuthMode::Oauth => {
+                        anthropic::AnthropicCredentialMode::OAuth
+                    }
+                })
             });
             if openai_credential_mode.is_some() || anthropic_credential_mode.is_some() {
                 return self.set_model_on_provider_with_credential_modes(

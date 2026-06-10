@@ -1031,7 +1031,9 @@ impl App {
                 content_blocks.push(ContentBlock::ToolUse {
                     id: tc.id.clone(),
                     name: tc.name.clone(),
-                    input: tc.input.clone(), thought_signature: None, });
+                    input: tc.input.clone(),
+                    thought_signature: None,
+                });
             }
 
             let assistant_message_id = if !content_blocks.is_empty() {
@@ -1082,16 +1084,17 @@ impl App {
                 // Had tool calls - only display text that came AFTER the last tool
                 // (text before each tool was already committed in ToolUseEnd handler)
                 if !self.streaming.streaming_text.is_empty() {
-                    let content = self.collapse_reasoning_for_commit(self.streaming.streaming_text.clone());
+                    let content =
+                        self.collapse_reasoning_for_commit(self.streaming.streaming_text.clone());
                     if !content.trim().is_empty() {
-                    self.push_display_message(DisplayMessage {
-                        role: "assistant".to_string(),
-                        content,
-                        tool_calls: vec![],
-                        duration_secs: duration,
-                        title: None,
-                        tool_data: None,
-                    });
+                        self.push_display_message(DisplayMessage {
+                            role: "assistant".to_string(),
+                            content,
+                            tool_calls: vec![],
+                            duration_secs: duration,
+                            title: None,
+                            tool_data: None,
+                        });
                     }
                 }
                 if self.has_streaming_footer_stats() {
@@ -1166,6 +1169,7 @@ impl App {
                     let _ = self.replace_latest_tool_display_message(&tc.id, None, display_output);
 
                     self.observe_tool_result(&tc, &sdk_content, sdk_is_error, None);
+                    self.note_tool_completed(&tc, sdk_is_error);
 
                     self.add_provider_message(Message {
                         role: Role::User,
@@ -1387,6 +1391,7 @@ impl App {
                     Some(tool_duration_ms),
                 );
                 self.observe_tool_result(&tc, &output, is_error, tool_title.as_deref());
+                self.note_tool_completed(&tc, is_error);
                 let _ = self.session.save();
             }
 
