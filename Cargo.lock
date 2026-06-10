@@ -3265,7 +3265,7 @@ checksum = "92ecc6618181def0457392ccd0ee51198e065e016d1d527a7ac1b6dc7c1f09d2"
 
 [[package]]
 name = "jcode"
-version = "0.23.0"
+version = "0.24.0"
 dependencies = [
  "agentgrep",
  "anyhow",
@@ -3321,6 +3321,7 @@ dependencies = [
  "jcode-provider-openrouter",
  "jcode-selfdev-types",
  "jcode-session-types",
+ "jcode-setup-hints",
  "jcode-side-panel-types",
  "jcode-storage",
  "jcode-swarm-core",
@@ -3404,6 +3405,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
+ "core-graphics",
  "crossterm",
  "dirs",
  "flate2",
@@ -3438,6 +3440,7 @@ dependencies = [
  "jcode-provider-metadata",
  "jcode-selfdev-types",
  "jcode-session-types",
+ "jcode-setup-hints",
  "jcode-side-panel-types",
  "jcode-storage",
  "jcode-swarm-core",
@@ -3537,7 +3540,10 @@ dependencies = [
  "jcode-message-types",
  "jcode-plan",
  "jcode-protocol",
+ "jcode-provider-anthropic",
+ "jcode-provider-antigravity",
  "jcode-provider-bedrock",
+ "jcode-provider-copilot",
  "jcode-provider-core",
  "jcode-provider-env",
  "jcode-provider-gemini",
@@ -3550,6 +3556,7 @@ dependencies = [
  "jcode-side-panel-types",
  "jcode-storage",
  "jcode-task-types",
+ "jcode-telemetry-core",
  "jcode-terminal-image",
  "jcode-terminal-launch",
  "jcode-tool-core",
@@ -3621,6 +3628,7 @@ name = "jcode-config-types"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3812,6 +3820,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "jcode-provider-anthropic"
+version = "0.1.0"
+dependencies = [
+ "jcode-logging",
+ "jcode-message-types",
+ "jcode-provider-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "jcode-provider-antigravity"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "jcode-provider-gemini",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "jcode-provider-bedrock"
 version = "0.1.0"
 dependencies = [
@@ -3838,6 +3867,15 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "jcode-provider-copilot"
+version = "0.1.0"
+dependencies = [
+ "jcode-message-types",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3873,6 +3911,7 @@ name = "jcode-provider-gemini"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "jcode-message-types",
  "serde",
  "serde_json",
 ]
@@ -3906,7 +3945,14 @@ dependencies = [
 name = "jcode-provider-openrouter"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "bytes",
  "dirs",
+ "futures",
+ "jcode-core",
+ "jcode-logging",
+ "jcode-message-types",
+ "reqwest 0.12.28",
  "serde",
  "serde_json",
 ]
@@ -3936,6 +3982,20 @@ dependencies = [
  "chrono",
  "jcode-message-types",
  "serde",
+]
+
+[[package]]
+name = "jcode-setup-hints"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "global-hotkey",
+ "jcode-build-meta",
+ "jcode-logging",
+ "jcode-storage",
+ "serde",
+ "tempfile",
 ]
 
 [[package]]
@@ -3973,6 +4033,28 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "serde",
+]
+
+[[package]]
+name = "jcode-telemetry-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "jcode-build-meta",
+ "jcode-core",
+ "jcode-logging",
+ "jcode-provider-core",
+ "jcode-selfdev-types",
+ "jcode-storage",
+ "jcode-usage-types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "walkdir",
 ]
 
 [[package]]
@@ -4042,6 +4124,7 @@ dependencies = [
  "jcode-tui-markdown",
  "jcode-tui-mermaid",
  "jcode-tui-messages",
+ "jcode-tui-permissions",
  "jcode-tui-render",
  "jcode-tui-session-picker",
  "jcode-tui-style",
@@ -4130,6 +4213,20 @@ dependencies = [
  "jcode-message-types",
  "jcode-session-types",
  "jcode-tui-markdown",
+ "ratatui",
+ "serde_json",
+]
+
+[[package]]
+name = "jcode-tui-permissions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "crossterm",
+ "jcode-base",
+ "jcode-core",
+ "jcode-tui-style",
  "ratatui",
  "serde_json",
 ]

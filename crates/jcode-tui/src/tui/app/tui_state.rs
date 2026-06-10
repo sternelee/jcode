@@ -162,8 +162,16 @@ impl App {
     ///
     /// * Remote sessions use [`App::remote_resolved_credential`], which the
     ///   server resolved authoritatively from its live credentials.
-    /// * Local sessions use [`resolve_dual_credential_auth`], shared with the
-    ///   header tag and model-switch line so all surfaces agree.
+    /// * Local sessions prefer the provider's *explicitly pinned* credential
+    ///   ([`Provider::active_explicit_credential`]) so the widget reflects the
+    ///   credential the next request will actually use the instant the user
+    ///   switches OAuth<->API (model picker, `/account`, header toggle). That
+    ///   read is in-memory and cache-free, so it never lingers on a stale
+    ///   [`AuthStatus`] snapshot (cached up to 60s) or a `JCODE_RUNTIME_PROVIDER`
+    ///   pin that drifted out of sync with the provider. When the provider is in
+    ///   auto mode (no explicit pin) it falls back to
+    ///   [`resolve_dual_credential_auth`] -- shared with the header tag and
+    ///   model-switch line -- which is cheap (cached probe, no per-frame I/O).
     ///
     /// Returns `None` when neither transport can determine the credential (e.g.
     /// the server didn't report one, or no credentials are configured locally).
@@ -174,6 +182,19 @@ impl App {
     ) -> Option<crate::auth::ActiveCredential> {
         if route.is_remote {
             return self.remote_resolved_credential.map(Into::into);
+        }
+
+        // Authoritative, cache-free answer from the live provider whenever the
+        // user has explicitly pinned a credential. This reflects exactly what the
+        // next request will use, so an explicit OAuth<->API switch is visible on
+        // the very next frame. For local sessions the requested `provider` always
+        // matches the live active provider (the widget route is derived from
+        // `self.provider.name()`), and remote sessions returned above, so the
+        // pin maps onto the right dual-auth provider. Explicit reads do no disk
+        // I/O, so the common per-frame path stays cheap; auto mode returns `None`
+        // here and falls through to the cached heuristic below.
+        if let Some(resolved) = self.provider.active_explicit_credential() {
+            return Some(resolved.into());
         }
 
         let auth_status = crate::auth::AuthStatus::check_fast();
@@ -286,7 +307,8 @@ impl App {
                 cache_read_tokens: None,
                 cache_write_tokens: None,
                 output_tps,
-                available: self.token_accounting.total_input_tokens > 0 || self.token_accounting.total_output_tokens > 0,
+                available: self.token_accounting.total_input_tokens > 0
+                    || self.token_accounting.total_output_tokens > 0,
             }),
             WidgetProviderKind::Anthropic => {
                 if matches!(
@@ -447,6 +469,11 @@ impl crate::tui::TuiState for App {
         self.auto_scroll_paused
     }
 
+    fn pending_history_anchor_lines_from_bottom(&self) -> Option<usize> {
+        self.pending_history_anchor
+            .map(|anchor| anchor.lines_from_bottom)
+    }
+
     fn chat_overscroll_active(&self) -> bool {
         self.chat_overscroll_active()
     }
@@ -505,7 +532,10 @@ impl crate::tui::TuiState for App {
     }
 
     fn streaming_tokens(&self) -> (u64, u64) {
-        (self.streaming.streaming_input_tokens, self.streaming.streaming_output_tokens)
+        (
+            self.streaming.streaming_input_tokens,
+            self.streaming.streaming_output_tokens,
+        )
     }
 
     fn streaming_cache_tokens(&self) -> (Option<u64>, Option<u64>) {
@@ -586,6 +616,10 @@ impl crate::tui::TuiState for App {
         }
 
         Some(self.app_started.elapsed())
+    }
+
+    fn client_focused(&self) -> bool {
+        App::client_focused(self)
     }
 
     fn stream_message_ended(&self) -> bool {
@@ -1199,29 +1233,35 @@ impl crate::tui::TuiState for App {
             None
         };
 
-        let cache_hit_info = (self.token_accounting.total_cache_reported_input_tokens > 0).then(|| {
-            crate::tui::info_widget::CacheHitInfo {
-                reported_input_tokens: self.token_accounting.total_cache_reported_input_tokens,
-                read_tokens: self.token_accounting.total_cache_read_tokens,
-                creation_tokens: self.token_accounting.total_cache_creation_tokens,
-                optimal_input_tokens: self.token_accounting.total_cache_optimal_input_tokens,
-                last_reported_input_tokens: self.token_accounting.last_cache_reported_input_tokens,
-                last_read_tokens: self.token_accounting.last_cache_read_tokens,
-                last_creation_tokens: self.token_accounting.last_cache_creation_tokens,
-                last_optimal_input_tokens: self.token_accounting.last_cache_optimal_input_tokens,
-                miss_attributions: self
-                    .kv_cache.kv_cache_miss_samples
-                    .iter()
-                    .rev()
-                    .map(|sample| crate::tui::info_widget::CacheMissAttribution {
-                        turn_number: sample.turn_number,
-                        call_index: sample.call_index,
-                        missed_tokens: sample.missed_tokens,
-                        reason: sample.reason.label().to_string(),
-                    })
-                    .collect(),
-            }
-        });
+        let cache_hit_info =
+            (self.token_accounting.total_cache_reported_input_tokens > 0).then(|| {
+                crate::tui::info_widget::CacheHitInfo {
+                    reported_input_tokens: self.token_accounting.total_cache_reported_input_tokens,
+                    read_tokens: self.token_accounting.total_cache_read_tokens,
+                    creation_tokens: self.token_accounting.total_cache_creation_tokens,
+                    optimal_input_tokens: self.token_accounting.total_cache_optimal_input_tokens,
+                    last_reported_input_tokens: self
+                        .token_accounting
+                        .last_cache_reported_input_tokens,
+                    last_read_tokens: self.token_accounting.last_cache_read_tokens,
+                    last_creation_tokens: self.token_accounting.last_cache_creation_tokens,
+                    last_optimal_input_tokens: self
+                        .token_accounting
+                        .last_cache_optimal_input_tokens,
+                    miss_attributions: self
+                        .kv_cache
+                        .kv_cache_miss_samples
+                        .iter()
+                        .rev()
+                        .map(|sample| crate::tui::info_widget::CacheMissAttribution {
+                            turn_number: sample.turn_number,
+                            call_index: sample.call_index,
+                            missed_tokens: sample.missed_tokens,
+                            reason: sample.reason.label().to_string(),
+                        })
+                        .collect(),
+                }
+            });
 
         // Get active mermaid diagrams - only for margin mode (pinned mode uses dedicated pane)
         let diagrams = if self.diagram_mode == crate::config::DiagramDisplayMode::Margin {
@@ -1236,7 +1276,8 @@ impl crate::tui::TuiState for App {
             } else {
                 Some(self.session.id.as_str())
             };
-            self.workspace_client.visible_rows(5, session_id, self.is_processing)
+            self.workspace_client
+                .visible_rows(5, session_id, self.is_processing)
         } else {
             Vec::new()
         };
@@ -1323,7 +1364,8 @@ impl crate::tui::TuiState for App {
         } else {
             Some(self.session.id.as_str())
         };
-        self.workspace_client.visible_rows(5, session_id, self.is_processing)
+        self.workspace_client
+            .visible_rows(5, session_id, self.is_processing)
     }
 
     fn workspace_animation_tick(&self) -> u64 {
@@ -1334,6 +1376,28 @@ impl crate::tui::TuiState for App {
         let mut renderer = self.streaming_md_renderer.borrow_mut();
         renderer.set_width(Some(width));
         renderer.update(&self.streaming.streaming_text)
+    }
+
+    fn reasoning_retained_markup(&self) -> Option<&str> {
+        self.reasoning_retained.as_deref()
+    }
+
+    fn reasoning_collapse_state(&self) -> Option<(&str, f32)> {
+        let collapse = self.reasoning_collapse.as_ref()?;
+        let elapsed = collapse.started.elapsed().as_secs_f32();
+        let dur = crate::tui::app::REASONING_COLLAPSE_DURATION.as_secs_f32();
+        let t = if dur <= 0.0 {
+            1.0
+        } else {
+            (elapsed / dur).clamp(0.0, 1.0)
+        };
+        // Ease-in-out so the shrink starts and ends gently.
+        let progress = t * t * (3.0 - 2.0 * t);
+        Some((collapse.markup.as_str(), progress))
+    }
+
+    fn reasoning_animation_active(&self) -> bool {
+        App::reasoning_animation_active(self)
     }
 
     fn centered_mode(&self) -> bool {
@@ -1507,7 +1571,11 @@ impl crate::tui::TuiState for App {
                 .unwrap_or(crate::tui::CopySelectionPane::Chat),
             has_action: has_selection,
             selected_chars,
-            selected_lines: if has_selection { selected_lines.max(1) } else { 0 },
+            selected_lines: if has_selection {
+                selected_lines.max(1)
+            } else {
+                0
+            },
             dragging: self.copy_selection_dragging,
         })
     }

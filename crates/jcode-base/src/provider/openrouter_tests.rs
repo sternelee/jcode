@@ -1,5 +1,7 @@
-use super::openrouter_sse_stream::OpenRouterStream;
 use super::*;
+use bytes::Bytes;
+use futures::StreamExt;
+use jcode_provider_openrouter::stream::OpenRouterStream;
 use std::ffi::OsString;
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -1226,6 +1228,7 @@ fn make_provider() -> OpenRouterProvider {
         supports_model_catalog: true,
         profile_id: None,
         max_tokens: None,
+        extra_body: None,
         static_models: Vec::new(),
         static_context_limits: HashMap::new(),
         send_openrouter_headers: true,
@@ -1252,6 +1255,7 @@ fn make_custom_compatible_provider() -> OpenRouterProvider {
         supports_model_catalog: true,
         profile_id: None,
         max_tokens: None,
+        extra_body: None,
         static_models: Vec::new(),
         static_context_limits: HashMap::new(),
         send_openrouter_headers: false,
@@ -2050,40 +2054,43 @@ fn test_openrouter_kimi_chat_request_includes_compat_user_agent() {
 
 #[test]
 fn test_parse_next_event_accepts_compact_sse_data_and_reasoning_content() {
+    let bytes = Bytes::from_static(
+        b"data:{\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\n",
+    );
     let mut stream = OpenRouterStream::new(
-        futures::stream::empty::<Result<Bytes, reqwest::Error>>(),
+        futures::stream::once(async move { Ok::<Bytes, reqwest::Error>(bytes) }),
         "kimi-for-coding".to_string(),
         Arc::new(Mutex::new(None)),
     );
-    stream.buffer =
-        "data:{\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\n".to_string();
 
-    match stream.parse_next_event() {
-        Some(StreamEvent::ThinkingDelta(text)) => assert_eq!(text, "thinking"),
+    match futures::executor::block_on(stream.next()) {
+        Some(Ok(StreamEvent::ThinkingDelta(text))) => assert_eq!(text, "thinking"),
         other => panic!("expected ThinkingDelta, got {:?}", other),
     }
 }
 
 #[test]
 fn test_parse_next_event_emits_only_incremental_reasoning_content() {
+    let chunks = vec![
+        Ok::<Bytes, reqwest::Error>(Bytes::from_static(
+            b"data:{\"choices\":[{\"delta\":{\"reasoning_content\":\"Thinking\"}}]}\n\n",
+        )),
+        Ok::<Bytes, reqwest::Error>(Bytes::from_static(
+            b"data:{\"choices\":[{\"delta\":{\"reasoning_content\":\"Thinking more\"}}]}\n\n",
+        )),
+    ];
     let mut stream = OpenRouterStream::new(
-        futures::stream::empty::<Result<Bytes, reqwest::Error>>(),
+        futures::stream::iter(chunks),
         "moonshotai/kimi-k2.5".to_string(),
         Arc::new(Mutex::new(None)),
     );
 
-    stream.buffer =
-        "data:{\"choices\":[{\"delta\":{\"reasoning_content\":\"Thinking\"}}]}\n\n".to_string();
-    match stream.parse_next_event() {
-        Some(StreamEvent::ThinkingDelta(text)) => assert_eq!(text, "Thinking"),
+    match futures::executor::block_on(stream.next()) {
+        Some(Ok(StreamEvent::ThinkingDelta(text))) => assert_eq!(text, "Thinking"),
         other => panic!("expected first ThinkingDelta, got {:?}", other),
     }
-
-    stream.buffer =
-        "data:{\"choices\":[{\"delta\":{\"reasoning_content\":\"Thinking more\"}}]}\n\n"
-            .to_string();
-    match stream.parse_next_event() {
-        Some(StreamEvent::ThinkingDelta(text)) => assert_eq!(text, " more"),
+    match futures::executor::block_on(stream.next()) {
+        Some(Ok(StreamEvent::ThinkingDelta(text))) => assert_eq!(text, " more"),
         other => panic!("expected incremental ThinkingDelta, got {:?}", other),
     }
 }
@@ -2260,4 +2267,152 @@ fn runtime_display_name_for_profile_runtime_instance() {
     .expect("build nvidia-nim runtime");
     assert_eq!(nim.runtime_display_name(), "NVIDIA NIM");
     assert_eq!(Provider::name(&nim), "openrouter");
+}
+
+#[test]
+fn resolve_extra_body_returns_none_when_unset() {
+    let _lock = ENV_LOCK.lock();
+    let _guard = EnvVarGuard::remove("JCODE_OPENAI_EXTRA_BODY");
+    assert!(OpenRouterProvider::resolve_extra_body(None, "nonexistent.env").is_none());
+}
+
+#[test]
+fn resolve_extra_body_parses_env_json_object() {
+    let _lock = ENV_LOCK.lock();
+    let _guard = EnvVarGuard::set(
+        "JCODE_OPENAI_EXTRA_BODY",
+        r#"{"chat_template_kwargs":{"thinking":true,"reasoning_effort":"high"}}"#,
+    );
+    let extra =
+        OpenRouterProvider::resolve_extra_body(None, "nonexistent.env").expect("extra body");
+    let kwargs = extra
+        .get("chat_template_kwargs")
+        .and_then(|v| v.as_object())
+        .expect("chat_template_kwargs object");
+    assert_eq!(kwargs.get("thinking"), Some(&serde_json::json!(true)));
+    assert_eq!(
+        kwargs.get("reasoning_effort"),
+        Some(&serde_json::json!("high"))
+    );
+}
+
+#[test]
+fn resolve_extra_body_ignores_invalid_env_json() {
+    let _lock = ENV_LOCK.lock();
+    let _guard = EnvVarGuard::set("JCODE_OPENAI_EXTRA_BODY", "not-json");
+    assert!(OpenRouterProvider::resolve_extra_body(None, "nonexistent.env").is_none());
+}
+
+#[test]
+fn resolve_extra_body_ignores_non_object_env_json() {
+    let _lock = ENV_LOCK.lock();
+    let _guard = EnvVarGuard::set("JCODE_OPENAI_EXTRA_BODY", "[1,2,3]");
+    assert!(OpenRouterProvider::resolve_extra_body(None, "nonexistent.env").is_none());
+}
+
+#[test]
+fn resolve_extra_body_merges_config_and_env_with_env_override() {
+    let _lock = ENV_LOCK.lock();
+    let config = serde_json::json!({
+        "chat_template_kwargs": {"thinking": false},
+        "config_only": 1,
+    });
+    let _guard = EnvVarGuard::set(
+        "JCODE_OPENAI_EXTRA_BODY",
+        r#"{"chat_template_kwargs":{"thinking":true},"env_only":2}"#,
+    );
+    let extra = OpenRouterProvider::resolve_extra_body(Some(&config), "nonexistent.env")
+        .expect("merged extra body");
+    // Env overrides the colliding key.
+    assert_eq!(
+        extra
+            .get("chat_template_kwargs")
+            .and_then(|v| v.get("thinking")),
+        Some(&serde_json::json!(true))
+    );
+    // Non-colliding keys from both sources survive.
+    assert_eq!(extra.get("config_only"), Some(&serde_json::json!(1)));
+    assert_eq!(extra.get("env_only"), Some(&serde_json::json!(2)));
+}
+
+#[test]
+fn resolve_extra_body_ignores_non_object_config() {
+    let _lock = ENV_LOCK.lock();
+    let _guard = EnvVarGuard::remove("JCODE_OPENAI_EXTRA_BODY");
+    let config = serde_json::json!("not an object");
+    assert!(OpenRouterProvider::resolve_extra_body(Some(&config), "nonexistent.env").is_none());
+}
+
+#[test]
+fn named_profile_extra_body_threads_into_provider() {
+    let _lock = ENV_LOCK.lock();
+    let temp = TempDir::new().expect("create temp home");
+    let jcode_home = temp.path().join("jcode-home");
+    let _jcode_home = EnvVarGuard::set("JCODE_HOME", &jcode_home);
+    let _home = EnvVarGuard::set("HOME", temp.path());
+    let _appdata = EnvVarGuard::set("APPDATA", temp.path().join("AppData").join("Roaming"));
+    let _env = isolate_openrouter_autodetect_env();
+    let _extra_guard = EnvVarGuard::remove("JCODE_OPENAI_EXTRA_BODY");
+
+    let mut profile = crate::config::NamedProviderConfig {
+        base_url: "https://integrate.api.nvidia.com/v1".to_string(),
+        auth: crate::config::NamedProviderAuth::None,
+        requires_api_key: Some(false),
+        ..Default::default()
+    };
+    profile.extra_body = Some(serde_json::json!({
+        "chat_template_kwargs": {"thinking": true, "reasoning_effort": "high"}
+    }));
+
+    let provider = OpenRouterProvider::new_named_openai_compatible("my-nim", &profile)
+        .expect("build named provider");
+    let extra = provider.extra_body.as_ref().expect("extra body present");
+    assert_eq!(
+        extra
+            .get("chat_template_kwargs")
+            .and_then(|v| v.get("reasoning_effort")),
+        Some(&serde_json::json!("high"))
+    );
+}
+
+#[test]
+fn named_provider_config_deserializes_nested_extra_body_toml() {
+    // Verifies the exact `config.toml` shape documented in the README:
+    // a nested `[providers.<name>.extra_body.chat_template_kwargs]` table
+    // round-trips into the `serde_json::Value` field correctly.
+    let toml_str = r#"
+type = "openai-compatible"
+base_url = "https://integrate.api.nvidia.com/v1"
+api_key_env = "NVIDIA_API_KEY"
+default_model = "deepseek-ai/deepseek-v4-flash"
+
+[extra_body.chat_template_kwargs]
+thinking = true
+reasoning_effort = "high"
+"#;
+    let profile: crate::config::NamedProviderConfig =
+        toml::from_str(toml_str).expect("parse named provider toml");
+    let extra = profile.extra_body.as_ref().expect("extra_body present");
+    let kwargs = extra
+        .get("chat_template_kwargs")
+        .and_then(|v| v.as_object())
+        .expect("chat_template_kwargs object");
+    assert_eq!(kwargs.get("thinking"), Some(&serde_json::json!(true)));
+    assert_eq!(
+        kwargs.get("reasoning_effort"),
+        Some(&serde_json::json!("high"))
+    );
+
+    // And the resolver hands it back unchanged when no env override is set.
+    let _lock = ENV_LOCK.lock();
+    let _guard = EnvVarGuard::remove("JCODE_OPENAI_EXTRA_BODY");
+    let resolved =
+        OpenRouterProvider::resolve_extra_body(profile.extra_body.as_ref(), "nonexistent.env")
+            .expect("resolved extra body");
+    assert_eq!(
+        resolved
+            .get("chat_template_kwargs")
+            .and_then(|v| v.get("reasoning_effort")),
+        Some(&serde_json::json!("high"))
+    );
 }

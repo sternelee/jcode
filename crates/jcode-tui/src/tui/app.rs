@@ -73,8 +73,8 @@ mod model_context;
 mod navigation;
 mod observe;
 pub(crate) mod onboarding_flow;
-mod productivity;
 mod onboarding_flow_control;
+mod productivity;
 mod remote;
 mod remote_notifications;
 mod replay;
@@ -129,6 +129,19 @@ struct PendingSplitPrompt {
 struct PendingLocalTransfer {
     receiver: mpsc::Receiver<anyhow::Result<PreparedTransferSession>>,
 }
+
+/// A reasoning trace that is animating out of view in `current` display mode. Its
+/// rendered height shrinks from full to zero over [`REASONING_COLLAPSE_DURATION`],
+/// after which it is dropped entirely. `markup` is the sentinel-wrapped dim+italic
+/// block exactly as it last rendered live.
+#[derive(Debug, Clone)]
+struct ReasoningCollapse {
+    markup: String,
+    started: Instant,
+}
+
+/// Duration of the reasoning-trace shrink-away animation (`current` mode).
+pub(crate) const REASONING_COLLAPSE_DURATION: Duration = Duration::from_millis(220);
 
 #[derive(Debug, Clone)]
 struct LocalRewindUndoSnapshot {
@@ -498,6 +511,8 @@ pub(super) enum MouseScrollTarget {
     HelpOverlay,
     ChangelogOverlay,
     ModelStatusOverlay,
+    /// The right-hand preview pane of the /resume session picker overlay.
+    SessionPickerPreview,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -509,6 +524,23 @@ pub(super) struct CompactedHistoryLazyState {
     /// keep prompt numbers absolute when older history is truncated.
     pub hidden_user_prompts: usize,
     pub pending_request_visible: Option<usize>,
+}
+
+/// Pending viewport anchor used to keep the chat stable when older compacted
+/// history is loaded in. Older messages are prepended above the current view,
+/// which would otherwise teleport the reader to the new absolute top. We instead
+/// remember the reader's distance from the bottom (which is invariant under a
+/// top-side prepend) and let the next render resolve it into an absolute offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct HistoryScrollAnchor {
+    /// Wrapped lines between the top of the viewport and the bottom of the
+    /// transcript at the moment the load was requested. Invariant across the
+    /// prepend, so `new_total - lines_from_bottom` reproduces the same view.
+    pub lines_from_bottom: usize,
+    /// Total wrapped line count of the frame this anchor was captured from. Used
+    /// to detect when a frame with the newly-loaded content has rendered (its
+    /// total differs), so the anchor can be reconciled into `scroll_offset`.
+    pub base_total: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -651,6 +683,10 @@ pub struct App {
     display_user_message_count: usize,
     display_edit_tool_message_count: usize,
     compacted_history_lazy: CompactedHistoryLazyState,
+    /// When older compacted history has just been loaded, this anchors the
+    /// viewport to the content the reader was looking at so the prepend does not
+    /// visibly jump. Resolved into `scroll_offset` by the next render frame.
+    pending_history_anchor: Option<HistoryScrollAnchor>,
     input: String,
     command_candidates_cache: RefCell<Option<CommandCandidatesCache>>,
     cursor_pos: usize,
@@ -761,6 +797,17 @@ pub struct App {
     // closed reasoning block back out of the stream in place, keeping any answer
     // text that preceded it in order.
     reasoning_block_start: Option<usize>,
+    // `current` reasoning-display mode keeps the *most recently closed* reasoning
+    // trace on screen (sliced out of the live stream but rendered as its own dim
+    // section just above the stream) until the next trace finishes. Holds the
+    // sentinel-wrapped dim+italic markup of that retained block, or `None` when
+    // nothing is retained.
+    reasoning_retained: Option<String>,
+    // A previously-retained reasoning trace that is now animating away: it shrinks
+    // vertically (its visible height interpolates from full down to zero) and is
+    // dropped once the animation completes. Holds the block markup plus the
+    // animation start instant.
+    reasoning_collapse: Option<ReasoningCollapse>,
     // Hot-reload: if set, exec into new binary with this session ID (no rebuild)
     reload_requested: Option<String>,
     // Hot-rebuild: if set, do full git pull + cargo build + tests then exec
@@ -821,6 +868,13 @@ pub struct App {
     remote_client_instance_id: String,
     remote_provider_name: Option<String>,
     remote_provider_model: Option<String>,
+    /// Monotonic counter bumped each time the server pushes a fresh remote model
+    /// catalog snapshot (`AvailableModelsUpdated`). The onboarding readiness
+    /// validation uses this to wait for the post-login catalog refresh to land
+    /// before capturing the model label, so it reports the freshly-selected
+    /// model (e.g. gpt-5.5 after an OpenAI login) instead of the stale pre-login
+    /// default.
+    remote_model_catalog_generation: u64,
     /// Server-resolved billing credential reported by a remote server: OAuth
     /// (subscription) vs API key (cost-based), or `None` when the active
     /// provider has no OAuth-vs-API-key distinction. Lets the info widget choose
@@ -851,6 +905,13 @@ pub struct App {
     remote_server_has_update: Option<bool>,
     // Auto-reload server when stale (set on first connect if server_has_update)
     pending_server_reload: bool,
+    // Real session id captured from a History event whose payload we deferred
+    // because of a server/runtime version mismatch. The deferral returns before
+    // `remote_session_id` is assigned, so without stashing the id here the
+    // subsequent client reload handoff has no session to resume and would
+    // fabricate a bogus `ses_<ts>_<rand>` id, producing
+    // "No session found matching ..." on the next launch (issue #328).
+    pending_reload_session_id: Option<String>,
     // Defense-in-depth circuit breaker for issue #277: count how many times this
     // client has auto-reloaded the server. A healthy reload happens at most once
     // (afterwards the server is up to date), so repeated auto-reloads indicate a
@@ -1114,6 +1175,12 @@ pub struct App {
     command_suggestion_selected: usize,
     // Time when app started (for startup animations)
     app_started: Instant,
+    // Whether the client terminal currently has focus. When the terminal window
+    // or tab is backgrounded (FocusLost), decorative animations and periodic
+    // idle redraws are paused so a swarm of background sessions does not burn
+    // CPU animating screens nobody is looking at. Defaults to true because not
+    // every terminal reports focus events.
+    client_focused: bool,
     // Optional client runtime memory logger for low-overhead attribution journaling.
     runtime_memory_log: Option<RuntimeMemoryLogController>,
     // Binary modification time when client started (for smart reload detection)
@@ -1257,7 +1324,11 @@ impl App {
             .count()
             .max(1);
         if self.kv_cache.kv_cache_turn_number == Some(turn_number) {
-            self.kv_cache.kv_cache_turn_call_index = self.kv_cache.kv_cache_turn_call_index.saturating_add(1).max(1);
+            self.kv_cache.kv_cache_turn_call_index = self
+                .kv_cache
+                .kv_cache_turn_call_index
+                .saturating_add(1)
+                .max(1);
         } else {
             self.kv_cache.kv_cache_turn_number = Some(turn_number);
             self.kv_cache.kv_cache_turn_call_index = 1;
@@ -1302,7 +1373,11 @@ impl App {
             .count()
             .max(1);
         if self.kv_cache.kv_cache_turn_number == Some(turn_number) {
-            self.kv_cache.kv_cache_turn_call_index = self.kv_cache.kv_cache_turn_call_index.saturating_add(1).max(1);
+            self.kv_cache.kv_cache_turn_call_index = self
+                .kv_cache
+                .kv_cache_turn_call_index
+                .saturating_add(1)
+                .max(1);
         } else {
             self.kv_cache.kv_cache_turn_number = Some(turn_number);
             self.kv_cache.kv_cache_turn_call_index = 1;
@@ -1421,7 +1496,8 @@ impl App {
             ));
 
         let request = self
-            .kv_cache.pending_kv_cache_request
+            .kv_cache
+            .pending_kv_cache_request
             .take()
             .unwrap_or_else(|| self.fallback_pending_kv_cache_request());
         self.kv_cache.current_api_usage_recorded = true;
@@ -1444,22 +1520,29 @@ impl App {
         }
 
         self.token_accounting.total_cache_reported_input_tokens = self
-            .token_accounting.total_cache_reported_input_tokens
+            .token_accounting
+            .total_cache_reported_input_tokens
             .saturating_add(self.streaming.streaming_input_tokens);
         if let Some(optimal) = optimal_input_tokens {
             self.token_accounting.total_cache_optimal_input_tokens = self
-                .token_accounting.total_cache_optimal_input_tokens
+                .token_accounting
+                .total_cache_optimal_input_tokens
                 .saturating_add(optimal);
         }
         self.token_accounting.total_cache_read_tokens = self
-            .token_accounting.total_cache_read_tokens
+            .token_accounting
+            .total_cache_read_tokens
             .saturating_add(self.streaming.streaming_cache_read_tokens.unwrap_or(0));
         self.token_accounting.total_cache_creation_tokens = self
-            .token_accounting.total_cache_creation_tokens
+            .token_accounting
+            .total_cache_creation_tokens
             .saturating_add(self.streaming.streaming_cache_creation_tokens.unwrap_or(0));
-        self.token_accounting.last_cache_reported_input_tokens = Some(self.streaming.streaming_input_tokens);
-        self.token_accounting.last_cache_read_tokens = Some(self.streaming.streaming_cache_read_tokens.unwrap_or(0));
-        self.token_accounting.last_cache_creation_tokens = Some(self.streaming.streaming_cache_creation_tokens.unwrap_or(0));
+        self.token_accounting.last_cache_reported_input_tokens =
+            Some(self.streaming.streaming_input_tokens);
+        self.token_accounting.last_cache_read_tokens =
+            Some(self.streaming.streaming_cache_read_tokens.unwrap_or(0));
+        self.token_accounting.last_cache_creation_tokens =
+            Some(self.streaming.streaming_cache_creation_tokens.unwrap_or(0));
         self.token_accounting.last_cache_optimal_input_tokens = optimal_input_tokens;
 
         self.log_kv_cache_usage_summary(&request, optimal_input_tokens);
@@ -1491,7 +1574,8 @@ impl App {
             self.token_accounting.total_cache_read_tokens,
             self.token_accounting.total_cache_reported_input_tokens,
         );
-        let session_optimal_read_pct = if self.token_accounting.total_cache_optimal_input_tokens > 0 {
+        let session_optimal_read_pct = if self.token_accounting.total_cache_optimal_input_tokens > 0
+        {
             Some(ratio_pct(
                 self.token_accounting.total_cache_read_tokens,
                 self.token_accounting.total_cache_optimal_input_tokens,
@@ -1500,7 +1584,8 @@ impl App {
             None
         };
         let miss = self
-            .kv_cache.kv_cache_miss_samples
+            .kv_cache
+            .kv_cache_miss_samples
             .last()
             .filter(|sample| {
                 sample.turn_number == request.turn_number && sample.call_index == request.call_index
@@ -1715,7 +1800,8 @@ impl App {
             reason,
         });
         if self.kv_cache.kv_cache_miss_samples.len() > Self::KV_CACHE_MAX_MISS_SAMPLES {
-            let overflow = self.kv_cache.kv_cache_miss_samples.len() - Self::KV_CACHE_MAX_MISS_SAMPLES;
+            let overflow =
+                self.kv_cache.kv_cache_miss_samples.len() - Self::KV_CACHE_MAX_MISS_SAMPLES;
             self.kv_cache.kv_cache_miss_samples.drain(0..overflow);
         }
     }
