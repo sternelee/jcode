@@ -99,6 +99,21 @@ export function useJcodeSession() {
 						});
 					}
 				}
+
+				// In swarm/workspace mode, also route errors to the virtual session
+				if (payload.type === "error" && sessionId) {
+					const session = stateRef.current.sessions.find(
+						(s) => s.sessionId === sessionId,
+					);
+					const workspaceId = session?.workingDir;
+					if (workspaceId && workspaceId !== "default") {
+						processEvent(
+							payload,
+							dispatch,
+							`workspace:${workspaceId}`,
+						);
+					}
+				}
 			},
 		);
 		return () => {
