@@ -338,7 +338,6 @@ export function rawServerEventToDesktopEvents(
 				{
 					type: "connection-type",
 					connection: event.connection,
-					notice: `🔌 Connection type: ${event.connection}`,
 				},
 			];
 		case "status_detail":
