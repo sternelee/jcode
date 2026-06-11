@@ -114,6 +114,27 @@ pub fn disable_keyboard_enhancement() {
     );
 }
 
+/// Hash a rendered image's transcript anchor into `hasher`. Shared by the
+/// default and `App` implementations of `side_pane_images_signature` so both
+/// stay in lockstep.
+pub(crate) fn hash_rendered_image_anchor(
+    anchor: Option<&crate::session::RenderedImageAnchor>,
+    hasher: &mut impl std::hash::Hasher,
+) {
+    use std::hash::Hash;
+    match anchor {
+        None => 0u8.hash(hasher),
+        Some(crate::session::RenderedImageAnchor::ToolCall { id }) => {
+            1u8.hash(hasher);
+            id.hash(hasher);
+        }
+        Some(crate::session::RenderedImageAnchor::UserPrompt { ordinal }) => {
+            2u8.hash(hasher);
+            ordinal.hash(hasher);
+        }
+    }
+}
+
 /// Trait for TUI state consumed by the shared renderer.
 ///
 /// This is a wide (114-method) presentation interface: the read-only surface the
@@ -146,7 +167,15 @@ pub trait TuiState {
             image.media_type.hash(&mut hasher);
             image.data.len().hash(&mut hasher);
             // A short prefix is enough to distinguish distinct payloads cheaply.
-            image.data.as_bytes().iter().take(64).for_each(|b| b.hash(&mut hasher));
+            image
+                .data
+                .as_bytes()
+                .iter()
+                .take(64)
+                .for_each(|b| b.hash(&mut hasher));
+            // The anchor determines where the image renders in the transcript,
+            // so anchor changes must invalidate prepared frames too.
+            hash_rendered_image_anchor(image.anchor.as_ref(), &mut hasher);
         }
         (images.len(), hasher.finish())
     }
@@ -376,6 +405,12 @@ pub trait TuiState {
     fn side_panel(&self) -> &crate::side_panel::SidePanelSnapshot;
     /// Whether to pin read images to a side pane
     fn pin_images(&self) -> bool;
+    /// Whether inline transcript images render expanded. When false, each
+    /// image collapses to a one-line label stub with a `show image` badge.
+    /// Persisted across restarts/resume via UI preferences.
+    fn inline_images_visible(&self) -> bool {
+        true
+    }
     /// Remaining seconds before the pinned image side pane auto-hides.
     fn pinned_images_auto_hide_remaining_secs(&self) -> Option<u64> {
         None
@@ -1317,8 +1352,9 @@ pub(crate) fn redraw_interval_with_policy(
 
     // A retained/collapsing reasoning trace shrinks away even when the turn is no
     // longer processing, so it needs a smooth animation cadence and must skip the
-    // deep-idle short-circuits below.
-    if state.reasoning_animation_active() {
+    // deep-idle short-circuits below. The same goes for the tail-follow catch-up
+    // slide (viewport easing toward the bottom after a large append).
+    if state.reasoning_animation_active() || ui::tail_catchup_active() {
         return match policy.tier {
             crate::perf::PerformanceTier::Minimal => fast_interval,
             _ => animation_interval,
@@ -1451,6 +1487,7 @@ pub(crate) fn periodic_redraw_required(state: &dyn TuiState) -> bool {
     if state.is_processing()
         || !state.streaming_text().is_empty()
         || state.reasoning_animation_active()
+        || ui::tail_catchup_active()
         || state.status_notice().is_some()
         || state.has_pending_mouse_scroll_animation()
         || state.copy_selection_edge_autoscroll_active()

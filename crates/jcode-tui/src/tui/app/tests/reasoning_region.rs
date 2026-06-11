@@ -475,6 +475,39 @@ fn retained_reasoning_folds_away_after_turn_finishes() {
 }
 
 #[test]
+fn opening_new_reasoning_region_collapses_previous_retained_trace() {
+    // The previous retained trace must start folding away as soon as the next
+    // reasoning trace begins streaming, not only once the new trace closes.
+    let mut app = create_test_app();
+
+    app.open_reasoning_region();
+    app.append_reasoning_text("first trace\n");
+    app.reasoning_pending_line.clear();
+    app.reasoning_streaming = false;
+    app.retain_current_reasoning_block();
+    assert!(app.reasoning_retained_markup().is_some());
+    assert!(app.reasoning_collapse_state().is_none());
+
+    // The next trace starts streaming: the old one collapses immediately.
+    app.open_reasoning_region();
+    app.append_reasoning_text("second trace begins");
+
+    assert!(
+        app.reasoning_retained_markup().is_none(),
+        "stale retained trace must be dropped when a new trace starts"
+    );
+    let (collapsing, _) = app
+        .reasoning_collapse_state()
+        .expect("previous trace should be collapsing while the new one streams");
+    assert!(collapsing.contains("first trace"), "got: {collapsing:?}");
+    assert!(
+        app.streaming_text().contains("second trace begins"),
+        "new trace must stream live: {:?}",
+        app.streaming_text()
+    );
+}
+
+#[test]
 fn clear_retained_reasoning_drops_trace_and_collapse() {
     // Starting a new turn (or resetting the transcript) drops any retained or
     // collapsing reasoning immediately.
@@ -491,4 +524,149 @@ fn clear_retained_reasoning_drops_trace_and_collapse() {
     assert!(app.reasoning_retained_markup().is_none());
     assert!(app.reasoning_collapse_state().is_none());
     assert!(!app.reasoning_animation_active());
+}
+
+#[test]
+fn remote_reasoning_delta_burst_is_paced_not_dumped() {
+    // A large provider reasoning burst must reveal over multiple paced frames
+    // (via the segment-aware StreamBuffer), not pop in all at once. This is the
+    // regression test for "reasoning mode feels choppy".
+    let mut app = create_test_app();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let _guard = rt.enter();
+    let mut remote = crate::tui::backend::RemoteConnection::dummy();
+    app.is_processing = true;
+    app.status = ProcessingStatus::Streaming;
+
+    let burst = "x".repeat(400);
+    app.handle_server_event(
+        crate::protocol::ServerEvent::ReasoningDelta { text: burst },
+        &mut remote,
+    );
+
+    // Only a small paced slice should be visible immediately; the rest stays
+    // buffered and drains on subsequent redraw frames.
+    let visible = app.streaming_text().matches('x').count();
+    assert!(
+        visible < 400,
+        "reasoning burst must not dump in one frame, revealed {visible} chars"
+    );
+    assert!(
+        !app.stream_buffer.is_empty(),
+        "remainder must stay buffered for paced reveal"
+    );
+
+    // Draining the buffer (as the redraw tick does) eventually reveals it all.
+    let ops = app.stream_buffer.flush();
+    app.apply_stream_ops(ops);
+    assert_eq!(app.streaming_text().matches('x').count(), 400);
+}
+
+#[test]
+fn remote_reasoning_then_text_preserves_order_through_paced_buffer() {
+    // Interleaved reasoning -> answer must reveal in arrival order even though
+    // both kinds now share one paced backlog: the reasoning region closes after
+    // the last buffered reasoning char and before the first answer char.
+    let mut app = create_test_app();
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let _guard = rt.enter();
+    let mut remote = crate::tui::backend::RemoteConnection::dummy();
+    app.is_processing = true;
+    app.status = ProcessingStatus::Streaming;
+
+    app.handle_server_event(
+        crate::protocol::ServerEvent::ReasoningDelta {
+            text: "thinking hard about this problem\n".to_string(),
+        },
+        &mut remote,
+    );
+    app.handle_server_event(
+        crate::protocol::ServerEvent::ReasoningDone {
+            duration_secs: None,
+        },
+        &mut remote,
+    );
+    app.handle_server_event(
+        crate::protocol::ServerEvent::TextDelta {
+            text: "The answer is 42.".to_string(),
+        },
+        &mut remote,
+    );
+
+    // Drain whatever is still paced.
+    let ops = app.stream_buffer.flush();
+    app.apply_stream_ops(ops);
+
+    // The reasoning region must be closed (current mode discards/retains it) and
+    // the answer text must be present, unstyled, after it.
+    assert!(!app.reasoning_streaming, "region must close before answer");
+    let text = app.streaming_text();
+    assert!(
+        text.contains("The answer is 42."),
+        "answer must reveal after reasoning: {text:?}"
+    );
+}
+
+#[test]
+fn retain_with_preceding_answer_text_discards_instead_of_repositioning() {
+    // The retained trace renders in its own section *above* the live stream.
+    // If answer text streamed before the reasoning block, hoisting the block
+    // above that text would visually reposition it (anchor violation). The
+    // block must be discarded at its anchor (the stream tail) instead.
+    let mut app = create_test_app();
+
+    app.append_streaming_text("answer text that streamed first");
+    app.open_reasoning_region();
+    app.append_reasoning_text("later thinking\n");
+    app.reasoning_pending_line.clear();
+    app.reasoning_streaming = false;
+    app.retain_current_reasoning_block();
+
+    assert!(
+        app.reasoning_retained_markup().is_none(),
+        "block with preceding answer text must not be hoisted above it"
+    );
+    let text = app.streaming_text();
+    assert!(
+        text.contains("answer text that streamed first"),
+        "answer text must stay in the stream: {text:?}"
+    );
+    assert!(
+        !text.contains(jcode_tui_markdown::REASONING_SENTINEL),
+        "reasoning must be discarded in place: {text:?}"
+    );
+}
+
+#[test]
+fn commit_drops_retained_trace_instead_of_leaving_it_below_the_answer() {
+    // Committing the streamed answer moves it into the transcript body, which
+    // renders *above* the reasoning trace section. A trace retained across the
+    // commit would therefore appear below the answer it preceded (chronology
+    // flip) and bounce when the next thinking starts. The commit must drop it.
+    let mut app = create_test_app();
+
+    app.open_reasoning_region();
+    app.append_reasoning_text("pre-answer thinking\n");
+    app.reasoning_pending_line.clear();
+    app.reasoning_streaming = false;
+    app.retain_current_reasoning_block();
+    assert!(app.reasoning_retained_markup().is_some());
+
+    app.append_streaming_text("the final answer");
+    app.commit_pending_streaming_assistant_message();
+
+    assert!(
+        app.reasoning_retained_markup().is_none(),
+        "retained trace must not survive a commit boundary"
+    );
+    assert!(
+        app.reasoning_collapse_state().is_none(),
+        "no stale collapse animation across a commit"
+    );
+    assert!(
+        app.display_messages
+            .iter()
+            .any(|m| m.role == "assistant" && m.content.contains("the final answer")),
+        "answer must commit to the transcript"
+    );
 }

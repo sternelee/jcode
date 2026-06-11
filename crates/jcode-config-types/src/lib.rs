@@ -363,11 +363,7 @@ pub struct NamedProviderConfig {
     /// some OpenAI-compatible backends require (e.g. NVIDIA NIM DeepSeek-V4
     /// needs `chat_template_kwargs = { thinking = true, reasoning_effort = "high" }`).
     /// Must be a JSON object; keys here override jcode-generated body fields.
-    #[serde(
-        default,
-        alias = "extra-body",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, alias = "extra-body", skip_serializing_if = "Option::is_none")]
     pub extra_body: Option<serde_json::Value>,
 }
 
@@ -454,6 +450,38 @@ impl SwarmSpawnMode {
             Self::Auto => "auto",
         }
     }
+}
+
+/// Terminal window/pane spawning configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct TerminalConfig {
+    /// External command that takes over headed session spawns (new terminal
+    /// windows for swarm agents, resume-in-new-terminal, self-dev, restarts).
+    ///
+    /// When set, jcode runs `<spawn_hook> <jcode-binary> <args...>` instead of
+    /// opening a terminal emulator itself, with `JCODE_SPAWN_*` metadata env
+    /// vars describing the spawn (kind, session id, title, cwd, full command).
+    /// This lets multiplexers and wrappers (tmux, kitty remote, zellij, herd
+    /// runners, window managers) decide where and how the session appears.
+    ///
+    /// Example: `spawn_hook = "tmux new-window"` opens each headed spawn as a
+    /// tmux window in the current server. If the hook fails to launch, jcode
+    /// falls back to its built-in terminal detection.
+    ///
+    /// Env override: `JCODE_SPAWN_HOOK` (set empty to disable a config hook).
+    pub spawn_hook: Option<String>,
+    /// External command used to focus/raise an existing session window.
+    ///
+    /// When set, jcode runs the hook (instead of wmctrl/xdotool) whenever it
+    /// wants to bring a session's window to the foreground, with
+    /// `JCODE_FOCUS_SESSION_ID` and `JCODE_FOCUS_TITLE` env vars. Pair this
+    /// with `spawn_hook` so wrappers that own placement (tmux, kitty remote,
+    /// herd) also own focus (e.g. `tmux select-window`, Wayland compositor
+    /// IPC like `niri msg`).
+    ///
+    /// Env override: `JCODE_FOCUS_HOOK` (set empty to disable a config hook).
+    pub focus_hook: Option<String>,
 }
 
 /// Automatic end-of-turn code review configuration.

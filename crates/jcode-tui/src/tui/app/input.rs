@@ -1664,6 +1664,10 @@ pub(super) fn handle_visible_copy_shortcut(
         return true;
     }
 
+    if handle_inline_image_toggle_shortcut(app, c) {
+        return true;
+    }
+
     if let Some(target) = crate::tui::ui::recent_flicker_copy_target_for_key(c)
         .or_else(|| crate::tui::ui::visible_copy_target_for_key(c))
     {
@@ -1693,6 +1697,22 @@ fn visible_copy_shortcut_key(code: KeyCode, modifiers: KeyModifiers) -> Option<c
     };
 
     modifiers.contains(KeyModifiers::ALT).then_some(c)
+}
+
+/// Alt+Shift+I toggles inline transcript images between expanded and
+/// collapsed label stubs. Only active when the transcript actually has
+/// inline images, so the chord stays inert otherwise.
+fn handle_inline_image_toggle_shortcut(app: &mut App, key: char) -> bool {
+    if !key.eq_ignore_ascii_case(&'i') {
+        return false;
+    }
+    use crate::tui::TuiState as _;
+    if app.side_pane_images_signature().0 == 0 {
+        return false;
+    }
+    app.record_copy_badge_key_press('i');
+    app.toggle_inline_images();
+    true
 }
 
 fn handle_expand_edit_badge_shortcut(app: &mut App, key: char) -> bool {
@@ -2388,6 +2408,12 @@ impl App {
         if self.reasoning_streaming {
             return;
         }
+        // A new reasoning trace supersedes the previous retained one. Fold the
+        // old trace away as soon as the new one starts streaming so stale
+        // reasoning never lingers next to the live trace.
+        if let Some(prev) = self.reasoning_retained.take() {
+            self.start_reasoning_collapse(prev);
+        }
         // Separate the reasoning block from any prior content with a blank line.
         if !self.streaming.streaming_text.is_empty() {
             if self.streaming.streaming_text.ends_with("\n\n") {
@@ -2521,12 +2547,30 @@ impl App {
     /// the retained trace. Any previously retained trace begins its shrink-away
     /// animation (it is "fully done" now that a newer trace has closed). Used in
     /// `current` mode when decorative animations are enabled.
+    ///
+    /// Anchor stability: the retained trace renders in its own section *above*
+    /// the live stream, so retaining is only position-stable when the block was
+    /// already at the top of the stream (nothing else precedes it; the trace
+    /// stays visually in place). When answer text streamed *before* the block,
+    /// moving it above that text would make it jump upward, so the block is
+    /// discarded in place at the tail instead.
     pub(super) fn retain_current_reasoning_block(&mut self) {
         let block_start = self
             .reasoning_block_start
             .take()
             .unwrap_or(0)
             .min(self.streaming.streaming_text.len());
+        // Answer text precedes the block: retaining above would reposition the
+        // trace over content that streamed first. Drop it at its anchor (the
+        // stream tail) instead.
+        if !self.streaming.streaming_text[..block_start].trim().is_empty() {
+            self.streaming.streaming_text.truncate(block_start);
+            while self.streaming.streaming_text.ends_with('\n') {
+                self.streaming.streaming_text.pop();
+            }
+            self.refresh_split_view_if_needed();
+            return;
+        }
         // Everything from the block start onward is the reasoning markup. Split it
         // off so the preceding answer text (if any) stays in the live stream.
         let block = self.streaming.streaming_text.split_off(block_start);
@@ -2630,6 +2674,49 @@ impl App {
         self.refresh_split_view_if_needed();
     }
 
+    /// Apply a batch of paced [`StreamOp`]s from the segment-aware
+    /// [`StreamBuffer`](crate::tui::stream_buffer::StreamBuffer) to the live
+    /// streaming view, preserving arrival order across answer text, reasoning
+    /// text, and reasoning-region boundaries. Returns true when anything
+    /// visible changed.
+    pub(super) fn apply_stream_ops(
+        &mut self,
+        ops: Vec<crate::tui::stream_buffer::StreamOp>,
+    ) -> bool {
+        use crate::tui::stream_buffer::StreamOp;
+        let mut changed = false;
+        for op in ops {
+            match op {
+                StreamOp::Text(text) => {
+                    if !text.is_empty() {
+                        // Real output: make sure any still-open reasoning region is
+                        // closed first so the answer renders as normal text. The
+                        // buffer queues an explicit CloseReasoning before
+                        // non-whitespace text, but be defensive about ordering.
+                        if self.reasoning_streaming && !text.trim().is_empty() {
+                            self.close_reasoning_region(None);
+                        }
+                        self.append_streaming_text(&text);
+                        changed = true;
+                    }
+                }
+                StreamOp::Reasoning(text) => {
+                    if !text.is_empty() {
+                        self.append_reasoning_text(&text);
+                        changed = true;
+                    }
+                }
+                StreamOp::CloseReasoning => {
+                    if self.reasoning_streaming {
+                        self.close_reasoning_region(None);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        changed
+    }
+
     /// In `current` reasoning display mode, reasoning is shown live but collapsed
     /// once the assistant commits a message or runs a tool. Strip any
     /// reasoning-marked lines (identified by [`REASONING_SENTINEL`]) from text
@@ -2676,12 +2763,39 @@ impl App {
     }
 
     pub(super) fn commit_pending_streaming_assistant_message(&mut self) -> bool {
-        if let Some(chunk) = self.stream_buffer.flush() {
-            self.append_streaming_text(&chunk);
+        let ops = self.stream_buffer.flush();
+        self.apply_stream_ops(ops);
+        // A commit is a hard message boundary: end any still-open reasoning
+        // region so `current` mode retains/discards the trace correctly.
+        if self.reasoning_streaming {
+            self.close_reasoning_region(None);
         }
+        // The commit ends this reasoning->answer segment. The retained trace
+        // renders below the transcript body, so a trace kept across the commit
+        // would sit *below* the answer it preceded (chronology flip) and bounce
+        // when the next thinking starts. Fold it into the one-line collapsed
+        // summary ("▸ thought (n lines)") placed above the answer inside the
+        // committed message: chronology is preserved, the vertical shift is
+        // small, and it matches how reloaded history renders in current mode.
+        let folded_summary = if self.reasoning_current_mode() {
+            self.reasoning_collapse = None;
+            self.reasoning_retained.take().map(|trace| {
+                let line_count = trace.lines().filter(|l| !l.trim().is_empty()).count();
+                jcode_tui_markdown::reasoning_summary_line_markup(line_count)
+            })
+        } else {
+            None
+        };
 
         if self.streaming.streaming_text.is_empty() {
             self.stream_buffer.clear();
+            // Reasoning-only segment (thinking straight into a tool call):
+            // commit just the folded trace marker so the thought leaves a
+            // stable, anchored line instead of vanishing in one frame.
+            if let Some(summary) = folded_summary {
+                self.push_display_message(DisplayMessage::assistant(summary));
+                return true;
+            }
             return false;
         }
 
@@ -2690,8 +2804,19 @@ impl App {
         if content.trim().is_empty() {
             // Nothing left after collapsing reasoning-only content.
             self.stream_buffer.clear();
+            if let Some(summary) = folded_summary {
+                self.push_display_message(DisplayMessage::assistant(summary));
+                return true;
+            }
             return false;
         }
+        // The summary is its own paragraph above the answer. The blank line
+        // also keeps the fold's upward shift small (summary + blank replaces
+        // trace + blank), so the answer slides instead of jumping.
+        let content = match folded_summary {
+            Some(summary) => format!("{summary}\n{content}"),
+            None => content,
+        };
         self.push_display_message(DisplayMessage::assistant(content));
         self.stream_buffer.clear();
         true

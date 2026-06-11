@@ -100,9 +100,7 @@ impl ModelCatalogService {
         let age = SystemTime::now()
             .duration_since(observed_at)
             .unwrap_or(Duration::ZERO);
-        let fetched_at = Instant::now()
-            .checked_sub(age)
-            .unwrap_or_else(Instant::now);
+        let fetched_at = Instant::now().checked_sub(age).unwrap_or_else(Instant::now);
         self.replace_scope_models_inner(scope, models, observed_at, fetched_at)
     }
 
@@ -273,6 +271,32 @@ impl ModelCatalogService {
             in_flight.insert(scope.to_string(), started_at);
         }
     }
+
+    /// Test-only: drop all cached scopes and bookkeeping. The catalog services
+    /// are process-global statics, so without this a test that hydrates a
+    /// scope (e.g. `api-key` -> fixture models) leaks that catalog into every
+    /// later test in the same process, breaking model-validation assertions.
+    #[cfg(test)]
+    pub(crate) fn reset_for_tests(&self) {
+        if let Ok(mut models) = self.available_models.write() {
+            models.clear();
+        }
+        if let Ok(mut fetched_at) = self.fetched_at.write() {
+            fetched_at.clear();
+        }
+        if let Ok(mut observed_at) = self.observed_at.write() {
+            observed_at.clear();
+        }
+        if let Ok(mut last_attempt) = self.last_attempt.write() {
+            last_attempt.clear();
+        }
+        if let Ok(mut in_flight) = self.in_flight.write() {
+            in_flight.clear();
+        }
+        if let Ok(mut unavailable) = self.runtime_unavailable_models.write() {
+            unavailable.clear();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -346,7 +370,10 @@ mod tests {
         assert!(service.hydrate_scope_models_from_snapshot("default", models, observed_at));
 
         // Models are available immediately for display...
-        assert_eq!(service.model_ids("default"), Some(vec!["gpt-5.5".to_string()]));
+        assert_eq!(
+            service.model_ids("default"),
+            Some(vec!["gpt-5.5".to_string()])
+        );
         // ...but the scope is not considered fresh, so a live refresh can run.
         assert!(!service.is_fresh("default"));
         assert!(service.should_refresh("default"));

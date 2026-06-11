@@ -451,6 +451,7 @@ impl crate::tui::TuiState for App {
                 .iter()
                 .take(64)
                 .for_each(|b| b.hash(&mut hasher));
+            crate::tui::hash_rendered_image_anchor(image.anchor.as_ref(), &mut hasher);
         }
         let signature = (images.len(), hasher.finish());
         self.side_pane_images_signature_cache
@@ -1495,6 +1496,10 @@ impl crate::tui::TuiState for App {
     }
     fn pin_images(&self) -> bool {
         self.pin_images && !self.side_panel_user_hidden
+    }
+
+    fn inline_images_visible(&self) -> bool {
+        self.inline_images_visible
     }
     fn pinned_images_auto_hide_remaining_secs(&self) -> Option<u64> {
         if self.side_panel_user_hidden

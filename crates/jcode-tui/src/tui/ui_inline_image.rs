@@ -20,7 +20,8 @@ use crate::tui::mermaid;
 use jcode_tui_messages::{ImageRegion, ImageRegionRender, PreparedMessages};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use std::sync::{LazyLock, Mutex};
+use std::collections::{HashMap, HashSet};
+use std::sync::{LazyLock, Mutex, OnceLock, mpsc};
 
 #[inline]
 fn div_ceil_u32(value: u32, divisor: u32) -> u32 {
@@ -29,6 +30,7 @@ fn div_ceil_u32(value: u32, divisor: u32) -> u32 {
 }
 
 /// One image to render inline, resolved from a `RenderedImage`.
+#[derive(Clone)]
 pub(crate) struct InlineImageItem {
     pub id: u64,
     pub width: u32,
@@ -43,6 +45,11 @@ const DEFAULT_CELL: (u16, u16) = (8, 16);
 const MAX_VIEWPORT_FRACTION_PERCENT: u16 = 55;
 /// Never shrink an inline image below this many rows.
 const MIN_IMAGE_ROWS: u16 = 3;
+/// Fixed row cap for images anchored inside the transcript body. The body is
+/// prepared and cached independently of the viewport height, so anchored
+/// placeholder geometry must not depend on it; a fixed cap keeps tall
+/// screenshots from dominating the flow while staying resize-stable.
+const ANCHORED_MAX_ROWS: u16 = 16;
 
 /// Ingest-time registry mapping image id -> (media_type, base64) so the draw
 /// step can materialize bytes without threading payloads through the cached
@@ -65,11 +72,12 @@ impl PayloadRegistry {
         }
     }
 
-    fn insert(&mut self, id: u64, media_type: String, data_b64: String) {
+    fn insert(&mut self, id: u64, media_type: &str, data_b64: &str) {
         if self.map.contains_key(&id) {
             return;
         }
-        self.map.insert(id, (media_type, data_b64));
+        self.map
+            .insert(id, (media_type.to_string(), data_b64.to_string()));
         self.order.push_back(id);
         while self.order.len() > PAYLOAD_REGISTRY_MAX {
             if let Some(old) = self.order.pop_front() {
@@ -86,54 +94,285 @@ impl PayloadRegistry {
 /// Record an image payload so [`materialize_visible`] can decode it on demand.
 pub(crate) fn register_payload(id: u64, media_type: &str, data_b64: &str) {
     if let Ok(mut reg) = PAYLOAD_REGISTRY.lock() {
-        reg.insert(id, media_type.to_string(), data_b64.to_string());
+        reg.insert(id, media_type, data_b64);
     }
 }
 
 /// Ensure the image with `id` is materialized (decoded + cached) so it can be
-/// drawn. Returns true on success. Cheap and idempotent on repeat.
+/// drawn. Returns true on success.
+///
+/// Steady-state frames hit a cheap in-memory presence probe (no payload clone,
+/// no payload hash); only the first visible frame for an image pays the decode
+/// + cache cost.
 pub(crate) fn materialize_visible(id: u64) -> bool {
-    if let Some((media_type, data_b64)) = PAYLOAD_REGISTRY
-        .lock()
-        .ok()
-        .and_then(|reg| reg.get(id))
-    {
-        return mermaid::materialize_inline_image(&media_type, &data_b64).is_some();
+    if mermaid::inline_image_is_materialized(id) {
+        return true;
+    }
+    if let Some((media_type, data_b64)) = PAYLOAD_REGISTRY.lock().ok().and_then(|reg| reg.get(id)) {
+        return mermaid::materialize_inline_image_by_id(id, &media_type, &data_b64).is_some();
     }
     false
+}
+
+/// One pending prewarm request: build everything needed to draw image `id`
+/// at the given placeholder geometry (decode payload, write cache file, scale
+/// to the target box, escape-encode for Kitty).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct PrewarmRequest {
+    id: u64,
+    target_cols: u16,
+    target_rows: u16,
+}
+
+static PREWARM_TX: OnceLock<mpsc::Sender<PrewarmRequest>> = OnceLock::new();
+/// Requests queued or in flight, so a 60fps scroll doesn't enqueue the same
+/// image dozens of times before the worker finishes it.
+static PREWARM_INFLIGHT: LazyLock<Mutex<HashSet<PrewarmRequest>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn prewarm_sender() -> &'static mpsc::Sender<PrewarmRequest> {
+    PREWARM_TX.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<PrewarmRequest>();
+        if let Err(err) = std::thread::Builder::new()
+            .name("jcode-inline-image-prewarm".to_string())
+            .spawn(move || prewarm_worker(rx))
+        {
+            crate::logging::warn(&format!(
+                "Failed to spawn inline-image prewarm worker; first view will decode on the UI thread: {}",
+                err
+            ));
+        }
+        tx
+    })
+}
+
+fn prewarm_worker(rx: mpsc::Receiver<PrewarmRequest>) {
+    for req in rx {
+        materialize_visible(req.id);
+        mermaid::prewarm_inline_fit_state(req.id, req.target_cols, req.target_rows, true);
+        if let Ok(mut inflight) = PREWARM_INFLIGHT.lock() {
+            inflight.remove(&req);
+        }
+        // Nudge the UI exactly like a finished deferred Mermaid render so the
+        // placeholder fills in on the next frame without user input. The
+        // prepared placeholder geometry is unchanged, so no prepare-cache
+        // invalidation is needed - just a repaint.
+        crate::bus::Bus::global().publish(crate::bus::BusEvent::MermaidRenderCompleted);
+    }
+}
+
+/// Make sure image `id` can be drawn cheaply this frame.
+///
+/// Returns true when the draw path can run now without heavy work (image
+/// decoded and, on Kitty, scale+transmit state matches the placeholder
+/// geometry). Returns false after scheduling background preparation; the
+/// caller should skip drawing this frame and rely on the completion nudge to
+/// repaint.
+pub(crate) fn ensure_drawable(id: u64, target_cols: u16, target_rows: u16) -> bool {
+    let materialized = mermaid::inline_image_is_materialized(id);
+    let readiness = if materialized {
+        mermaid::inline_fit_readiness(id, target_cols, target_rows, true)
+    } else {
+        // Not decoded yet. On any protocol the first draw would block on a
+        // full decode, so prewarm regardless of protocol support.
+        mermaid::InlineFitReadiness::NeedsPrewarm
+    };
+
+    match readiness {
+        mermaid::InlineFitReadiness::Ready => true,
+        mermaid::InlineFitReadiness::Unsupported => {
+            // Non-Kitty fallback renderers manage their own protocol state;
+            // just make sure the bytes are decoded, off-thread if possible.
+            if materialized {
+                true
+            } else {
+                schedule_prewarm(id, target_cols, target_rows);
+                false
+            }
+        }
+        mermaid::InlineFitReadiness::NeedsPrewarm => {
+            schedule_prewarm(id, target_cols, target_rows);
+            false
+        }
+    }
+}
+
+fn schedule_prewarm(id: u64, target_cols: u16, target_rows: u16) {
+    let req = PrewarmRequest {
+        id,
+        target_cols,
+        target_rows,
+    };
+    if let Ok(mut inflight) = PREWARM_INFLIGHT.lock() {
+        if !inflight.insert(req) {
+            return;
+        }
+    }
+    if prewarm_sender().send(req).is_err() {
+        // Worker unavailable: fall back to synchronous work on next frame.
+        if let Ok(mut inflight) = PREWARM_INFLIGHT.lock() {
+            inflight.remove(&req);
+        }
+        materialize_visible(id);
+    }
 }
 
 /// Resolve the app's rendered images into lazily-sized inline items. Performs
 /// only header-level work (no full decode) and registers each payload for the
 /// later draw-time materialize.
+#[cfg(test)]
 pub(crate) fn resolve_items(images: &[crate::session::RenderedImage]) -> Vec<InlineImageItem> {
     let mut items = Vec::new();
     for image in images {
-        let Some((id, width, height)) =
-            mermaid::inline_image_dims(&image.media_type, &image.data)
-        else {
-            continue;
-        };
-        register_payload(id, &image.media_type, &image.data);
-        let label = image
-            .label
-            .clone()
-            .unwrap_or_else(|| image.media_type.clone());
-        items.push(InlineImageItem {
-            id,
-            width,
-            height,
-            label,
-        });
+        if let Some(item) = resolve_item(image) {
+            items.push(item);
+        }
     }
     items
 }
 
+fn resolve_item(image: &crate::session::RenderedImage) -> Option<InlineImageItem> {
+    let (id, width, height) = mermaid::inline_image_dims(&image.media_type, &image.data)?;
+    register_payload(id, &image.media_type, &image.data);
+    let label = image
+        .label
+        .clone()
+        .unwrap_or_else(|| image.media_type.clone());
+    Some(InlineImageItem {
+        id,
+        width,
+        height,
+        label,
+    })
+}
+
+/// Inline images split by their transcript anchor so the body renderer can
+/// place each one at the message that produced it.
+#[derive(Default)]
+pub(crate) struct AnchoredInlineImages {
+    /// Images anchored to a tool result, keyed by tool call id.
+    pub by_tool: HashMap<String, Vec<InlineImageItem>>,
+    /// Images anchored to the nth (0-based) rendered user prompt.
+    pub by_prompt: HashMap<usize, Vec<InlineImageItem>>,
+    /// Images with no usable anchor; rendered at the end of the transcript.
+    pub unanchored: Vec<InlineImageItem>,
+}
+
+impl AnchoredInlineImages {
+    #[cfg(test)]
+    pub(crate) fn has_anchored(&self) -> bool {
+        !self.by_tool.is_empty() || !self.by_prompt.is_empty()
+    }
+
+    /// Items that will NOT be placed inside the transcript body: unanchored
+    /// images plus anchored images whose anchor target does not exist among
+    /// `messages` (e.g. live images for a tool whose transcript entry was
+    /// replaced). These fall back to the bottom inline-images section so no
+    /// image ever silently disappears.
+    pub(crate) fn unplaced_items(
+        &self,
+        messages: &[jcode_tui_messages::DisplayMessage],
+    ) -> Vec<InlineImageItem> {
+        let mut items: Vec<InlineImageItem> = self.unanchored.clone();
+        if self.by_tool.is_empty() && self.by_prompt.is_empty() {
+            return items;
+        }
+
+        let mut tool_ids: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut prompt_count = 0usize;
+        for msg in messages {
+            use crate::tui::DisplayMessageRoleExt as _;
+            match msg.effective_role() {
+                "tool" => {
+                    if let Some(tool) = &msg.tool_data {
+                        tool_ids.insert(tool.id.as_str());
+                    }
+                }
+                "user" => {
+                    if !crate::session::is_attached_image_label_text(&msg.content) {
+                        prompt_count += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for (id, bucket) in &self.by_tool {
+            if !tool_ids.contains(id.as_str()) {
+                items.extend(bucket.iter().cloned());
+            }
+        }
+        for (ordinal, bucket) in &self.by_prompt {
+            if *ordinal >= prompt_count {
+                items.extend(bucket.iter().cloned());
+            }
+        }
+        items
+    }
+}
+
+/// Resolve rendered images into anchored buckets (tool call / user prompt /
+/// unanchored). Same lazy header-only cost profile as [`resolve_items`].
+pub(crate) fn resolve_anchored_items(
+    images: &[crate::session::RenderedImage],
+) -> AnchoredInlineImages {
+    let mut result = AnchoredInlineImages::default();
+    for image in images {
+        let Some(item) = resolve_item(image) else {
+            continue;
+        };
+        match &image.anchor {
+            Some(crate::session::RenderedImageAnchor::ToolCall { id }) => {
+                result.by_tool.entry(id.clone()).or_default().push(item);
+            }
+            Some(crate::session::RenderedImageAnchor::UserPrompt { ordinal }) => {
+                result.by_prompt.entry(*ordinal).or_default().push(item);
+            }
+            None => result.unanchored.push(item),
+        }
+    }
+    result
+}
+
+/// One-slot cache for [`resolve_anchored_items`], keyed by the image-set
+/// signature. Resolving hashes every image payload (for ids), so body
+/// preparation must not redo it per rebuild; the signature is already cached
+/// per transcript version on the app side.
+static ANCHORED_CACHE: LazyLock<
+    Mutex<Option<((usize, u64), std::sync::Arc<AnchoredInlineImages>)>>,
+> = LazyLock::new(|| Mutex::new(None));
+
+/// Resolve the app's images into anchored buckets, cached by the image-set
+/// signature. Returns an empty result without touching payloads when the app
+/// has no images or inline images are hidden.
+pub(crate) fn resolve_anchored_items_cached(
+    app: &dyn crate::tui::TuiState,
+) -> std::sync::Arc<AnchoredInlineImages> {
+    if !app.pin_images() {
+        return std::sync::Arc::new(AnchoredInlineImages::default());
+    }
+    let signature = app.side_pane_images_signature();
+    if signature.0 == 0 {
+        return std::sync::Arc::new(AnchoredInlineImages::default());
+    }
+    if let Ok(cache) = ANCHORED_CACHE.lock()
+        && let Some((cached_sig, cached)) = cache.as_ref()
+        && *cached_sig == signature
+    {
+        return cached.clone();
+    }
+    let resolved = std::sync::Arc::new(resolve_anchored_items(&app.side_pane_images()));
+    if let Ok(mut cache) = ANCHORED_CACHE.lock() {
+        *cache = Some((signature, resolved.clone()));
+    }
+    resolved
+}
+
 /// Compute how many `(rows, cols)` an inline image occupies at `chat_width`,
-/// given a viewport height to cap against. `cols` includes the 2-cell left
-/// border, matching what the draw step actually paints, so layout (e.g. info
-/// widget placement) can know the real horizontal extent.
-fn fit_geometry(width: u32, height: u32, chat_width: u16, viewport_height: u16) -> (u16, u16) {
+/// capped at `cap_rows`. `cols` includes the 2-cell left border, matching what
+/// the draw step actually paints, so layout (e.g. info widget placement) can
+/// know the real horizontal extent.
+fn fit_geometry_with_cap(width: u32, height: u32, chat_width: u16, cap_rows: u16) -> (u16, u16) {
     if width == 0 || height == 0 {
         return (MIN_IMAGE_ROWS, chat_width.min(2));
     }
@@ -146,9 +385,7 @@ fn fit_geometry(width: u32, height: u32, chat_width: u16, viewport_height: u16) 
     let avail_cells = chat_width.saturating_sub(2).max(1) as u32;
     let avail_px = avail_cells * cell_w;
 
-    // Cap rows to a fraction of the viewport so tall images stay manageable.
-    let cap_rows = ((viewport_height as u32 * MAX_VIEWPORT_FRACTION_PERCENT as u32) / 100)
-        .max(MIN_IMAGE_ROWS as u32);
+    let cap_rows = (cap_rows as u32).max(MIN_IMAGE_ROWS as u32);
     let cap_px = cap_rows * cell_h;
 
     // Scale to fit *both* the width and the row cap, preserving aspect ratio,
@@ -168,23 +405,99 @@ fn fit_geometry(width: u32, height: u32, chat_width: u16, viewport_height: u16) 
     let cols = (div_ceil_u32(final_w_px.max(1), cell_w) as u16)
         .saturating_add(2)
         .min(chat_width);
-    (rows.min(cap_rows.min(u16::MAX as u32) as u16).max(MIN_IMAGE_ROWS), cols)
+    (
+        rows.min(cap_rows.min(u16::MAX as u32) as u16)
+            .max(MIN_IMAGE_ROWS),
+        cols,
+    )
+}
+
+/// Compute `(rows, cols)` for an inline image at `chat_width`, given a viewport
+/// height to cap against.
+fn fit_geometry(width: u32, height: u32, chat_width: u16, viewport_height: u16) -> (u16, u16) {
+    let cap_rows = ((viewport_height as u32 * MAX_VIEWPORT_FRACTION_PERCENT as u32) / 100)
+        .clamp(MIN_IMAGE_ROWS as u32, u16::MAX as u32) as u16;
+    fit_geometry_with_cap(width, height, chat_width, cap_rows)
+}
+
+/// Compute `(rows, cols)` for an image anchored inside the transcript body.
+/// Uses a fixed row cap so the body's prepared lines stay independent of the
+/// viewport height (the body cache is keyed by width only).
+pub(crate) fn fit_geometry_anchored(width: u32, height: u32, chat_width: u16) -> (u16, u16) {
+    fit_geometry_with_cap(width, height, chat_width, ANCHORED_MAX_ROWS)
 }
 
 /// Compute how many rows an inline image should occupy at `chat_width`, given a
 /// viewport height to cap against.
+#[cfg(test)]
 fn fit_rows(width: u32, height: u32, chat_width: u16, viewport_height: u16) -> u16 {
     fit_geometry(width, height, chat_width, viewport_height).0
 }
 
+/// Build the dim label line shown above an inline image, e.g.
+/// `  🖼 screenshot.png  1920×1080`, with a trailing show/hide badge
+/// (`[Alt] [⇧] [I] hide` / `[Alt] [⇧] [I] show image`) so the toggle is
+/// discoverable right where the image renders.
+pub(crate) fn image_label_line(item: &InlineImageItem, images_visible: bool) -> Line<'static> {
+    let dims = format!("{}×{}", item.width, item.height);
+    let label = if item.label.is_empty() {
+        dims
+    } else {
+        format!("{}  {}", item.label, dims)
+    };
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    let mut spans = vec![
+        Span::styled("  🖼 ", dim),
+        Span::styled(label, dim),
+        Span::raw("  "),
+        Span::styled(super::viewport::copy_badge_alt_badge(), dim),
+        Span::styled(" [⇧] [I] ", dim),
+    ];
+    if images_visible {
+        spans.push(Span::styled("hide", dim));
+    } else {
+        spans.push(Span::styled(
+            "show image",
+            Style::default().add_modifier(Modifier::DIM | Modifier::ITALIC),
+        ));
+    }
+    Line::from(spans)
+}
+
+/// Lines for images anchored at a transcript message: per image, a leading
+/// blank, a dim label, a geometry-encoding marker line plus blank placeholder
+/// rows (recognized by the image-region scan), and a trailing blank. When
+/// `images_visible` is false the image collapses to just its label stub (with
+/// a `show image` badge) and no placeholder rows are emitted, so nothing is
+/// painted.
+pub(crate) fn anchored_image_lines(
+    items: &[InlineImageItem],
+    width: u16,
+    images_visible: bool,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    for item in items {
+        lines.push(Line::from(""));
+        lines.push(image_label_line(item, images_visible));
+        if images_visible {
+            let (rows, cols) = fit_geometry_anchored(item.width, item.height, width);
+            lines.extend(mermaid::inline_image_placeholder_lines(item.id, rows, cols));
+        }
+        lines.push(Line::from(""));
+    }
+    lines
+}
+
 /// Build the inline-images prepared section: a heading + correctly-sized
 /// placeholder per image, with explicit `image_regions` (render = Fit) that the
-/// viewport draws lazily.
+/// viewport draws lazily. When `images_visible` is false each image collapses
+/// to its label stub and no regions are emitted.
 pub(crate) fn build_section(
     items: &[InlineImageItem],
     width: u16,
     viewport_height: u16,
     prefix_blank: bool,
+    images_visible: bool,
 ) -> PreparedMessages {
     use std::sync::Arc;
 
@@ -200,40 +513,32 @@ pub(crate) fn build_section(
     }
 
     for item in items {
-        // Label line (dim), e.g. "🖼 screenshot.png  1920×1080".
-        let dims = format!("{}×{}", item.width, item.height);
-        let label = if item.label.is_empty() {
-            dims.clone()
-        } else {
-            format!("{}  {}", item.label, dims)
-        };
-        lines.push(Line::from(vec![
-            Span::styled(
-                "  🖼 ",
-                Style::default().add_modifier(Modifier::DIM),
-            ),
-            Span::styled(label, Style::default().add_modifier(Modifier::DIM)),
-        ]));
+        lines.push(image_label_line(item, images_visible));
 
-        let (rows, cols) = fit_geometry(item.width, item.height, width, viewport_height);
-        let region_start = lines.len();
-        for _ in 0..rows {
-            lines.push(Line::from(""));
+        if images_visible {
+            let (rows, cols) = fit_geometry(item.width, item.height, width, viewport_height);
+            let region_start = lines.len();
+            for _ in 0..rows {
+                lines.push(Line::from(""));
+            }
+            image_regions.push(ImageRegion {
+                abs_line_idx: region_start,
+                end_line: region_start + rows as usize,
+                hash: item.id,
+                height: rows,
+                width: cols,
+                render: ImageRegionRender::Fit,
+            });
         }
-        image_regions.push(ImageRegion {
-            abs_line_idx: region_start,
-            end_line: region_start + rows as usize,
-            hash: item.id,
-            height: rows,
-            width: cols,
-            render: ImageRegionRender::Fit,
-        });
         // Trailing spacer between images.
         lines.push(Line::from(""));
     }
 
     let line_count = lines.len();
-    let plain: Vec<String> = lines.iter().map(jcode_tui_render::line_plain_text).collect();
+    let plain: Vec<String> = lines
+        .iter()
+        .map(jcode_tui_render::line_plain_text)
+        .collect();
 
     PreparedMessages {
         wrapped_lines: lines,
@@ -282,6 +587,37 @@ mod tests {
         }
     }
 
+    /// 1x1 transparent PNG used by the materialize tests below.
+    const MATERIALIZE_PNG_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+    #[test]
+    fn materialize_visible_probe_is_cheap_after_first_call() {
+        let id = mermaid::inline_image_id("image/png", MATERIALIZE_PNG_B64);
+        register_payload(id, "image/png", MATERIALIZE_PNG_B64);
+        assert!(materialize_visible(id), "first call decodes and caches");
+        // Steady state: the in-memory probe alone must report ready, without
+        // needing the payload registry at all.
+        assert!(
+            mermaid::inline_image_is_materialized(id),
+            "presence probe should hit after materialization"
+        );
+        assert!(materialize_visible(id), "repeat call stays true");
+    }
+
+    #[test]
+    fn ensure_drawable_true_for_materialized_image_without_kitty() {
+        // In tests no picker is initialized, so the stable-fit path reports
+        // Unsupported; a materialized image must still be drawable so the
+        // fallback renderers can run.
+        let id = mermaid::inline_image_id("image/png", MATERIALIZE_PNG_B64);
+        register_payload(id, "image/png", MATERIALIZE_PNG_B64);
+        assert!(materialize_visible(id));
+        assert!(
+            ensure_drawable(id, 80, 10),
+            "materialized image must be drawable on non-Kitty protocols"
+        );
+    }
+
     #[test]
     fn fit_rows_caps_tall_image_to_viewport_fraction() {
         // A very tall image must be capped so it cannot bury the transcript.
@@ -313,9 +649,11 @@ mod tests {
     fn fit_geometry_small_window_never_exceeds_chat_width() {
         for chat_width in [1u16, 2, 3, 5, 10] {
             for viewport_height in [1u16, 2, 5, 10] {
-                let (rows, cols) =
-                    fit_geometry(1920, 1080, chat_width, viewport_height);
-                assert!(cols <= chat_width.max(2), "cols {cols} > width {chat_width}");
+                let (rows, cols) = fit_geometry(1920, 1080, chat_width, viewport_height);
+                assert!(
+                    cols <= chat_width.max(2),
+                    "cols {cols} > width {chat_width}"
+                );
                 assert!(rows >= MIN_IMAGE_ROWS);
             }
         }
@@ -331,16 +669,20 @@ mod tests {
     #[test]
     fn build_section_records_region_width() {
         let items = vec![item(600, 400)];
-        let section = build_section(&items, 80, 40, false);
+        let section = build_section(&items, 80, 40, false, true);
         let region = &section.image_regions[0];
-        assert!(region.width > 2, "region width should include the image, got {}", region.width);
+        assert!(
+            region.width > 2,
+            "region width should include the image, got {}",
+            region.width
+        );
         assert!(region.width <= 80);
     }
 
     #[test]
     fn build_section_emits_one_fit_region_per_image_with_label() {
         let items = vec![item(600, 400), item(800, 600)];
-        let section = build_section(&items, 80, 40, true);
+        let section = build_section(&items, 80, 40, true, true);
         assert_eq!(section.image_regions.len(), 2);
         for region in &section.image_regions {
             assert_eq!(region.render, ImageRegionRender::Fit);
@@ -359,14 +701,66 @@ mod tests {
         }
         // A dim label line precedes the first region.
         let label_line = jcode_tui_render::line_plain_text(&section.wrapped_lines[1]);
-        assert!(label_line.contains("test.png"), "label missing: {label_line:?}");
+        assert!(
+            label_line.contains("test.png"),
+            "label missing: {label_line:?}"
+        );
     }
 
     #[test]
     fn build_section_is_empty_for_no_items() {
-        let section = build_section(&[], 80, 40, false);
+        let section = build_section(&[], 80, 40, false, true);
         assert!(section.wrapped_lines.is_empty());
         assert!(section.image_regions.is_empty());
+    }
+
+    #[test]
+    fn build_section_hidden_collapses_to_label_stub_with_show_badge() {
+        let items = vec![item(600, 400)];
+        let section = build_section(&items, 80, 40, false, false);
+        assert!(
+            section.image_regions.is_empty(),
+            "hidden images must not emit drawable regions"
+        );
+        let text: String = section
+            .wrapped_lines
+            .iter()
+            .map(jcode_tui_render::line_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("test.png"), "label should remain: {text:?}");
+        assert!(
+            text.contains("show image"),
+            "show badge should render: {text:?}"
+        );
+    }
+
+    #[test]
+    fn visible_label_line_advertises_hide_badge() {
+        let line = image_label_line(&item(600, 400), true);
+        let text = jcode_tui_render::line_plain_text(&line);
+        assert!(text.contains("[⇧] [I]"), "badge keys missing: {text:?}");
+        assert!(text.contains("hide"), "hide hint missing: {text:?}");
+    }
+
+    #[test]
+    fn anchored_image_lines_hidden_emit_no_placeholder_markers() {
+        let items = vec![item(600, 400)];
+        let lines = anchored_image_lines(&items, 80, false);
+        assert!(
+            lines
+                .iter()
+                .filter_map(mermaid::parse_inline_image_placeholder)
+                .next()
+                .is_none(),
+            "hidden images must not emit geometry markers"
+        );
+        let text: String = lines
+            .iter()
+            .map(jcode_tui_render::line_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("show image"), "show badge missing: {text:?}");
     }
 
     #[test]
@@ -374,5 +768,118 @@ mod tests {
         register_payload(0xDEAD_BEEF, "image/png", "AAAA");
         let got = PAYLOAD_REGISTRY.lock().unwrap().get(0xDEAD_BEEF);
         assert_eq!(got, Some(("image/png".to_string(), "AAAA".to_string())));
+    }
+
+    /// 1x1 transparent PNG, used to exercise the real header parse.
+    const TINY_PNG_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+    fn rendered_image(
+        anchor: Option<crate::session::RenderedImageAnchor>,
+    ) -> crate::session::RenderedImage {
+        crate::session::RenderedImage {
+            media_type: "image/png".to_string(),
+            data: TINY_PNG_B64.to_string(),
+            label: Some("tiny.png".to_string()),
+            source: crate::session::RenderedImageSource::ToolResult {
+                tool_name: "read".to_string(),
+            },
+            anchor,
+        }
+    }
+
+    #[test]
+    fn resolve_anchored_items_buckets_by_anchor() {
+        let images = vec![
+            rendered_image(Some(crate::session::RenderedImageAnchor::ToolCall {
+                id: "tool-1".to_string(),
+            })),
+            rendered_image(Some(crate::session::RenderedImageAnchor::UserPrompt {
+                ordinal: 2,
+            })),
+            rendered_image(None),
+        ];
+        let anchored = resolve_anchored_items(&images);
+        assert!(anchored.has_anchored());
+        assert_eq!(anchored.by_tool.get("tool-1").map(Vec::len), Some(1));
+        assert_eq!(anchored.by_prompt.get(&2).map(Vec::len), Some(1));
+        assert_eq!(anchored.unanchored.len(), 1);
+    }
+
+    #[test]
+    fn unplaced_items_falls_back_for_missing_anchor_targets() {
+        use jcode_tui_messages::DisplayMessage;
+
+        let images = vec![
+            rendered_image(Some(crate::session::RenderedImageAnchor::ToolCall {
+                id: "tool-present".to_string(),
+            })),
+            rendered_image(Some(crate::session::RenderedImageAnchor::ToolCall {
+                id: "tool-missing".to_string(),
+            })),
+            rendered_image(Some(crate::session::RenderedImageAnchor::UserPrompt {
+                ordinal: 0,
+            })),
+            rendered_image(Some(crate::session::RenderedImageAnchor::UserPrompt {
+                ordinal: 5,
+            })),
+            rendered_image(None),
+        ];
+        let anchored = resolve_anchored_items(&images);
+
+        let tool_call = crate::message::ToolCall {
+            id: "tool-present".to_string(),
+            name: "read".to_string(),
+            input: serde_json::Value::Null,
+            intent: None,
+            thought_signature: None,
+        };
+        let messages = vec![
+            DisplayMessage::user("show me"),
+            DisplayMessage::tool("output", tool_call),
+        ];
+
+        let unplaced = anchored.unplaced_items(&messages);
+        // tool-missing (1) + prompt ordinal 5 (1) + unanchored (1) = 3.
+        // tool-present and prompt 0 are placed in the body, not here.
+        assert_eq!(unplaced.len(), 3);
+    }
+
+    #[test]
+    fn anchored_image_lines_round_trip_through_region_scan() {
+        let items = vec![item(600, 400)];
+        let lines = anchored_image_lines(&items, 80, true);
+        // Find the marker line and verify its geometry parse.
+        let parsed: Vec<(u64, u16, u16)> = lines
+            .iter()
+            .filter_map(mermaid::parse_inline_image_placeholder)
+            .collect();
+        assert_eq!(parsed.len(), 1);
+        let (hash, rows, cols) = parsed[0];
+        assert_eq!(hash, 0xABCD);
+        let (expected_rows, expected_cols) = fit_geometry_anchored(600, 400, 80);
+        assert_eq!(rows, expected_rows);
+        assert_eq!(cols, expected_cols);
+        // Marker line is followed by rows-1 blank placeholder lines.
+        let marker_idx = lines
+            .iter()
+            .position(|line| mermaid::parse_inline_image_placeholder(line).is_some())
+            .unwrap();
+        for offset in 1..rows as usize {
+            let line = &lines[marker_idx + offset];
+            assert!(
+                jcode_tui_render::line_plain_text(line).trim().is_empty(),
+                "placeholder row {offset} should be blank"
+            );
+        }
+    }
+
+    #[test]
+    fn anchored_geometry_is_viewport_independent() {
+        // The anchored fit must not depend on any viewport height so the body
+        // cache (keyed by width only) stays valid across resizes.
+        let (rows, cols) = fit_geometry_anchored(1920, 1080, 100);
+        assert!(rows >= MIN_IMAGE_ROWS);
+        assert!(rows <= ANCHORED_MAX_ROWS);
+        assert!(cols <= 100);
     }
 }
