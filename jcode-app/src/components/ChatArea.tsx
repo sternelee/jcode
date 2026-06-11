@@ -1145,37 +1145,35 @@ export function ChatArea({
 						})}
 
 						{/* ── Typing indicator ── */}
-						{(isProcessing || respondingRoles.length > 0) && (
+						{respondingRoles.length > 0 && (
 							<div className="flex flex-col gap-2 pl-1">
-								{(respondingRoles.length > 0 ? respondingRoles : [null]).map(
-									(role) => (
-										<div
-											key={role ?? "processing"}
-											className="flex items-center gap-3"
-										>
-											{role && <AgentAvatar name={role} size="sm" />}
-											<div className="flex items-center gap-2">
-												<div className="flex gap-1 items-center">
-													<span
-														className="w-2 h-2 bg-primary/60 rounded-full animate-bounce"
-														style={{ animationDelay: "0ms" }}
-													/>
-													<span
-														className="w-2 h-2 bg-primary/60 rounded-full animate-bounce"
-														style={{ animationDelay: "150ms" }}
-													/>
-													<span
-														className="w-2 h-2 bg-primary/60 rounded-full animate-bounce"
-														style={{ animationDelay: "300ms" }}
-													/>
-												</div>
-												<span className="text-[13px] font-medium text-primary/70">
-													{role ? `${role} is typing…` : "Processing…"}
-												</span>
+								{respondingRoles.map((role) => (
+									<div
+										key={role}
+										className="flex items-center gap-3"
+									>
+										{role && <AgentAvatar name={role} size="sm" />}
+										<div className="flex items-center gap-2">
+											<div className="flex gap-1 items-center">
+												<span
+													className="w-2 h-2 bg-primary/60 rounded-full animate-bounce"
+													style={{ animationDelay: "0ms" }}
+												/>
+												<span
+													className="w-2 h-2 bg-primary/60 rounded-full animate-bounce"
+													style={{ animationDelay: "150ms" }}
+												/>
+												<span
+													className="w-2 h-2 bg-primary/60 rounded-full animate-bounce"
+													style={{ animationDelay: "300ms" }}
+												/>
 											</div>
+											<span className="text-[13px] font-medium text-primary/70">
+												{`${role} is typing…`}
+											</span>
 										</div>
-									),
-								)}
+									</div>
+								))}
 							</div>
 						)}
 					</div>

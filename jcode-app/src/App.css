@@ -312,6 +312,26 @@ body {
 }
 
 /* ============================================================================
+   Code block: place language label and copy button on the same line
+   ============================================================================ */
+[data-streamdown="code-block"] {
+	position: relative !important;
+}
+
+[data-streamdown="code-block-header"] {
+	padding-right: 80px;
+}
+
+/* The sticky wrapper containing code-block-actions */
+[data-streamdown="code-block-header"] + div:has([data-streamdown="code-block-actions"]) {
+	position: absolute !important;
+	top: 8px !important;
+	right: 8px !important;
+	margin-top: 0 !important;
+	height: auto !important;
+}
+
+/* ============================================================================
    Shadcn dialog override — LobeHub style
    ============================================================================ */
 [data-state="open"] {

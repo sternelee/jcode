@@ -22,6 +22,7 @@ export interface ConversationItemData {
 	muted?: boolean;
 	isActive?: boolean;
 	serverManaged?: boolean;
+	liveProcessing?: boolean;
 }
 
 interface ConversationsListProps {
@@ -116,6 +117,7 @@ function buildSwarmItems(
 			? (swarmSessions.find((s) => s.liveProcessing)?.roleName ?? undefined)
 			: undefined,
 		isActive: anyResponding,
+		liveProcessing: anyResponding,
 	});
 
 	return items;
@@ -147,6 +149,7 @@ function buildNormalItems(
 					: ("text" as const),
 				isActive: session.liveProcessing,
 				serverManaged: session.serverManaged,
+				liveProcessing: session.liveProcessing,
 			};
 		});
 }
@@ -440,6 +443,7 @@ function ConvItem({
 	onSelect: () => void;
 	onRemove?: () => void;
 }) {
+	const effectiveProcessing = isProcessing ?? item.liveProcessing;
 	return (
 		<div className="relative group/item">
 			<button
@@ -482,7 +486,7 @@ function ConvItem({
 						</div>
 					</div>
 					<div className="mt-0.5 flex items-center gap-2">
-						{isProcessing ? (
+						{effectiveProcessing ? (
 							<span className="text-[12px] text-sidebar-primary truncate font-medium flex items-center gap-1.5">
 								<span className="w-1.5 h-1.5 bg-sidebar-primary rounded-full animate-pulse" />
 								{item.previewType === "typing" ? item.preview : "Processing…"}

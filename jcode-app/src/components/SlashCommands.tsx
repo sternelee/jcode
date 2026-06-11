@@ -12,6 +12,7 @@ import {
 	Loader2,
 	ChevronDown,
 	ChevronRight,
+	RefreshCw,
 } from "lucide-react";
 
 // ── Slash command catalogue ──────────────────────────────────────────────
@@ -697,9 +698,7 @@ export function ModelPickerModal({
 								className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
 								title="Refresh models"
 							>
-								<svg viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
-									<path fillRule="evenodd" d="M15.312 11.424a5 5 0 00-9.424-2.136.75.75 0 11-1.403-.497 6.5 6.5 0 0112.26 2.778.75.75 0 01-.433 1.278zM4.688 8.576a5 5 0 009.424 2.136.75.75 0 011.403.497 6.5 6.5 0 01-12.26-2.778.75.75 0 01.433-1.278z" clipRule="evenodd" />
-								</svg>
+								<RefreshCw className="w-3.5 h-3.5" />
 							</button>
 							<button
 								type="button"
@@ -1107,9 +1106,12 @@ export function ModelPickerModal({
 												</div>
 											)}
 
-										{!collapsed && group.models.length > 0 && (
-											<div className="ml-3 border-l-2 border-muted pl-3 space-y-0.5">
-												{group.models.map((route) => {
+									{!collapsed &&
+										group.models.some((route) => route.available !== false) && (
+										<div className="ml-3 border-l-2 border-muted pl-3 space-y-0.5">
+											{group.models
+												.filter((route) => route.available !== false)
+												.map((route) => {
 													const isCurrent =
 														route.model === currentModel &&
 														group.profileId === currentProfileId;
@@ -1121,14 +1123,11 @@ export function ModelPickerModal({
 																onSelectModel(route.model, group.profileId);
 																onClose();
 															}}
-															disabled={route.available === false}
 															className={cn(
 																"w-full text-left px-3 py-2 rounded-xl text-[13px] flex items-center gap-3 transition-colors",
 																isCurrent
 																	? "bg-primary/10 text-primary"
-																	: route.available === false
-																		? "text-muted-foreground/50 cursor-not-allowed"
-																		: "text-foreground hover:bg-muted",
+																	: "text-foreground hover:bg-muted",
 															)}
 														>
 															<span className="font-mono flex-1 truncate">
@@ -1150,8 +1149,8 @@ export function ModelPickerModal({
 														</button>
 													);
 												})}
-											</div>
-										)}
+										</div>
+									)}
 									</>
 								)}
 							</div>

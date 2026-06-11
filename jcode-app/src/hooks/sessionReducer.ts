@@ -428,7 +428,6 @@ export function sessionReducer(
 		case "SET_CONNECTING":
 			return updateSessionData(state, action.sessionId, (data) => ({
 				...data,
-				isProcessing: true,
 				connectionPhase: "initializing",
 				error: null,
 			}));
@@ -526,8 +525,23 @@ export function sessionReducer(
 			}
 			return { ...state, sessionId: newSessionId };
 		}
-		case "SET_SESSIONS":
-			return { ...state, sessions: action.sessions };
+		case "SET_SESSIONS": {
+			let nextState = { ...state, sessions: action.sessions };
+			for (const session of action.sessions) {
+				const live = session.liveProcessing;
+				if (live === undefined) continue;
+				const data = nextState.sessionData[session.sessionId];
+				if (!data) continue;
+				if (data.isProcessing !== live) {
+					nextState = updateSessionData(
+						nextState,
+						session.sessionId,
+						(d) => ({ ...d, isProcessing: live }),
+					);
+				}
+			}
+			return nextState;
+		}
 		case "SET_WORKING_DIR":
 			return {
 				...state,
@@ -817,11 +831,16 @@ export function sessionReducer(
 			return { ...state, expandedWorkspaces: next };
 		}
 		case "LOAD_HISTORY":
-			return updateSessionData(state, action.sessionId, (data) => ({
-				...data,
-				messages: action.messages,
-				isProcessing: false,
-			}));
+			return updateSessionData(state, action.sessionId, (data) => {
+				const stillStreaming = action.messages.some(
+					(m) => m.role === "assistant" && m.isStreaming,
+				);
+				return {
+					...data,
+					messages: action.messages,
+					isProcessing: stillStreaming,
+				};
+			});
 		case "SET_AVAILABLE_MODELS":
 			return updateSessionData(state, action.sessionId, (data) => ({
 				...data,

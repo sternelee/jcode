@@ -1035,6 +1035,8 @@ export function useJcodeSession() {
 					content: `$ ${command}\nError: ${String(e)}`,
 					sessionId,
 				});
+			} finally {
+				dispatch({ type: "SET_PROCESSING", value: false, sessionId });
 			}
 		},
 		[],
