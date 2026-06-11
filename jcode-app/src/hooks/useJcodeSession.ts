@@ -85,6 +85,20 @@ export function useJcodeSession() {
 					};
 				const sessionId = payload.session_id;
 				processEvent(payload, dispatch, sessionId);
+
+				// In swarm/workspace mode, also clear the virtual session
+				if (payload.type === "clear_chat" && sessionId) {
+					const session = stateRef.current.sessions.find(
+						(s) => s.sessionId === sessionId,
+					);
+					const workspaceId = session?.workingDir;
+					if (workspaceId && workspaceId !== "default") {
+						dispatch({
+							type: "CLEAR_CHAT",
+							sessionId: `workspace:${workspaceId}`,
+						});
+					}
+				}
 			},
 		);
 		return () => {

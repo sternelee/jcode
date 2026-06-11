@@ -1,7 +1,7 @@
 pub mod commands;
 mod server_client;
 
-use commands::{create_agent_with_session, create_provider, AppState};
+use commands::{create_agent_with_session, create_provider, AppState, SessionRuntime};
 use server_client::ServerClient;
 use jcode::cli::login::scriptable::{complete_scriptable_login_data, start_scriptable_login_data};
 use jcode::cli::login::LoginOptions;
@@ -1775,6 +1775,9 @@ async fn get_workspace_thread_history(
         let Ok(session) = Session::load(session_id) else {
             continue;
         };
+        if !matches!(session.status, jcode::session::SessionStatus::Active) {
+            continue;
+        }
         let role_name = summary
             .get("role_name")
             .and_then(Value::as_str)
@@ -1847,6 +1850,13 @@ async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Val
     for candidate in candidates {
         match load_session_sidebar_summary(&candidate.path) {
             Ok(Some(mut summary)) => {
+                let status = summary
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                if status.eq_ignore_ascii_case("closed") {
+                    continue;
+                }
                 if let Some(session_id) = summary
                     .get("id")
                     .and_then(Value::as_str)
@@ -2395,16 +2405,46 @@ async fn clear_chat(
         client.send(req).await?;
         return Ok(());
     }
-    let runtime = get_runtime_by_session_id(&state, &session_id).await?;
-    let mut guard = runtime.agent.lock().await;
-    guard.clear();
-    drop(guard);
-    app_handle
-        .emit(
-            "server-event",
-            &serde_json::json!({ "type": "clear_chat", "session_id": session_id }),
-        )
-        .ok();
+
+    // In swarm/workspace mode, clear every session that shares the same
+    // working directory so the whole thread is wiped.
+    let target_session = jcode::session::Session::load(&session_id)
+        .map_err(|e| format!("Failed to load session: {e}"))?;
+    let workspace = target_session.working_dir;
+
+    let runtimes = state.runtimes.lock().await;
+    let peers: Vec<(String, Arc<SessionRuntime>)> = if let Some(ref wd) = workspace {
+        runtimes
+            .iter()
+            .filter(|(id, _)| {
+                jcode::session::Session::load(id)
+                    .map(|s| s.working_dir.as_ref() == Some(wd))
+                    .unwrap_or(false)
+            })
+            .map(|(id, r)| (id.clone(), r.clone()))
+            .collect()
+    } else {
+        vec![(
+            session_id.clone(),
+            runtimes
+                .get(&session_id)
+                .cloned()
+                .ok_or_else(|| format!("session {} not found", session_id))?,
+        )]
+    };
+    drop(runtimes);
+
+    for (sid, rt) in peers {
+        let mut guard: tokio::sync::MutexGuard<'_, jcode::agent::Agent> = rt.agent.lock().await;
+        guard.clear();
+        drop(guard);
+        app_handle
+            .emit(
+                "server-event",
+                &serde_json::json!({ "type": "clear_chat", "session_id": sid }),
+            )
+            .ok();
+    }
     Ok(())
 }
 
