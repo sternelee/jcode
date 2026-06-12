@@ -303,10 +303,17 @@ fn read_clipboard_text() -> Option<String> {
         return Some(text);
     }
 
-    let Ok(mut clipboard) = arboard::Clipboard::new() else {
-        return None;
-    };
-    clipboard.get_text().ok()
+    #[cfg(not(target_os = "android"))]
+    {
+        let Ok(mut clipboard) = arboard::Clipboard::new() else {
+            return None;
+        };
+        clipboard.get_text().ok()
+    }
+    #[cfg(target_os = "android")]
+    {
+        None
+    }
 }
 
 fn read_wayland_clipboard_text() -> Option<String> {

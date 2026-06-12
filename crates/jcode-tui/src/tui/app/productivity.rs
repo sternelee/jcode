@@ -110,7 +110,14 @@ fn copy_image_to_clipboard(path: &Path, png: &[u8]) -> bool {
     }
 
     // Cross-platform fallback via arboard (needs decoded RGBA pixels).
-    copy_image_arboard(png)
+    #[cfg(not(target_os = "android"))]
+    {
+        copy_image_arboard(png)
+    }
+    #[cfg(target_os = "android")]
+    {
+        false
+    }
 }
 
 fn copy_image_wl(png: &[u8]) -> bool {
@@ -145,6 +152,7 @@ fn copy_image_xclip(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+    #[cfg(not(target_os = "android"))]
 fn copy_image_arboard(png: &[u8]) -> bool {
     let Ok(decoded) = image::load_from_memory(png) else {
         return false;

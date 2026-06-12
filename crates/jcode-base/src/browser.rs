@@ -789,7 +789,9 @@ async fn install_extension() -> Result<String> {
         return Err(anyhow::anyhow!("XPI file not found at {}", xpi.display()));
     }
 
-    // Try to open Firefox with the XPI to trigger install prompt
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        // Try to open Firefox with the XPI to trigger install prompt
     let xpi_url = url::Url::from_file_path(&xpi)
         .map_err(|_| anyhow::anyhow!("Could not convert XPI path to file URL: {}", xpi.display()))?
         .to_string();
@@ -810,9 +812,13 @@ async fn install_extension() -> Result<String> {
             .args(["/C", "start", "", &xpi_url])
             .spawn();
     }
+    }
 
-    msg.push_str("       Opened Firefox with extension install prompt.\n");
-    msg.push_str("       Click \"Add\" when prompted to install the extension.\n");
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        msg.push_str("       Opened Firefox with extension install prompt.\n");
+        msg.push_str("       Click \"Add\" when prompted to install the extension.\n");
+    }
 
     Ok(msg)
 }

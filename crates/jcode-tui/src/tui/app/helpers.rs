@@ -355,9 +355,16 @@ pub(super) fn copy_to_clipboard(text: &str) -> bool {
     if copy_to_clipboard_osc52(text) {
         return true;
     }
-    arboard::Clipboard::new()
-        .and_then(|mut cb| cb.set_text(text.to_string()))
-        .is_ok()
+    #[cfg(not(target_os = "android"))]
+    {
+        arboard::Clipboard::new()
+            .and_then(|mut cb| cb.set_text(text.to_string()))
+            .is_ok()
+    }
+    #[cfg(target_os = "android")]
+    {
+        false
+    }
 }
 
 /// Copy to clipboard using the OSC 52 terminal escape sequence. This asks the
@@ -858,13 +865,16 @@ pub(super) fn clipboard_image() -> Option<(String, String)> {
         }
     }
 
-    // Fallback: arboard (works on X11/XWayland and macOS via NSPasteboard)
-    if let Ok(mut clipboard) = arboard::Clipboard::new()
-        && let Ok(img) = clipboard.get_image()
-        && let Some(png_data) = encode_rgba_as_png(img.width, img.height, &img.bytes)
+    #[cfg(not(target_os = "android"))]
     {
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&png_data);
-        return Some(("image/png".to_string(), b64));
+        // Fallback: arboard (works on X11/XWayland and macOS via NSPasteboard)
+        if let Ok(mut clipboard) = arboard::Clipboard::new()
+            && let Ok(img) = clipboard.get_image()
+            && let Some(png_data) = encode_rgba_as_png(img.width, img.height, &img.bytes)
+        {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(&png_data);
+            return Some(("image/png".to_string(), b64));
+        }
     }
 
     None

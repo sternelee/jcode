@@ -248,6 +248,8 @@ fn cursor_vscdb_paths() -> Vec<PathBuf> {
         "AppData/Roaming/Cursor/User/globalStorage/state.vscdb",
         "AppData/Roaming/cursor/User/globalStorage/state.vscdb",
     ];
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    let relatives: [&str; 0] = [];
 
     relatives
         .into_iter()

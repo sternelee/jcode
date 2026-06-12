@@ -3981,7 +3981,6 @@ version = "0.25.1"
 dependencies = [
  "agentgrep",
  "anyhow",
- "arboard",
  "async-stream",
  "async-trait",
  "aws-config",
@@ -4128,7 +4127,6 @@ version = "0.1.0"
 dependencies = [
  "agentgrep",
  "anyhow",
- "arboard",
  "async-stream",
  "async-trait",
  "base64 0.22.1",
