@@ -51,105 +51,105 @@
 }
 
 /* ============================================================================
-   LobeHub-inspired Light Theme
+   Claude-inspired Light Theme — neutral, content-first
    ============================================================================ */
 :root {
 	--radius: 8px;
 
-	--bg: #f5f5f5;
+	--bg: #fafafa;
 	--fg: #1a1a1a;
 	--card: #ffffff;
 	--card-fg: #1a1a1a;
 	--popover: #ffffff;
 	--popover-fg: #1a1a1a;
 
-	--primary: #1677ff;
+	--primary: #4a4a4a;
 	--primary-fg: #ffffff;
-	--primary-hover: #4096ff;
+	--primary-hover: #2a2a2a;
 
-	--secondary: #f0f5ff;
-	--secondary-fg: #1677ff;
+	--secondary: #f5f5f4;
+	--secondary-fg: #525252;
 
-	--muted: #f0f0f0;
-	--muted-fg: #8c8c8c;
+	--muted: #f5f5f4;
+	--muted-fg: #737373;
 
-	--accent: #f0f5ff;
-	--accent-fg: #1677ff;
+	--accent: #f5f5f4;
+	--accent-fg: #525252;
 
-	--destructive: #ff4d4f;
+	--destructive: #dc2626;
 	--destructive-fg: #ffffff;
 
-	--border: #e8e8e8;
-	--input: #d9d9d9;
-	--ring: #1677ff;
+	--border: #e5e5e4;
+	--input: #d6d5d4;
+	--ring: #a3a2a0;
 
-	--sidebar: #fafafa;
+	--sidebar: #f7f7f6;
 	--sidebar-fg: #1a1a1a;
-	--sidebar-primary: #1677ff;
+	--sidebar-primary: #1a1a1a;
 	--sidebar-primary-fg: #ffffff;
-	--sidebar-accent: #f0f5ff;
-	--sidebar-accent-fg: #1677ff;
-	--sidebar-border: #e8e8e8;
-	--sidebar-ring: #1677ff;
+	--sidebar-accent: #eeeeec;
+	--sidebar-accent-fg: #1a1a1a;
+	--sidebar-border: #e5e5e4;
+	--sidebar-ring: #a3a2a0;
 
-	--surface: #fafafa;
+	--surface: #f7f7f6;
 	--surface-fg: #1a1a1a;
 
-	--chat-user: #1677ff;
+	--chat-user: #2a2a2a;
 	--chat-user-fg: #ffffff;
 
-	--selection: #1677ff;
+	--selection: #525252;
 	--selection-fg: #ffffff;
 }
 
 /* ============================================================================
-   LobeHub-inspired Dark Theme
+   Claude-inspired Dark Theme — deep saturated grays
    ============================================================================ */
 .dark {
-	--bg: #141414;
-	--fg: #e5e5e5;
-	--card: #1f1f1f;
-	--card-fg: #e5e5e5;
-	--popover: #1f1f1f;
-	--popover-fg: #e5e5e5;
+	--bg: #1a1a1a;
+	--fg: #e5e5e4;
+	--card: #252525;
+	--card-fg: #e5e5e4;
+	--popover: #252525;
+	--popover-fg: #e5e5e4;
 
-	--primary: #1677ff;
-	--primary-fg: #ffffff;
-	--primary-hover: #4096ff;
+	--primary: #a3a2a0;
+	--primary-fg: #1a1a1a;
+	--primary-hover: #c5c4c2;
 
-	--secondary: #111d2c;
-	--secondary-fg: #4096ff;
+	--secondary: #2a2a2a;
+	--secondary-fg: #a3a2a0;
 
-	--muted: #262626;
-	--muted-fg: #8c8c8c;
+	--muted: #2a2a2a;
+	--muted-fg: #737373;
 
-	--accent: #111d2c;
-	--accent-fg: #4096ff;
+	--accent: #2a2a2a;
+	--accent-fg: #a3a2a0;
 
-	--destructive: #ff4d4f;
+	--destructive: #dc2626;
 	--destructive-fg: #ffffff;
 
-	--border: #303030;
-	--input: #434343;
-	--ring: #1677ff;
+	--border: #333333;
+	--input: #404040;
+	--ring: #525252;
 
-	--sidebar: #1a1a1a;
-	--sidebar-fg: #e5e5e5;
-	--sidebar-primary: #1677ff;
-	--sidebar-primary-fg: #ffffff;
-	--sidebar-accent: #1f1f1f;
-	--sidebar-accent-fg: #e5e5e5;
-	--sidebar-border: #303030;
-	--sidebar-ring: #1677ff;
+	--sidebar: #1e1e1e;
+	--sidebar-fg: #e5e5e4;
+	--sidebar-primary: #e5e5e4;
+	--sidebar-primary-fg: #1a1a1a;
+	--sidebar-accent: #2a2a2a;
+	--sidebar-accent-fg: #e5e5e4;
+	--sidebar-border: #333333;
+	--sidebar-ring: #525252;
 
-	--surface: #1f1f1f;
-	--surface-fg: #e5e5e5;
+	--surface: #252525;
+	--surface-fg: #e5e5e4;
 
-	--chat-user: #1677ff;
-	--chat-user-fg: #ffffff;
+	--chat-user: #404040;
+	--chat-user-fg: #e5e5e4;
 
-	--selection: #1677ff;
-	--selection-fg: #ffffff;
+	--selection: #525252;
+	--selection-fg: #e5e5e4;
 }
 
 /* ============================================================================
@@ -341,4 +341,32 @@ body {
 /* Message appear animation */
 .message-enter {
 	animation: fadeIn 0.2s ease-out;
+}
+
+/* ============================================================================
+   Mobile safe area & touch improvements
+   ============================================================================ */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+	.pb-safe {
+		padding-bottom: env(safe-area-inset-bottom);
+	}
+}
+
+/* Larger touch targets on mobile */
+@media (max-width: 1023px) {
+	.touch-target {
+		min-height: 44px;
+		min-width: 44px;
+	}
+}
+
+/* Hide scrollbar on mobile but keep functionality */
+@media (max-width: 768px) {
+	.hide-scrollbar-mobile {
+		-ms-overflow-style: none;
+		scrollbar-width: none;
+	}
+	.hide-scrollbar-mobile::-webkit-scrollbar {
+		display: none;
+	}
 }

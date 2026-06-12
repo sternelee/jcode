@@ -170,15 +170,15 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 
 	return (
 		<>
-			<div className="flex-1 flex flex-col bg-card overflow-hidden">
+			<div className="flex-1 flex flex-col min-w-0 bg-card overflow-hidden overflow-x-hidden">
 			{/* Header */}
-			<div className="px-6 py-4 border-b border-border flex items-center gap-3 shrink-0">
-				<div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-					<Users className="w-5 h-5" />
+			<div className="px-4 md:px-6 py-3 md:py-4 border-b border-border flex items-center gap-2 md:gap-3 shrink-0">
+				<div className="w-7 h-7 md:w-9 md:h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+					<Users className="w-4 h-4 md:w-5 md:h-5" />
 				</div>
-				<div>
-					<h1 className="text-[16px] font-semibold text-foreground">Team</h1>
-					<p className="text-[12px] text-muted-foreground">
+				<div className="min-w-0">
+					<h1 className="text-[14px] md:text-[16px] font-semibold text-foreground">Team</h1>
+					<p className="text-[11px] md:text-[12px] text-muted-foreground">
 						{agents.length} agents · {coordinators.length} coordinator
 						{coordinators.length !== 1 ? "s" : ""}
 					</p>
@@ -186,11 +186,11 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 			</div>
 
 			{/* Content */}
-			<div className="flex-1 overflow-y-auto px-6 py-4">
+			<div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 py-3 md:py-4 min-w-0">
 				<div className="max-w-3xl mx-auto space-y-4">
 					{/* Agents */}
 					{agents.length > 0 && (
-						<div className="rounded-xl border border-border bg-card p-5 space-y-3">
+						<div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
 							<div className="text-[13px] font-semibold text-foreground flex items-center gap-2">
 								<Users className="w-4 h-4 text-primary" />
 								Active Agents
@@ -233,7 +233,7 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 					{plans.map((plan) => (
 						<div
 							key={plan.swarmId}
-							className="rounded-xl border border-border bg-card p-5 space-y-3"
+							className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3"
 						>
 							<div className="flex items-center gap-2">
 								<LayoutList className="w-4 h-4 text-primary" />
@@ -244,7 +244,7 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 									{plan.itemCount} items
 								</span>
 							</div>
-							<div className="grid grid-cols-3 gap-2">
+								<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
 								<MiniStat
 									label="Ready"
 									value={plan.readyCount}
@@ -273,7 +273,7 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 					{proposals.map((proposal) => (
 						<div
 							key={proposal.swarmId}
-							className="rounded-xl border border-border bg-card p-5 space-y-3"
+							className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3"
 						>
 							<div className="flex items-center gap-2">
 								<GitPullRequest className="w-4 h-4 text-primary" />
@@ -292,7 +292,7 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 					))}
 
 					{/* Preset Roles */}
-					<div className="rounded-xl border border-border bg-card p-5 space-y-3">
+					<div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
 						<div className="text-[13px] font-semibold text-foreground flex items-center justify-between">
 							<div className="flex items-center gap-2">
 								<Settings2 className="w-4 h-4 text-primary" />
@@ -310,7 +310,7 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 						{/* New role form */}
 						{showNewRoleForm && (
 							<div className="space-y-2 p-3 rounded-lg bg-muted/30 border border-border">
-								<div className="grid grid-cols-2 gap-2">
+								<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
 									<input
 										type="text"
 										value={newRoleName}
@@ -329,7 +329,7 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 										className="h-8 px-2.5 rounded-lg border border-border text-[12px] outline-none focus:border-primary/50 bg-card"
 									/>
 								</div>
-								<div className="grid grid-cols-2 gap-2">
+								<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
 									<input
 										type="text"
 										value={newRoleDetail}

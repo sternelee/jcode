@@ -374,23 +374,23 @@ export function ProviderConfigPage({
 	const unconfiguredProviders = providers.filter((p) => !p.configured);
 
 	return (
-		<div className="flex flex-col h-full bg-background">
+		<div className="flex flex-col min-w-0 min-h-0 flex-1 w-full bg-background overflow-x-hidden">
 			{/* Header */}
-			<div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-				<div className="flex items-center gap-3">
-					<div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-						<Wifi className="w-4 h-4" />
+			<div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-border shrink-0 gap-2">
+				<div className="flex items-center gap-2 md:gap-3 min-w-0">
+					<div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+						<Wifi className="w-3.5 h-3.5 md:w-4 md:h-4" />
 					</div>
-					<div>
-						<h1 className="text-[15px] font-semibold text-foreground">
+					<div className="min-w-0 hidden sm:block">
+						<h1 className="text-[13px] md:text-[15px] font-semibold text-foreground">
 							Providers
 						</h1>
-						<p className="text-[12px] text-muted-foreground">
+						<p className="text-[11px] md:text-[12px] text-muted-foreground">
 							{providers.length} providers · {modelRoutes.length} model routes
 						</p>
 					</div>
 				</div>
-				<div className="flex items-center gap-1.5">
+				<div className="flex items-center gap-1 md:gap-1.5 shrink-0 flex-wrap">
 					<Button
 						variant="outline"
 						size="sm"
@@ -424,8 +424,8 @@ export function ProviderConfigPage({
 				</div>
 			</div>
 
-			<div className="flex-1 overflow-y-auto min-h-0">
-				<div className="p-6 space-y-5">
+			<div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 min-w-0">
+				<div className="p-4 md:p-6 space-y-4 md:space-y-5">
 					{/* Message */}
 					{authMessage && (
 						<div
@@ -536,7 +536,7 @@ export function ProviderConfigPage({
 													Open URL to authorize:
 												</div>
 												<div className="flex items-center gap-2">
-													<code className="flex-1 rounded-lg border border-border bg-muted/30 px-3 py-2 text-[12px] break-all font-mono select-all">
+													<code className="flex-1 rounded-lg border border-border bg-muted/30 px-3 py-2 text-[12px] break-all font-mono select-all min-w-0">
 														{authPrompt.auth_url}
 													</code>
 													<Button
@@ -631,8 +631,8 @@ export function ProviderConfigPage({
 									Cancel
 								</Button>
 							</div>
-							<div className="p-4 space-y-3">
-								<div className="grid grid-cols-2 gap-3">
+							<div className="p-3 md:p-4 space-y-3">
+								<div className="grid grid-cols-1 sm:grid-cols-2 gap-2 md:gap-3">
 									<div className="space-y-1">
 										<div className="text-[11px] text-muted-foreground font-medium">
 											Name
@@ -723,14 +723,13 @@ export function ProviderConfigPage({
 							<Badge variant="secondary" className="text-[9px]">
 								{configuredProviders.length}
 							</Badge>
-						</div>
-						<div className="p-4">
+						</div>							<div className="p-3 md:p-4">
 							{configuredProviders.length === 0 ? (
 								<div className="text-[13px] text-muted-foreground text-center py-6">
 									No providers configured yet.
 								</div>
 							) : (
-								<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+								<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
 									{configuredProviders.map((p) => (
 										<div
 											key={p.provider_key}
@@ -927,11 +926,11 @@ export function ProviderConfigPage({
 								</span>
 							</div>
 						</div>
-						<div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+						<div className="p-3 md:p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 md:gap-3">
 							{unconfiguredProviders.map((provider) => (
 								<div
 									key={provider.provider_key}
-									className="rounded-lg border border-border p-3 space-y-3"
+									className="rounded-lg border border-border p-3 space-y-3 overflow-x-hidden min-w-0"
 								>
 									<div className="flex items-center justify-between">
 										<div className="flex items-center gap-2">
@@ -1266,8 +1265,7 @@ export function ProviderConfigPage({
 							<Badge variant="secondary" className="text-[9px]">
 								{modelRoutes.length}
 							</Badge>
-						</div>
-						<div className="p-4">
+						</div>							<div className="p-3 md:p-4">
 							{modelRoutes.length === 0 ? (
 								<div className="text-[13px] text-muted-foreground text-center py-6">
 									No model routes yet.
@@ -1277,9 +1275,9 @@ export function ProviderConfigPage({
 									{modelRoutes.slice(0, 50).map((route, i) => (
 										<div
 											key={`${route.provider}-${route.model}-${i}`}
-											className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-[12px]"
+											className="flex items-center justify-between rounded-lg border border-border px-2.5 md:px-3 py-2 text-[11px] md:text-[12px]"
 										>
-											<div className="flex items-center gap-2 min-w-0">
+											<div className="flex items-center gap-1.5 md:gap-2 min-w-0">
 												<span
 													className={cn(
 														"w-1.5 h-1.5 rounded-full shrink-0",
@@ -1291,11 +1289,11 @@ export function ProviderConfigPage({
 												<span className="font-medium text-foreground truncate">
 													{route.model}
 												</span>
-												<span className="text-muted-foreground shrink-0">
+												<span className="text-muted-foreground shrink-0 truncate max-w-[100px]">
 													via {route.provider}
 												</span>
 											</div>
-											<span className="text-muted-foreground shrink-0 ml-2">
+											<span className="text-muted-foreground shrink-0 ml-2 hidden sm:inline">
 												{route.api_method || "api"}
 												{route.context_window
 													? ` · ${(route.context_window / 1000).toFixed(0)}k`

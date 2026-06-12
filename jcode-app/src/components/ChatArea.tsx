@@ -160,9 +160,6 @@ export function ChatArea({
 	const [convening, setConvening] = useState(false);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
-	const [agentPopoverSessionId, setAgentPopoverSessionId] = useState<
-		string | null
-	>(null);
 	const [modelPickerAgentSessionId, setModelPickerAgentSessionId] = useState<
 		string | null
 	>(null);
@@ -174,10 +171,6 @@ export function ChatArea({
 	>([]);
 	const [dictating, setDictating] = useState(false);
 	const [softInterruptMode, setSoftInterruptMode] = useState(false);
-	const [editingRoleName, setEditingRoleName] = useState<{
-		sessionId: string;
-		draft: string;
-	} | null>(null);
 	const [showScrollButton, setShowScrollButton] = useState(false);
 
 	const feedRef = useRef<HTMLDivElement>(null);
@@ -361,18 +354,6 @@ export function ChatArea({
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
 	}, [searchOpen]);
-
-	// ── Agent popover click-outside ───────────────────────────────────────
-	useEffect(() => {
-		if (!agentPopoverSessionId) return;
-		const onClick = (e: MouseEvent) => {
-			const target = e.target as HTMLElement;
-			if (target.closest(".agent-popover-anchor")) return;
-			setAgentPopoverSessionId(null);
-		};
-		setTimeout(() => document.addEventListener("mousedown", onClick), 0);
-		return () => document.removeEventListener("mousedown", onClick);
-	}, [agentPopoverSessionId]);
 
 	// ── Input handlers ────────────────────────────────────────────────────
 	const handleSend = () => {
@@ -581,31 +562,26 @@ export function ChatArea({
 		);
 	}, [messages, lastReadTimestamp]);
 
-	const presenceDot = (roleName: string) => {
-		const session = sessionByRoleName.get(roleName);
-		if (!session) return "bg-muted-foreground/30";
-		if (session.liveProcessing) return "bg-primary/70 animate-pulse";
-		return "bg-emerald-500";
-	};
+
 
 	return (
 		<>
 			<div className="flex-1 flex flex-col overflow-hidden bg-card">
 				{/* ── Channel Header ── */}
-				<div className="px-5 py-3 border-b border-border flex items-center justify-between shrink-0 min-h-[56px]">
-					<div className="flex items-center gap-3 min-w-0">
-						<div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10 text-primary shrink-0">
-							<Plus className="w-[18px] h-[18px]" />
+				<div className="px-5 py-2.5 border-b border-border flex items-center justify-between shrink-0 min-h-[48px]">
+					<div className="flex items-center gap-2.5 min-w-0">
+						<div className="w-7 h-7 rounded-lg bg-foreground/[0.06] flex items-center justify-center shrink-0">
+							<Plus className="w-4 h-4 text-foreground/60" />
 						</div>
 						<div className="min-w-0">
 							<div className="flex items-center gap-2">
-								<h2 className="text-[15px] font-semibold text-foreground leading-tight">
+								<h2 className="text-[14px] font-medium text-foreground leading-tight truncate">
 									{channelName}
 								</h2>
 								<span
 									title={connected ? "Connected" : "Disconnected"}
 									className={cn(
-										"w-2 h-2 rounded-full shrink-0",
+										"w-1.5 h-1.5 rounded-full shrink-0",
 										connected
 											? isLoading
 												? "bg-amber-500 animate-pulse"
@@ -615,171 +591,27 @@ export function ChatArea({
 								/>
 							</div>
 							{channelMembers.length > 0 && (
-								<p className="text-[12px] text-muted-foreground mt-0.5 truncate">
+								<p className="text-[11px] text-muted-foreground mt-0.5 truncate">
 									{channelMembers.join(", ")}
 								</p>
 							)}
 						</div>
 					</div>
 
-					<div className="flex items-center gap-1 shrink-0 relative">
-						{/* Presence */}
-						{channelMembers.length > 0 && (
-							<div className="hidden md:flex items-center -space-x-1.5 mr-2">
-								{channelMembers.slice(0, 4).map((name) => {
-									const session = sessionByRoleName.get(name);
-									const isOpen = agentPopoverSessionId === session?.sessionId;
-									return (
-										<div key={name} className="relative agent-popover-anchor">
-											<button
-												type="button"
-												onClick={() => {
-													const sid = session?.sessionId;
-													if (!sid) return;
-													setAgentPopoverSessionId((prev) =>
-														prev === sid ? null : sid,
-													);
-												}}
-												className="relative cursor-pointer hover:scale-110 transition-transform"
-												title={`${name}: ${session?.model || session?.providerModel || "unknown"}`}
-											>
-												<AgentAvatar name={name} size="sm" />
-												<span
-													className={cn(
-														"absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-card",
-														presenceDot(name),
-													)}
-												/>
-											</button>
-											{isOpen && session && (
-												<div className="absolute top-full -right-10 mt-2 w-[320px] bg-card rounded-2xl shadow-xl border border-border overflow-hidden z-50">
-													<div className="px-4 py-3 border-b border-border flex items-center gap-3">
-														<AgentAvatar name={name} size="md" />
-														<div className="min-w-0">
-															<div className="text-[13px] font-semibold text-foreground truncate">
-																{name}
-															</div>
-															<div className="flex items-center gap-1.5 mt-0.5">
-																<span
-																	className={cn(
-																		"w-1.5 h-1.5 rounded-full",
-																		session.liveProcessing
-																			? "bg-primary animate-pulse"
-																			: "bg-emerald-500",
-																	)}
-																/>
-																<span className="text-[11px] text-muted-foreground">
-																	{session.liveProcessing
-																		? "Thinking…"
-																		: "Online"}
-																</span>
-															</div>
-														</div>
-													</div>
-													<div className="px-4 py-3 border-b border-border">
-														<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-															Role Name
-														</div>
-														<div className="flex items-center gap-2">
-															<input
-																type="text"
-																value={
-																	editingRoleName?.sessionId ===
-																	session.sessionId
-																		? editingRoleName.draft
-																		: name
-																}
-																onChange={(e) =>
-																	setEditingRoleName({
-																		sessionId: session.sessionId,
-																		draft: e.target.value,
-																	})
-																}
-																placeholder="Role name"
-																className="flex-1 h-7 px-2.5 rounded-lg bg-muted/50 border border-border text-[12px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 transition-all"
-															/>
-															<button
-																type="button"
-																disabled={
-																	!editingRoleName?.draft.trim() ||
-																	editingRoleName.draft.trim() === name
-																}
-																onClick={() => {
-																	const trimmed = editingRoleName?.draft.trim();
-																	if (trimmed && trimmed !== name) {
-																		onRenameSession?.(
-																			session.sessionId,
-																			trimmed,
-																		);
-																		setEditingRoleName(null);
-																		setAgentPopoverSessionId(null);
-																	}
-																}}
-																className="h-7 px-2.5 rounded-lg text-[11px] font-medium bg-primary text-white hover:bg-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-															>
-																Save
-															</button>
-														</div>
-													</div>
-													<div className="px-4 py-3 border-b border-border">
-														<div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-															Model
-														</div>
-														<div className="flex items-center justify-between gap-2">
-															<span className="text-[12px] text-foreground truncate">
-																{session.model ||
-																	session.providerModel ||
-																	"default"}
-															</span>
-															<button
-																type="button"
-																onClick={() => {
-																	setModelPickerAgentSessionId(
-																		session.sessionId,
-																	);
-																	setAgentPopoverSessionId(null);
-																	setModelPickerOpen(true);
-																}}
-																className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-															>
-																Change
-															</button>
-														</div>
-													</div>
-													<div className="px-4 py-2 flex justify-end">
-														<button
-															type="button"
-															onClick={() => setAgentPopoverSessionId(null)}
-															className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-														>
-															Close
-														</button>
-													</div>
-												</div>
-											)}
-										</div>
-									);
-								})}
-								{channelMembers.length > 4 && (
-									<div className="w-6 h-6 rounded-full bg-muted border-2 border-card flex items-center justify-center text-[9px] font-medium text-muted-foreground -ml-1.5">
-										+{channelMembers.length - 4}
-									</div>
-								)}
-							</div>
-						)}
+					<div className="flex items-center gap-0.5 shrink-0 relative">
 						{/* Search */}
 						<button
 							type="button"
 							onClick={() => setSearchOpen((o) => !o)}
 							title="Search (Cmd+F)"
 							className={cn(
-								"w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150",
+								"w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150",
 								searchOpen
-									? "bg-primary/10 text-primary"
-									: "text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted",
+									? "bg-foreground/[0.06] text-foreground"
+									: "text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted",
 							)}
 						>
-							<Search className="w-4 h-4" />
+							<Search className="w-3.5 h-3.5" />
 						</button>
 						{/* Settings */}
 						<button
@@ -787,13 +619,13 @@ export function ChatArea({
 							onClick={() => setSettingsOpen((o) => !o)}
 							title="Settings"
 							className={cn(
-								"w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150",
+								"w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-150",
 								settingsOpen
-									? "bg-primary/10 text-primary"
-									: "text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted",
+									? "bg-foreground/[0.06] text-foreground"
+									: "text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted",
 							)}
 						>
-							<Settings className="w-4 h-4" />
+							<Settings className="w-3.5 h-3.5" />
 						</button>
 						<AgentSettingsPopover
 							open={settingsOpen}
@@ -829,9 +661,9 @@ export function ChatArea({
 									setConvening(true);
 									setTimeout(() => setConvening(false), 4000);
 								}}
-								className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:bg-primary/90 transition-all duration-150 shadow-sm ml-1"
+								className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-foreground/[0.08] text-foreground/70 text-[11px] font-medium hover:bg-foreground/[0.12] transition-all duration-150 ml-1"
 							>
-								<Play className="w-3.5 h-3.5" fill="currentColor" />
+								<Play className="w-3 h-3" />
 								Convene
 							</button>
 						)}
@@ -842,7 +674,7 @@ export function ChatArea({
 				{workspaceSessions.some(
 					(s) => s.roleName || s.swarmRole === "coordinator",
 				) && (
-					<div className="px-5 py-1.5 border-b border-border bg-muted/30 flex items-center gap-4 text-[11px] text-muted-foreground shrink-0">
+					<div className="px-5 py-1 border-b border-border bg-muted/20 flex items-center gap-3 text-[11px] text-muted-foreground shrink-0">
 						<span className="font-medium">{channelMembers.length} agents</span>
 						{respondingRoles.length > 0 ? (
 							<span className="flex items-center gap-1.5 text-primary">
@@ -1000,11 +832,11 @@ export function ChatArea({
 										{showUnreadSeparator && <UnreadSeparator />}
 										<div className="flex justify-end gap-2 group/msg">
 											<div
-												className={cn(
-													"max-w-[75%] min-w-0",
-													isCurrentMatch &&
-														"ring-2 ring-primary/40 rounded-2xl",
-												)}
+											className={cn(
+												"max-w-[80%] min-w-0",
+												isCurrentMatch &&
+													"ring-1 ring-foreground/20 rounded-2xl",
+											)}
 											>
 												{msg.images && msg.images.length > 0 && (
 													<div className="flex gap-2 mb-2 flex-wrap justify-end">
@@ -1023,12 +855,12 @@ export function ChatArea({
 													</div>
 												)}
 												<div
-													className={cn(
-														"bg-chat-user text-chat-user-foreground rounded-2xl rounded-tr-sm px-4 py-2.5 text-[14px] leading-relaxed break-words whitespace-pre-wrap shadow-sm",
-														isSearchMatch &&
-															!isCurrentMatch &&
-															"ring-2 ring-primary/30",
-													)}
+											className={cn(
+												"bg-secondary text-secondary-fg rounded-2xl px-4 py-2.5 text-[14px] leading-relaxed break-words whitespace-pre-wrap",
+												isSearchMatch &&
+													!isCurrentMatch &&
+													"ring-1 ring-foreground/10",
+											)}
 												>
 													{msg.content}
 												</div>
@@ -1101,47 +933,27 @@ export function ChatArea({
 										</div>
 									</div>
 								);
-							}
-
-							// ── Assistant (default) ──
-							return (
-								<div
-									key={msg.id}
-									data-msg-id={msg.id}
-									className={cn(
-										"group/msg message-enter",
-										(isSearchMatch || isCurrentMatch) && "rounded-xl",
-										isCurrentMatch && "ring-2 ring-primary/40",
-									)}
-								>
-									{showUnreadSeparator && <UnreadSeparator />}
-									<div className="flex gap-3">
-										<div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 mt-0.5 shadow-sm">
-											<span className="text-white text-[13px] font-bold">
-												J
-											</span>
-										</div>
-										<div className="flex-1 min-w-0">
-											<div className="flex items-center gap-2 mb-1.5">
-												<span className="text-[14px] font-semibold text-foreground">
-													JCode
-												</span>
-												<span className="text-[11px] text-muted-foreground ml-auto opacity-0 group-hover/msg:opacity-100 transition-opacity">
-													{relativeTime(msg.timestamp)}
-												</span>
-											</div>
-											<MessageBubble
-												message={msg}
-												isStreaming={msg.isStreaming}
-												hideHeader
-												onRegenerate={() => onRegenerateMessage?.(idx)}
-														onEdit={(newContent) => onEditMessage?.(idx, newContent)}
-														onQuote={(content, role) => onQuoteMessage?.(content, role)}
-											/>
-										</div>
-									</div>
-								</div>
-							);
+							}						// ── Assistant (default) ──
+						return (
+							<div
+								key={msg.id}
+								data-msg-id={msg.id}
+								className={cn(
+									"group/msg message-enter",
+									isCurrentMatch && "ring-1 ring-foreground/20 rounded-xl",
+								)}
+							>
+								{showUnreadSeparator && <UnreadSeparator />}
+								<MessageBubble
+									message={msg}
+									isStreaming={msg.isStreaming}
+									hideHeader
+									onRegenerate={() => onRegenerateMessage?.(idx)}
+									onEdit={(newContent) => onEditMessage?.(idx, newContent)}
+									onQuote={(content, role) => onQuoteMessage?.(content, role)}
+								/>
+							</div>
+						);
 						})}
 
 						{/* ── Typing indicator ── */}
@@ -1226,7 +1038,7 @@ export function ChatArea({
 														}}
 														className={cn(
 															"w-full text-left px-3 py-2 flex items-center gap-2.5 text-[13px] transition-colors",
-															i === mentionIndex ? "bg-primary/10" : "hover:bg-muted",
+															i === mentionIndex ? "bg-muted" : "hover:bg-muted/50",
 														)}
 													>
 														<div className="relative shrink-0">
@@ -1245,7 +1057,7 @@ export function ChatArea({
 																className={cn(
 																	"font-medium",
 																	i === mentionIndex
-																		? "text-primary"
+																		? "text-foreground"
 																		: "text-foreground",
 																)}
 															>
@@ -1280,7 +1092,7 @@ export function ChatArea({
 														}}
 														className={cn(
 															"w-full text-left px-3 py-2 flex items-center gap-2.5 text-[13px] transition-colors",
-															globalIndex === mentionIndex ? "bg-primary/10" : "hover:bg-muted",
+															globalIndex === mentionIndex ? "bg-muted" : "hover:bg-muted/50",
 														)}
 													>
 														<FileText className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -1289,7 +1101,7 @@ export function ChatArea({
 																className={cn(
 																	"font-medium truncate block",
 																	globalIndex === mentionIndex
-																		? "text-primary"
+																		? "text-foreground"
 																		: "text-foreground",
 																)}
 															>
@@ -1306,7 +1118,7 @@ export function ChatArea({
 						)}
 
 						{/* Input box */}
-						<div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all duration-150">
+						<div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden focus-within:border-foreground/20 focus-within:ring-1 focus-within:ring-foreground/10 transition-all duration-150">
 							{/* Image previews */}
 							{attachedImages.length > 0 && (
 								<div className="flex gap-2 px-4 pt-3 pb-1 flex-wrap">
@@ -1345,16 +1157,16 @@ export function ChatArea({
 							/>
 							<div className="flex items-center justify-between px-3 py-1.5 border-t border-border">
 								<div className="flex items-center gap-0.5">
-									{/* Attach */}
+									{/* Attach - hidden on mobile for cleaner look */}
 									<button
 										type="button"
 										onClick={() => fileInputRef.current?.click()}
-										className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted transition-all duration-150"
+										className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted transition-all duration-150 hidden sm:flex"
 										title="Attach"
 									>
 										<Paperclip className="w-4 h-4" />
 									</button>
-									{/* @mention */}
+									{/* @mention - hidden on mobile */}
 									<button
 										type="button"
 										title="Mention agent"
@@ -1371,7 +1183,7 @@ export function ChatArea({
 												ta.selectionEnd = cursor + 1;
 											}, 0);
 										}}
-										className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted transition-all duration-150"
+										className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted transition-all duration-150 hidden sm:flex"
 									>
 										<AtSign className="w-4 h-4" />
 									</button>
@@ -1422,7 +1234,7 @@ export function ChatArea({
 										<button
 											type="button"
 											onClick={onCancel}
-											className="px-3 py-1.5 rounded-lg text-[12px] font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-150"
+											className="px-3 py-1 rounded-lg text-[12px] font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-150"
 										>
 											Cancel
 										</button>
@@ -1432,15 +1244,15 @@ export function ChatArea({
 										onClick={handleSend}
 										disabled={!text.trim() && attachedImages.length === 0}
 										className={cn(
-											"inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-150",
+											"inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-medium transition-all duration-150",
 											text.trim() || attachedImages.length > 0
 												? softInterruptMode
-													? "bg-amber-500 text-white hover:bg-amber-500/90 shadow-sm"
-													: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
-												: "bg-muted text-muted-foreground/50 cursor-not-allowed",
+													? "bg-amber-500 text-white hover:bg-amber-500/90"
+													: "bg-foreground text-background hover:bg-foreground/90"
+												: "bg-muted text-muted-foreground/40 cursor-not-allowed",
 										)}
 									>
-										<SendHorizonal className="w-4 h-4" />
+										<SendHorizonal className="w-3.5 h-3.5" />
 										{softInterruptMode ? "Interrupt" : "Send"}
 									</button>
 								</div>

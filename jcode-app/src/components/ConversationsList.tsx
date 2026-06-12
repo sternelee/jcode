@@ -45,6 +45,8 @@ interface ConversationsListProps {
 	onRemoveSession?: (sessionId: string) => void;
 	workspaceModes?: Record<string, "normal" | "swarm">;
 	onToggleSwarmMode?: (workspaceId: string) => void;
+	compact?: boolean;
+	onToggleCompact?: () => void;
 }
 
 const DEFAULT_WORKSPACE_ID = "default";
@@ -174,8 +176,11 @@ export function ConversationsList({
 	isLoading = false,
 	error = null,
 	onRetry,
+	compact,
+	onToggleCompact,
 }: ConversationsListProps) {
 	const [searchQuery, setSearchQuery] = useState("");
+	const isCompact = compact ?? false;
 
 	const workspaceItems = useMemo(() => {
 		const map = new Map<string, ConversationItemData[]>();
@@ -208,46 +213,69 @@ export function ConversationsList({
 	}, [workspaces, workspaceItems, searchQuery]);
 
 	return (
-		<div className="w-[280px] min-w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col overflow-hidden">
+		<div className={cn(
+			"bg-sidebar border-r border-sidebar-border flex flex-col overflow-hidden transition-[width] duration-200",
+			isCompact ? "w-[52px] min-w-[52px]" : "w-[260px] min-w-[200px]",
+		)}>
 			{/* Header */}
-			<div className="px-4 pt-4 pb-3 space-y-3">
+			<div className={cn("pt-4 pb-3 space-y-3", isCompact ? "px-2" : "px-4")}>
 				<div className="flex items-center justify-between">
-					<h1 className="text-[15px] font-semibold text-sidebar-foreground tracking-tight">
-						Workspaces
-					</h1>
-					<button
-						type="button"
-						onClick={onCreateSession}
-						className="w-7 h-7 rounded-lg flex items-center justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-all duration-150"
-						title="New conversation"
-					>
-						<svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
-							<path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z" />
-						</svg>
-					</button>
+					{!isCompact && (
+						<h1 className="text-[15px] font-semibold text-sidebar-foreground tracking-tight">
+							Workspaces
+						</h1>
+					)}
+					<div className={cn("flex items-center gap-0.5", isCompact && "flex-col w-full")}>
+						{onToggleCompact && (
+							<button
+								type="button"
+								onClick={onToggleCompact}
+								className="w-7 h-7 rounded-lg flex items-center justify-center text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-all duration-150"
+								title={isCompact ? "Expand sidebar" : "Collapse sidebar"}
+							>
+								<svg viewBox="0 0 16 16" fill="currentColor" className={cn("w-4 h-4 transition-transform duration-200", !isCompact && "rotate-180")}>
+									<path fillRule="evenodd" d="M7.22 2.22a.75.75 0 011.06 0l5.5 5.5a.75.75 0 010 1.06l-5.5 5.5a.75.75 0 01-1.06-1.06L12.19 8 7.22 3.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+								</svg>
+							</button>
+						)}
+						{!isCompact && (
+							<button
+								type="button"
+								onClick={onCreateSession}
+								className="w-7 h-7 rounded-lg flex items-center justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-all duration-150"
+								title="New conversation"
+							>
+								<svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+									<path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z" />
+								</svg>
+							</button>
+						)}
+					</div>
 				</div>
 
 				{/* Search */}
-				<div className="relative">
-					<svg
-						viewBox="0 0 16 16"
-						fill="currentColor"
-						className="w-3.5 h-3.5 text-sidebar-foreground/40 absolute left-2.5 top-1/2 -translate-y-1/2"
-					>
-						<path
-							fillRule="evenodd"
-							d="M11.5 7.5a4 4 0 11-8 0 4 4 0 018 0zm-.82 4.74a5.5 5.5 0 111.06-1.06l2.79 2.79a.75.75 0 11-1.06 1.06l-2.79-2.79z"
-							clipRule="evenodd"
+				{!isCompact && (
+					<div className="relative">
+						<svg
+							viewBox="0 0 16 16"
+							fill="currentColor"
+							className="w-3.5 h-3.5 text-sidebar-foreground/40 absolute left-2.5 top-1/2 -translate-y-1/2"
+						>
+							<path
+								fillRule="evenodd"
+								d="M11.5 7.5a4 4 0 11-8 0 4 4 0 018 0zm-.82 4.74a5.5 5.5 0 111.06-1.06l2.79 2.79a.75.75 0 11-1.06 1.06l-2.79-2.79z"
+								clipRule="evenodd"
+							/>
+						</svg>
+						<input
+							type="text"
+							value={searchQuery}
+							onChange={(e) => setSearchQuery(e.target.value)}
+							placeholder="Search..."
+							className="w-full h-8 pl-8 pr-3 rounded-lg bg-sidebar-accent/50 border-0 text-[13px] text-sidebar-foreground placeholder-sidebar-foreground/40 outline-none focus:ring-1 focus:ring-sidebar-ring/30 transition-all"
 						/>
-					</svg>
-					<input
-						type="text"
-						value={searchQuery}
-						onChange={(e) => setSearchQuery(e.target.value)}
-						placeholder="Search..."
-						className="w-full h-8 pl-8 pr-3 rounded-lg bg-sidebar-accent/50 border-0 text-[13px] text-sidebar-foreground placeholder-sidebar-foreground/40 outline-none focus:ring-1 focus:ring-sidebar-ring/30 transition-all"
-					/>
-				</div>
+					</div>
+				)}
 			</div>
 
 			{/* Content - conditional rendering */}
@@ -297,7 +325,7 @@ export function ConversationsList({
 						)}
 					</div>
 				</div>
-			) : (
+			) : isCompact ? null : (
 				/* Workspace list */
 				<div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
 					{filteredWorkspaces.map((wsId) => {

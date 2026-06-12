@@ -40,10 +40,10 @@ export function NavBar({
 	onToggleSidebar,
 }: NavBarProps) {
 	return (
-		<nav className="w-[56px] min-w-[56px] bg-sidebar border-r border-sidebar-border flex flex-col items-center py-3 select-none gap-1">
+		<nav className="w-[52px] min-w-[52px] bg-sidebar border-r border-sidebar-border flex flex-col items-center py-3 select-none gap-0.5">
 			{/* Logo */}
-			<div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center mb-3 shadow-sm">
-				<span className="text-white text-[15px] font-bold">J</span>
+			<div className="w-8 h-8 rounded-lg bg-foreground/90 flex items-center justify-center mb-2">
+				<span className="text-background text-[13px] font-semibold">J</span>
 			</div>
 
 			{/* Mobile sidebar toggle */}
@@ -51,10 +51,10 @@ export function NavBar({
 				<button
 					type="button"
 					onClick={onToggleSidebar}
-					className="w-10 h-10 rounded-xl flex items-center justify-center text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-all duration-150 lg:hidden"
+					className="w-9 h-9 rounded-lg flex items-center justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/60 transition-all duration-150 lg:hidden"
 					title="Toggle sidebar"
 				>
-					<Menu className="w-5 h-5" />
+					<Menu className="w-4.5 h-4.5" />
 				</button>
 			)}
 
@@ -69,16 +69,16 @@ export function NavBar({
 							type="button"
 							onClick={() => onTabChange(item.id)}
 							className={cn(
-								"relative w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-150",
+								"relative w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150",
 								isActive
-									? "bg-sidebar-accent text-sidebar-primary shadow-sm"
-									: "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+									? "bg-sidebar-accent text-sidebar-primary"
+									: "text-sidebar-foreground/45 hover:text-sidebar-foreground hover:bg-sidebar-accent/40",
 							)}
 							title={item.label}
 						>
-							<Icon className="w-[20px] h-[20px]" />
+							<Icon className="w-[18px] h-[18px]" />
 							{item.id === "chat" && unreadCount > 0 && (
-								<span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full flex items-center justify-center px-1 shadow-sm">
+								<span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full flex items-center justify-center px-1">
 									{unreadCount > 9 ? "9+" : unreadCount}
 								</span>
 							)}
@@ -92,14 +92,14 @@ export function NavBar({
 				type="button"
 				onClick={() => onTabChange("settings")}
 				className={cn(
-					"w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-150",
+					"w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-150",
 					activeTab === "settings"
-						? "bg-sidebar-accent text-sidebar-primary shadow-sm"
-						: "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50",
+						? "bg-sidebar-accent text-sidebar-primary"
+						: "text-sidebar-foreground/45 hover:text-sidebar-foreground hover:bg-sidebar-accent/40",
 				)}
 				title="Settings"
 			>
-				<Settings className="w-[20px] h-[20px]" />
+				<Settings className="w-[18px] h-[18px]" />
 			</button>
 
 			{/* Logout */}
@@ -107,10 +107,10 @@ export function NavBar({
 				<button
 					type="button"
 					onClick={onLogout}
-					className="w-10 h-10 rounded-xl flex items-center justify-center text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-all duration-150"
+					className="w-9 h-9 rounded-lg flex items-center justify-center text-sidebar-foreground/35 hover:text-sidebar-foreground hover:bg-sidebar-accent/40 transition-all duration-150"
 					title="Logout"
 				>
-					<LogOut className="w-[18px] h-[18px]" />
+					<LogOut className="w-4 h-4" />
 				</button>
 			)}
 		</nav>

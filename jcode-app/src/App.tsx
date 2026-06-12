@@ -111,6 +111,7 @@ export default function App() {
 	const [sidePanelOpen, setSidePanelOpen] = useState(false);
 	const [gitBranches, setGitBranches] = useState<Record<string, string>>({});
 	const [sidebarOpen, setSidebarOpen] = useState(false);
+	const [sidebarCompact, setSidebarCompact] = useState(false);
 	const [onboardingComplete, setOnboardingComplete] = useState(() => {
 		// Check if user has completed onboarding before
 		return localStorage.getItem("jcode-onboarding-complete") === "true";
@@ -857,7 +858,7 @@ export default function App() {
 
 	return (
 		<div className="h-screen bg-background flex flex-col overflow-hidden">
-			<div className="flex flex-1 overflow-hidden">
+			<div className="flex flex-1 overflow-hidden min-w-0">
 				<NavBar
 					activeTab={activeNavTab}
 					onTabChange={setActiveNavTab}
@@ -870,8 +871,7 @@ export default function App() {
 
 				{isChatTab ? (
 					<>
-						{/* Desktop sidebar */}
-						<div className="hidden lg:flex">
+						{/* Desktop sidebar */}						<div className="hidden lg:flex">
 							<ConversationsList
 								workspaces={workspaces}
 								sessions={state.sessions}
@@ -884,20 +884,22 @@ export default function App() {
 								onToggleWorkspace={toggleWorkspace}
 								onSelectWorkspace={handleWorkspaceChange}
 								onSelectConversation={(id) => {
-									setSidebarOpen(false);
-									handleSelectConversation(id);
-								}}
+										setSidebarOpen(false);
+										handleSelectConversation(id);
+									}}
 								onSelectSession={(s) => {
-									setSidebarOpen(false);
-									handleResume(s);
-								}}
+										setSidebarOpen(false);
+										handleResume(s);
+									}}
 								onCreateSession={() => {
-									setSidebarOpen(false);
-									handleNewSession();
-								}}
+										setSidebarOpen(false);
+										handleNewSession();
+									}}
 								onRemoveSession={handleRemoveAgentSession}
 								workspaceModes={state.workspaceModes}
 								onToggleSwarmMode={handleToggleSwarmMode}
+								compact={sidebarCompact}
+								onToggleCompact={() => setSidebarCompact((c) => !c)}
 							/>
 						</div>
 						{/* Mobile sidebar overlay */}
@@ -907,7 +909,7 @@ export default function App() {
 									className="fixed inset-0 bg-black/30 z-40 lg:hidden"
 									onClick={() => setSidebarOpen(false)}
 								/>
-								<div className="fixed left-[56px] top-0 bottom-0 w-[280px] bg-background border-r border-border z-50 lg:hidden">
+								<div className="fixed left-[52px] top-0 bottom-0 w-[280px] bg-background border-r border-border z-50 lg:hidden">
 									<ConversationsList
 										workspaces={workspaces}
 										sessions={state.sessions}
@@ -1017,7 +1019,7 @@ export default function App() {
 						/>
 					</>
 				) : (
-					<div key={activeNavTab} className="animate-fade-in flex-1 flex">
+					<div key={activeNavTab} className="animate-fade-in flex-1 flex min-w-0">
 						{activeNavTab === "settings" ? (
 							<SettingsPage
 								theme={effectiveTheme}

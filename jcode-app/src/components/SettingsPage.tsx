@@ -184,25 +184,24 @@ export function SettingsPage({
 	}, []);
 
 	return (
-		<div className="flex flex-col h-full bg-background">
-			<div className="flex items-center gap-3 px-6 py-4 border-b border-border shrink-0">
-				<div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-					<svg viewBox="0 0 16 16" fill="currentColor" className="w-4 h-4">
+		<div className="flex flex-col min-w-0 min-h-0 flex-1 w-full bg-background overflow-x-hidden">
+			<div className="flex items-center gap-2 md:gap-3 px-4 md:px-6 py-3 md:py-4 border-b border-border shrink-0">
+				<div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
+					<svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5 md:w-4 md:h-4">
 						<path d="M8 1.5c.35 0 .65.23.73.57l.5 2.19a.9.9 0 00.58.65l2.14.75c.42.15.6.62.44 1.05l-1 2.02a.9.9 0 00.08.86l1.33 1.96c.32.47.17 1.1-.33 1.37l-1.73 1a.9.9 0 01-.98-.27l-1.3-1.6a.9.9 0 00-.98-.27l-2.14.75a.9.9 0 01-1.05-.44l-1-2.02a.9.9 0 01.44-1.2l2.14-.75a.9.9 0 00.58-.65l.5-2.19A.75.75 0 018 1.5z" />
 					</svg>
 				</div>
-				<div>
-					<h1 className="text-[15px] font-semibold text-foreground">
-						Settings
-					</h1>
-					<p className="text-[12px] text-muted-foreground">
+				<div>								<h1 className="text-[13px] md:text-[15px] font-semibold text-foreground">
+									Settings
+								</h1>
+								<p className="text-[11px] md:text-[12px] text-muted-foreground hidden sm:block">
 						Appearance, authentication, memory, version info
 					</p>
 				</div>
 			</div>
 
-			<div className="flex-1 overflow-y-auto min-h-0">
-				<div className="p-6 max-w-xl mx-auto space-y-6">
+			<div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 min-w-0">
+				<div className="p-4 md:p-6 max-w-xl mx-auto space-y-4 md:space-y-6">
 					{/* Theme */}
 					<SettingsCard
 						icon={<Sun className="w-4 h-4" />}
@@ -291,13 +290,13 @@ export function SettingsPage({
 						<SettingsCard icon={<Brain className="w-4 h-4" />} title="Memory">
 							<div className="space-y-3">
 								{onExportMemories && (
-									<div className="flex items-center gap-2">
+									<div className="flex items-center gap-2 flex-wrap">
 										<input
 											type="text"
 											value={exportPath}
 											onChange={(e) => setExportPath(e.target.value)}
 											placeholder="Export path (e.g. ~/memories.json)"
-											className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
+											className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[12px] md:text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 min-w-0"
 										/>
 										<button
 											type="button"
@@ -330,13 +329,13 @@ export function SettingsPage({
 									</div>
 								)}
 								{onImportMemories && (
-									<div className="flex items-center gap-2">
+									<div className="flex items-center gap-2 flex-wrap">
 										<input
 											type="text"
 											value={importPath}
 											onChange={(e) => setImportPath(e.target.value)}
 											placeholder="Import path (e.g. ~/memories.json)"
-											className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
+											className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[12px] md:text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 min-w-0"
 										/>
 										<button
 											type="button"
@@ -407,7 +406,7 @@ export function SettingsPage({
 						>
 							<div className="space-y-3">
 								{/* Search bar */}
-								<div className="flex items-center gap-2">
+								<div className="flex items-center gap-2 flex-wrap">
 									<div className="relative flex-1">
 										<Search className="w-3.5 h-3.5 text-muted-foreground/40 absolute left-2.5 top-1/2 -translate-y-1/2" />
 										<input
@@ -448,7 +447,7 @@ export function SettingsPage({
 								</div>
 
 								{/* Scope filter */}
-								<div className="flex items-center gap-2">
+								<div className="flex items-center gap-2 flex-wrap">
 									{(["all", "project", "global"] as const).map((scope) => (
 										<button
 											key={scope}
@@ -478,7 +477,7 @@ export function SettingsPage({
 
 								{/* Stats */}
 								{memoryStats && (
-									<div className="flex items-center gap-3 py-1">
+									<div className="flex items-center gap-3 py-1 flex-wrap">
 										<StatPill
 											label="Project"
 											value={memoryStats.project_count}

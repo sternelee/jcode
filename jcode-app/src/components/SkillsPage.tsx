@@ -152,19 +152,19 @@ export function SkillsPage() {
 	});
 
 	return (
-		<div className="flex-1 flex flex-col bg-card overflow-hidden">
+		<div className="flex-1 flex flex-col min-w-0 bg-card overflow-hidden overflow-x-hidden">
 			{/* Header */}
-			<div className="px-6 py-4 border-b border-border flex items-center gap-3 shrink-0">
-				<div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-					<Wrench className="w-5 h-5" />
+			<div className="px-4 md:px-6 py-3 md:py-4 border-b border-border flex items-center gap-2 md:gap-3 shrink-0 flex-wrap">
+				<div className="w-7 h-7 md:w-9 md:h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+					<Wrench className="w-4 h-4 md:w-5 md:h-5" />
 				</div>
 				<div className="flex-1 min-w-0">
-					<h1 className="text-[16px] font-semibold text-foreground">Skills</h1>
-					<p className="text-[12px] text-muted-foreground">
+					<h1 className="text-[14px] md:text-[16px] font-semibold text-foreground">Skills</h1>
+					<p className="text-[11px] md:text-[12px] text-muted-foreground">
 						{skills.length} skill{skills.length !== 1 ? "s" : ""} available
 					</p>
 				</div>
-				<div className="flex items-center gap-2">
+				<div className="flex items-center gap-1.5 md:gap-2 shrink-0">
 					<button
 						type="button"
 						onClick={openAdd}
@@ -188,7 +188,7 @@ export function SkillsPage() {
 			</div>
 
 			{/* Search */}
-			<div className="px-6 py-3 border-b border-border shrink-0">
+			<div className="px-4 md:px-6 py-2.5 md:py-3 border-b border-border shrink-0">
 				<div className="relative">
 					<Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
 					<input
@@ -212,7 +212,7 @@ export function SkillsPage() {
 
 			{/* Reload message */}
 			{reloadMsg && (
-				<div className="px-6 pt-3 shrink-0">
+				<div className="px-4 md:px-6 pt-3 shrink-0">
 					<div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-600 text-[12px]">
 						<CheckCircle2 className="w-3.5 h-3.5" />
 						{reloadMsg}
@@ -221,7 +221,7 @@ export function SkillsPage() {
 			)}
 
 			{/* Content */}
-			<div className="flex-1 overflow-y-auto px-6 py-4">
+			<div className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-6 py-3 md:py-4 min-w-0">
 				{loading && skills.length === 0 && (
 					<div className="flex items-center justify-center py-12">
 						<Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
@@ -256,7 +256,7 @@ export function SkillsPage() {
 					{filtered.map((skill) => (
 						<div
 							key={skill.name}
-							className="rounded-xl border border-border bg-card p-4 hover:border-primary/20 transition-colors group"
+							className="rounded-xl border border-border bg-card p-4 hover:border-primary/20 transition-colors group min-w-0 overflow-x-hidden"
 						>
 							<div className="flex items-start gap-3">
 								<div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
@@ -264,7 +264,7 @@ export function SkillsPage() {
 								</div>
 								<div className="flex-1 min-w-0">
 									<div className="flex items-center gap-2 flex-wrap">
-										<span className="font-medium text-[13px] text-foreground">
+										<span className="font-medium text-[13px] text-foreground truncate">
 											{skill.name}
 										</span>
 										<div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -286,7 +286,7 @@ export function SkillsPage() {
 											</button>
 										</div>
 									</div>
-									<p className="text-[12px] text-muted-foreground mt-1 leading-relaxed">
+									<p className="text-[12px] text-muted-foreground mt-1 leading-relaxed break-words">
 										{skill.description}
 									</p>
 									{skill.allowed_tools &&
@@ -296,7 +296,7 @@ export function SkillsPage() {
 												{skill.allowed_tools.map((tool) => (
 													<span
 														key={tool}
-														className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono"
+														className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono truncate max-w-[120px]"
 													>
 														{tool}
 													</span>
