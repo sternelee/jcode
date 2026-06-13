@@ -804,13 +804,16 @@ export default function App() {
 			),
 		);
 
+		// Builtin pages (settings / providers / mcp / skills / team) now
+		// open in the dedicated pages window via `open_pages_window`.
+		// The workbench no longer hosts these pages inline.
 		unlisteners.push(
 			listen<{ kind?: string; page?: BuiltinPage }>(
 				"launcher:open-builtin",
 				(event) => {
 					const page = event.payload?.page;
 					if (!page) return;
-					setActiveNavTab(page);
+					void invoke("open_pages_window", { page });
 				},
 			),
 		);
@@ -852,8 +855,8 @@ export default function App() {
 			<div className="flex flex-1 overflow-hidden min-w-0">
 				<LeftSidebar
 					activeTab={activeNavTab}
-					onTabChange={setActiveNavTab}
 					onOpenLauncher={() => void invoke("show_launcher")}
+					onOpenPage={(page) => void invoke("open_pages_window", { page })}
 					onNewTask={() => {
 						setCreateDialogInitMode("normal");
 						setCreateDialogOpen(true);

@@ -41,6 +41,18 @@
         "visible": false,
         "center": true,
         "acceptFirstMouse": true
+      },
+      {
+        "label": "pages",
+        "title": "JCode Settings",
+        "width": 960,
+        "height": 680,
+        "minWidth": 700,
+        "minHeight": 500,
+        "resizable": true,
+        "visible": false,
+        "acceptFirstMouse": true,
+        "tabbingIdentifier": "JCode"
       }
     ],
     "security": {

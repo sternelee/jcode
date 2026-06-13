@@ -3681,6 +3681,22 @@ async fn expand_to_workbench(
     Ok(())
 }
 
+/// Open the dedicated pages window (Settings / Providers / Skills / MCP / Team)
+/// with the given initial page selected. The pages window has its own layout
+/// independent of the workbench.
+#[tauri::command]
+async fn open_pages_window(
+    app_handle: AppHandle,
+    page: String,
+) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("pages") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+        let _ = app_handle.emit("pages:navigate", page);
+    }
+    Ok(())
+}
+
 #[tauri::command]
 async fn stop_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
@@ -3997,6 +4013,7 @@ pub fn run() {
             refresh_applications,
             launch_application,
             quit_application,
+            open_pages_window,
             show_launcher,
             hide_launcher,
             show_workbench,

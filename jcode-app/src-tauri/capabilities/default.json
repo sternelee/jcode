@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main windows",
-  "windows": ["workbench", "launcher"],
+  "windows": ["workbench", "launcher", "pages"],
   "permissions": [
     "core:default",
     "dialog:default",

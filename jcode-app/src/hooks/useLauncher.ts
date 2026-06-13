@@ -401,9 +401,11 @@ export function useLauncher() {
 				}
 
 				if (item.kind === "builtin") {
-					await invoke("expand_to_workbench", {
-						payload: { kind: "builtin", page: item.page },
-					});
+					// Open the dedicated pages window instead of expanding
+					// into the workbench. The pages window has its own clean
+					// tab layout (Settings / Providers / MCP / Skills / Team)
+					// and is never mixed with the agent workspace chrome.
+					await invoke("open_pages_window", { page: item.page });
 					const builtinId = `builtin:${item.page}`;
 					recordRecent({
 						kind: "builtin",

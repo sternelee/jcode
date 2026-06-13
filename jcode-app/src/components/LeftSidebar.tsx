@@ -15,8 +15,8 @@ import {
 
 interface LeftSidebarProps {
 	activeTab: string;
-	onTabChange: (tab: string) => void;
 	onOpenLauncher?: () => void;
+	onOpenPage?: (page: string) => void;
 	onNewTask: () => void;
 	sessions: SessionInfo[];
 	activeSessionId: string | null;
@@ -26,8 +26,8 @@ interface LeftSidebarProps {
 
 export function LeftSidebar({
 	activeTab,
-	onTabChange,
 	onOpenLauncher,
+	onOpenPage,
 	onNewTask,
 	sessions,
 	activeSessionId,
@@ -122,7 +122,7 @@ export function LeftSidebar({
 				</button>
 				<button
 					type="button"
-					onClick={() => onTabChange("skills")}
+					onClick={() => onOpenPage?.("skills")}
 					className={cn(
 						"flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-all",
 						activeTab === "skills"
@@ -135,7 +135,7 @@ export function LeftSidebar({
 				</button>
 				<button
 					type="button"
-					onClick={() => onTabChange("tasks")}
+					onClick={() => onOpenPage?.("tasks")}
 					className={cn(
 						"flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-all",
 						activeTab === "tasks"
@@ -148,7 +148,7 @@ export function LeftSidebar({
 				</button>
 				<button
 					type="button"
-					onClick={() => onTabChange("mcp")}
+					onClick={() => onOpenPage?.("mcp")}
 					className={cn(
 						"flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-all",
 						activeTab === "mcp"
