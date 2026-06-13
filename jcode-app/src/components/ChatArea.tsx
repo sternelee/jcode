@@ -13,13 +13,16 @@ import {
 	X,
 	Plus,
 	Play,
+	Terminal,
+	Lightbulb,
 	UserPlus,
 	Paperclip,
-	AtSign,
 	SendHorizonal,
 	Mic,
 	Loader2,
 	FileText,
+	Shield,
+	Circle,
 } from "lucide-react";
 import {
 	SlashCommandPalette,
@@ -933,25 +936,41 @@ export function ChatArea({
 										</div>
 									</div>
 								);
-							}						// ── Assistant (default) ──
+							}						// ── Assistant (default) — with execution timeline ──
 						return (
 							<div
 								key={msg.id}
 								data-msg-id={msg.id}
 								className={cn(
-									"group/msg message-enter",
+									"group/msg message-enter relative flex gap-3",
 									isCurrentMatch && "ring-1 ring-foreground/20 rounded-xl",
 								)}
 							>
 								{showUnreadSeparator && <UnreadSeparator />}
-								<MessageBubble
-									message={msg}
-									isStreaming={msg.isStreaming}
-									hideHeader
-									onRegenerate={() => onRegenerateMessage?.(idx)}
-									onEdit={(newContent) => onEditMessage?.(idx, newContent)}
-									onQuote={(content, role) => onQuoteMessage?.(content, role)}
-								/>
+								<div className="relative flex flex-col items-center w-5 shrink-0">
+									<div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-px border-l border-dashed border-border/50" />
+									<div className="relative z-10 mt-1 w-5 h-5 rounded-full bg-card border border-border flex items-center justify-center">
+										{msg.isStreaming ? (
+											<Loader2 className="w-3 h-3 text-primary animate-spin" />
+										) : msg.content.includes("```") || msg.content.includes("$ ") ? (
+											<Terminal className="w-3 h-3 text-muted-foreground" />
+										) : msg.content.length > 200 ? (
+											<Lightbulb className="w-3 h-3 text-amber-500" />
+										) : (
+											<div className="w-2 h-2 rounded-full bg-muted-foreground/30" />
+										)}
+									</div>
+								</div>
+								<div className="flex-1 min-w-0">
+									<MessageBubble
+										message={msg}
+										isStreaming={msg.isStreaming}
+										hideHeader
+										onRegenerate={() => onRegenerateMessage?.(idx)}
+										onEdit={(newContent) => onEditMessage?.(idx, newContent)}
+										onQuote={(content, role) => onQuoteMessage?.(content, role)}
+									/>
+								</div>
 							</div>
 						);
 						})}
@@ -1150,42 +1169,31 @@ export function ChatArea({
 								value={text}
 								onChange={handleChange}
 								onKeyDown={handleKeyDown}
-								placeholder="Type a message… (! for shell, @ to mention)"
+								placeholder="Follow up here…"
 								rows={1}
 								className="w-full px-4 pt-3 pb-2 text-[14px] text-foreground placeholder-muted-foreground/50 outline-none resize-none bg-transparent"
 								style={{ minHeight: 44, maxHeight: 120 }}
 							/>
-							<div className="flex items-center justify-between px-3 py-1.5 border-t border-border">
+							<div className="flex items-center justify-between px-2 py-1.5 border-t border-border">
 								<div className="flex items-center gap-0.5">
-									{/* Attach - hidden on mobile for cleaner look */}
+									{/* Attach */}
 									<button
 										type="button"
 										onClick={() => fileInputRef.current?.click()}
-										className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted transition-all duration-150 hidden sm:flex"
-										title="Attach"
+										className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted transition-all"
+										title="Attach files"
 									>
 										<Paperclip className="w-4 h-4" />
 									</button>
-									{/* @mention - hidden on mobile */}
+									{/* Full access shield */}
 									<button
 										type="button"
-										title="Mention agent"
-										onClick={() => {
-											const ta = textareaRef.current;
-											if (!ta) return;
-											const cursor = ta.selectionStart ?? text.length;
-											setText(text.slice(0, cursor) + "@" + text.slice(cursor));
-											setMentionQuery("");
-											setMentionIndex(0);
-											setTimeout(() => {
-												ta.focus();
-												ta.selectionStart = cursor + 1;
-												ta.selectionEnd = cursor + 1;
-											}, 0);
-										}}
-										className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted transition-all duration-150 hidden sm:flex"
+										className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-[11px] font-medium text-muted-foreground/60 hover:text-foreground hover:bg-muted transition-all"
+										title="Access mode"
 									>
-										<AtSign className="w-4 h-4" />
+										<Shield className="w-3.5 h-3.5" />
+										Full access
+										<ChevronDown className="w-3 h-3" />
 									</button>
 									{/* Dictation */}
 									{onRunDictation && (
@@ -1211,6 +1219,11 @@ export function ChatArea({
 								</div>
 
 								<div className="flex items-center gap-2">
+									{/* Model label */}
+									<span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium text-muted-foreground/60">
+										<Circle className="w-2 h-2 fill-current opacity-50" />
+										{currentModel ? `${currentProfileId ?? ""} ${currentModel}`.trim() : "Agent"}
+									</span>
 									{isProcessing && onSendSoftInterrupt && (
 										<button
 											type="button"
@@ -1221,40 +1234,34 @@ export function ChatArea({
 													? "bg-amber-500/10 text-amber-600 border-amber-500/30"
 													: "text-muted-foreground border-border hover:text-foreground hover:bg-muted",
 											)}
-											title={
-												softInterruptMode
-													? "Soft interrupt mode"
-													: "Normal send mode"
-											}
-										>
-											{softInterruptMode ? "Interrupt" : "Send"}
-										</button>
+									>
+										{softInterruptMode ? "Interrupt" : "Send"}
+									</button>
 									)}
-									{isProcessing && !onSendSoftInterrupt && (
+									{isProcessing ? (
 										<button
 											type="button"
 											onClick={onCancel}
-											className="px-3 py-1 rounded-lg text-[12px] font-medium text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all duration-150"
+											className="w-7 h-7 rounded-full bg-foreground flex items-center justify-center hover:bg-foreground/90 transition-all shrink-0"
+											title="Stop generation"
 										>
-											Cancel
+											<div className="w-3 h-3 rounded-sm bg-background" />
+										</button>
+									) : (
+										<button
+											type="button"
+											onClick={handleSend}
+											disabled={!text.trim() && attachedImages.length === 0}
+											className={cn(
+												"w-7 h-7 rounded-full flex items-center justify-center transition-all shrink-0",
+												text.trim() || attachedImages.length > 0
+													? "bg-foreground text-background hover:bg-foreground/90"
+													: "bg-muted text-muted-foreground/40 cursor-not-allowed",
+											)}
+										>
+											<SendHorizonal className="w-4 h-4" />
 										</button>
 									)}
-									<button
-										type="button"
-										onClick={handleSend}
-										disabled={!text.trim() && attachedImages.length === 0}
-										className={cn(
-											"inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-medium transition-all duration-150",
-											text.trim() || attachedImages.length > 0
-												? softInterruptMode
-													? "bg-amber-500 text-white hover:bg-amber-500/90"
-													: "bg-foreground text-background hover:bg-foreground/90"
-												: "bg-muted text-muted-foreground/40 cursor-not-allowed",
-										)}
-									>
-										<SendHorizonal className="w-3.5 h-3.5" />
-										{softInterruptMode ? "Interrupt" : "Send"}
-									</button>
 								</div>
 							</div>
 						</div>

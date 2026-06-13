@@ -16,7 +16,7 @@ import { MediaPage } from "@/components/MediaPage";
 import { McpPage } from "@/components/McpPage";
 import { SkillsPage } from "@/components/SkillsPage";
 import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
-import { SidePanel } from "@/components/SidePanel";
+import { RightSidebar } from "@/components/RightSidebar";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { parseSlashCommand } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
@@ -109,7 +109,6 @@ export default function App() {
 		PermissionRequest[]
 	>([]);
 	const [helpOpen, setHelpOpen] = useState(false);
-	const [sidePanelOpen, setSidePanelOpen] = useState(false);
 	const [onboardingComplete, setOnboardingComplete] = useState(() => {
 		// Check if user has completed onboarding before
 		return localStorage.getItem("jcode-onboarding-complete") === "true";
@@ -293,7 +292,7 @@ export default function App() {
 			}
 			if (event.key.toLowerCase() === "o" && !event.metaKey && !event.ctrlKey) {
 				event.preventDefault();
-				setSidePanelOpen((o) => !o);
+				// sidebar toggle removed in RightSidebar migration
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
@@ -949,14 +948,14 @@ export default function App() {
 							currentWorkingDir={state.workingDir}
 							onExecuteShellCommand={executeShellCommandAndDisplay}
 						/>
-						<SidePanel
+						<RightSidebar
 							snapshot={
 								selectedConvId
 									? (state.sessionData[selectedConvId]?.sidePanel ?? null)
 									: null
 							}
-							open={sidePanelOpen}
-							onToggle={() => setSidePanelOpen((o) => !o)}
+							consultantFiles={[]}
+							skillFiles={[]}
 						/>
 					</>
 				) : (
