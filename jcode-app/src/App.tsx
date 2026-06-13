@@ -1,7 +1,6 @@
 import { useJcodeSession } from "@/hooks/useJcodeSession";
 import { TitleBar } from "@/components/TitleBar";
-import { NavBar } from "@/components/NavBar";
-import { ConversationsList } from "@/components/ConversationsList";
+import { LeftSidebar } from "@/components/LeftSidebar";
 import { ChatArea } from "@/components/ChatArea";
 import { CreateSessionDialog } from "@/components/CreateSessionDialog";
 import { StdinInputModal } from "@/components/StdinInputModal";
@@ -66,7 +65,6 @@ export default function App() {
 		compactContext,
 		rewindChat,
 		gitStatus,
-		toggleWorkspace,
 		renameSession,
 		runDictation,
 		sendSoftInterrupt,
@@ -112,9 +110,6 @@ export default function App() {
 	>([]);
 	const [helpOpen, setHelpOpen] = useState(false);
 	const [sidePanelOpen, setSidePanelOpen] = useState(false);
-	const [gitBranches, setGitBranches] = useState<Record<string, string>>({});
-	const [sidebarOpen, setSidebarOpen] = useState(false);
-	const [sidebarCompact, setSidebarCompact] = useState(false);
 	const [onboardingComplete, setOnboardingComplete] = useState(() => {
 		// Check if user has completed onboarding before
 		return localStorage.getItem("jcode-onboarding-complete") === "true";
@@ -180,35 +175,7 @@ export default function App() {
 		switchSession(targetSessionId);
 	};
 
-	const handleWorkspaceChange = async (workspaceId: string) => {
-		const workingDir = workingDirFromWorkspaceId(workspaceId);
-		setActiveWorkspace(workspaceId);
-		setWorkingDir(workingDir);
 
-		const currentMode = state.workspaceModes[workspaceId];
-		if (currentMode === "swarm") {
-			await openWorkspaceConversation(workspaceId);
-			return;
-		}
-
-		const targetSession = findWorkspaceTargetSession(workspaceId);
-		if (!targetSession) {
-			setSelectedConvId(undefined);
-			return;
-		}
-		setSelectedConvId(targetSession.sessionId);
-		if (
-			state.sessionData[targetSession.sessionId]?.connectionPhase ===
-			"connected"
-		) {
-			switchSession(targetSession.sessionId);
-		} else {
-			void resumeSession(
-				targetSession.sessionId,
-				targetSession.workingDir || null,
-			);
-		}
-	};
 
 	// Restore last session on startup
 	const hasRestored = useRef(false);
@@ -333,10 +300,7 @@ export default function App() {
 		return () => window.removeEventListener("keydown", onKeyDown);
 	}, [listSessions]);
 
-	const handleNewSession = async () => {
-		setCreateDialogInitMode("normal");
-		setCreateDialogOpen(true);
-	};
+
 
 	const handleCreateNormal = async (
 		workingDir: string | null,
@@ -461,26 +425,10 @@ export default function App() {
 	};
 
 	/** Toggle swarm mode for a workspace. */
-	const handleToggleSwarmMode = async (workspaceId: string) => {
-		const currentMode = state.workspaceModes[workspaceId];
-		const newMode = currentMode === "swarm" ? "normal" : "swarm";
-		if (newMode === "swarm") {
-			const workingDir = workingDirFromWorkspaceId(workspaceId);
-			const history = await loadWorkspaceThreadHistory(workingDir);
-			setWorkspaceMode(workspaceId, "swarm", history);
-		} else {
-			setWorkspaceMode(workspaceId, "normal");
-		}
-		// Re-select the workspace to reflect mode change
-		setSelectedConvId(`workspace:${workspaceId}`);
-	};
+
 
 	/** Remove an individual agent session from the workspace after confirmation. */
-	const handleRemoveAgentSession = (sessionId: string) => {
-		const session = state.sessions.find((s) => s.sessionId === sessionId);
-		const name = session?.roleName || session?.title || sessionId.slice(0, 8);
-		setConfirmRemove({ sessionId, name });
-	};
+
 
 	const handleConfirmRemove = async () => {
 		if (!confirmRemove) return;
@@ -729,15 +677,7 @@ export default function App() {
 		}
 	};
 
-	const handleSelectConversation = (convId: string) => {
-		setSelectedConvId(convId);
-		// Mark as read immediately
-		setLastReadAt((prev) => ({ ...prev, [convId]: Date.now() }));
-		if (convId.startsWith("workspace:")) {
-			const workspaceId = convId.slice("workspace:".length);
-			void openWorkspaceConversation(workspaceId);
-		}
-	};
+
 
 	const workspaces = useMemo(() => {
 		const ids = new Set<string>([DEFAULT_WORKSPACE_ID]);
@@ -756,26 +696,7 @@ export default function App() {
 		[currentWorkspaceId, state.sessions],
 	);
 
-	// Poll git branch for each workspace
-	useEffect(() => {
-		const fetchBranches = async () => {
-			const branches: Record<string, string> = {};
-			for (const wsId of workspaces) {
-				if (wsId === DEFAULT_WORKSPACE_ID) continue;
-				const wd = workingDirFromWorkspaceId(wsId);
-				if (!wd) continue;
-				try {
-					const status = await gitStatus(wd);
-					const match = status.match(/On branch ([^\s]+)/);
-					if (match) branches[wsId] = match[1];
-				} catch {
-					// ignore
-				}
-			}
-			setGitBranches(branches);
-		};
-		fetchBranches();
-	}, [workspaces, gitStatus]);
+
 
 	const respondingRoles = workspaceSessions
 		.filter(
@@ -930,89 +851,37 @@ export default function App() {
 		<div className="h-screen bg-background flex flex-col overflow-hidden">
 			<TitleBar />
 			<div className="flex flex-1 overflow-hidden min-w-0">
-				<NavBar
+				<LeftSidebar
 					activeTab={activeNavTab}
 					onTabChange={setActiveNavTab}
-					unreadCount={Object.values(sessionPreviewMap).reduce(
-						(sum, p) => sum + (p.unread > 0 ? 1 : 0),
-						0,
-					)}
-					onToggleSidebar={() => setSidebarOpen((o) => !o)}
 					onOpenLauncher={() => void invoke("show_launcher")}
+					onNewTask={() => {
+						setCreateDialogInitMode("normal");
+						setCreateDialogOpen(true);
+					}}
+					sessions={state.sessions}
+					activeSessionId={state.sessionId}
+					onSelectSession={(s) => {
+						const wsid = workspaceIdFromDir(s.workingDir);
+						setActiveWorkspace(wsid);
+						setWorkingDir(s.workingDir || null);
+						if (selectedConvId !== s.sessionId) {
+							setSelectedConvId(s.sessionId);
+						}
+						setLastReadAt((prev) => ({ ...prev, [s.sessionId]: Date.now() }));
+						if (state.sessionId === s.sessionId) return;
+						const sd = state.sessionData[s.sessionId];
+						if (sd?.connectionPhase === "connected") {
+							switchSession(s.sessionId);
+						} else {
+							void resumeSession(s.sessionId, s.workingDir || null);
+						}
+					}}
+					sessionPreviewMap={sessionPreviewMap}
 				/>
 
 				{isChatTab ? (
 					<>
-						{/* Desktop sidebar */}						<div className="hidden lg:flex">
-							<ConversationsList
-								workspaces={workspaces}
-								sessions={state.sessions}
-								activeWorkspaceId={currentWorkspaceId}
-								expandedWorkspaces={state.expandedWorkspaces}
-								selectedConvId={selectedConvId}
-								sessionPreviewMap={sessionPreviewMap}
-								sessionData={state.sessionData}
-								gitBranches={gitBranches}
-								onToggleWorkspace={toggleWorkspace}
-								onSelectWorkspace={handleWorkspaceChange}
-								onSelectConversation={(id) => {
-										setSidebarOpen(false);
-										handleSelectConversation(id);
-									}}
-								onSelectSession={(s) => {
-										setSidebarOpen(false);
-										handleResume(s);
-									}}
-								onCreateSession={() => {
-										setSidebarOpen(false);
-										handleNewSession();
-									}}
-								onRemoveSession={handleRemoveAgentSession}
-								workspaceModes={state.workspaceModes}
-								onToggleSwarmMode={handleToggleSwarmMode}
-								compact={sidebarCompact}
-								onToggleCompact={() => setSidebarCompact((c) => !c)}
-							/>
-						</div>
-						{/* Mobile sidebar overlay */}
-						{sidebarOpen && (
-							<>
-								<div
-									className="fixed inset-0 bg-black/30 z-40 lg:hidden"
-									onClick={() => setSidebarOpen(false)}
-								/>
-								<div className="fixed left-[52px] top-0 bottom-0 w-[280px] bg-background border-r border-border z-50 lg:hidden">
-									<ConversationsList
-										workspaces={workspaces}
-										sessions={state.sessions}
-										activeWorkspaceId={currentWorkspaceId}
-										expandedWorkspaces={state.expandedWorkspaces}
-										selectedConvId={selectedConvId}
-										sessionPreviewMap={sessionPreviewMap}
-										sessionData={state.sessionData}
-										gitBranches={gitBranches}
-										onToggleWorkspace={toggleWorkspace}
-										onSelectWorkspace={handleWorkspaceChange}
-										onSelectConversation={(id) => {
-											setSidebarOpen(false);
-											handleSelectConversation(id);
-										}}
-										onSelectSession={(s) => {
-											setSidebarOpen(false);
-											handleResume(s);
-										}}
-										onCreateSession={() => {
-											setSidebarOpen(false);
-											handleNewSession();
-										}}
-										onRemoveSession={handleRemoveAgentSession}
-												workspaceModes={state.workspaceModes}
-												onToggleSwarmMode={handleToggleSwarmMode}
-									/>
-								</div>
-							</>
-						)}
-
 						<ChatArea
 							messages={displayMessages}
 							isProcessing={displayIsProcessing}
