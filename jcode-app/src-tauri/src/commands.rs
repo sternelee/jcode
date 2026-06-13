@@ -12,6 +12,14 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
 
+use crate::launcher::AppIndex;
+
+/// Shared cache of currently-running macOS app bundle IDs. Kept in a
+/// plain `std::sync::Mutex` because it's only ever written from a
+/// dedicated background thread (see `launcher::spawn_running_apps_loop`)
+/// and read briefly from the async command handlers.
+pub type RunningAppsCache = Arc<std::sync::Mutex<std::collections::HashSet<String>>>;
+
 /// Typed representation of a swarm member's live status,
 /// replacing the raw serde_json::Value HashMap.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +158,12 @@ pub struct AppState {
     pub server_client: Arc<std::sync::Mutex<Option<Arc<crate::server_client::ServerClient>>>>,
     /// Session IDs that are managed by the jcode server (not local agents).
     pub server_managed_sessions: Arc<Mutex<HashSet<String>>>,
+    /// Application index for launcher search.
+    pub app_index: Arc<Mutex<AppIndex>>,
+    /// Bundle IDs of currently-running macOS applications, refreshed in
+    /// the background by `launcher::spawn_running_apps_loop`. The launcher
+    /// joins this set with `app_index` to mark each result as running.
+    pub running_apps: RunningAppsCache,
 }
 
 impl Default for AppState {
@@ -168,6 +182,8 @@ impl AppState {
             provider: tokio::sync::RwLock::new(None),
             server_client: Arc::new(std::sync::Mutex::new(None)),
             server_managed_sessions: Arc::new(Mutex::new(HashSet::new())),
+            app_index: Arc::new(Mutex::new(AppIndex::default())),
+            running_apps: Arc::new(std::sync::Mutex::new(std::collections::HashSet::new())),
         }
     }
 

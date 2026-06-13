@@ -1,5 +1,6 @@
 pub mod commands;
 mod server_client;
+mod launcher;
 
 use commands::{create_agent_with_session, create_provider, AppState, SessionRuntime};
 use server_client::ServerClient;
@@ -15,6 +16,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::image::Image;
+use tauri::menu::{MenuBuilder, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 mod utils;
 use utils::*;
@@ -3582,6 +3587,101 @@ async fn execute_shell_command(
 }
 
 #[tauri::command]
+async fn search_applications(
+    state: State<'_, AppState>,
+    query: String,
+) -> Result<Vec<crate::launcher::AppInfo>, String> {
+    let index = state.app_index.lock().await;
+    let running = state
+        .running_apps
+        .lock()
+        .map_err(|e| format!("running-apps lock poisoned: {e}"))?;
+    Ok(index.search_with_running(&query, &running))
+}
+
+#[tauri::command]
+async fn refresh_applications(state: State<'_, AppState>) -> Result<(), String> {
+    let mut index = state.app_index.lock().await;
+    index.refresh()
+}
+
+#[tauri::command]
+async fn launch_application(
+    path: String,
+    args: Option<Vec<String>>,
+) -> Result<(), String> {
+    crate::launcher::launch_application(&path, args)
+}
+
+/// Quit a running macOS app by its bundle identifier. Used by the
+/// launcher's "Stop" affordance on items flagged as `running`.
+#[tauri::command]
+async fn quit_application(bundle_id: String) -> Result<(), String> {
+    crate::launcher::quit_application(&bundle_id)
+}
+
+#[tauri::command]
+async fn show_launcher(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("launcher") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+        // Mirror the global-hotkey behaviour: tell the launcher to reset
+        // its query and re-focus the input. Without this, a Cmd+K
+        // invocation from inside the workbench would show the launcher
+        // but leave stale state from the previous invocation visible.
+        let _ = app_handle.emit("global-shortcut", "show-launcher");
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn hide_launcher(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("launcher") {
+        let _ = window.hide();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn show_workbench(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("workbench") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn hide_workbench(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("workbench") {
+        let _ = window.hide();
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn expand_to_workbench(
+    app_handle: AppHandle,
+    payload: Option<serde_json::Value>,
+) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("launcher") {
+        let _ = window.hide();
+    }
+    if let Some(window) = app_handle.get_webview_window("workbench") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    if let Some(value) = payload {
+        let event = match value.get("kind").and_then(|v| v.as_str()) {
+            Some(kind) => format!("launcher:open-{kind}"),
+            None => "launcher:open".to_string(),
+        };
+        let _ = app_handle.emit(&event, value);
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn stop_ambient() -> Result<(), String> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     state.status = jcode::ambient::AmbientStatus::Disabled;
@@ -3595,6 +3695,8 @@ pub fn run() {
     let _ = rustls::crypto::ring::default_provider().install_default();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_shell::init())
         .manage(AppState::new())
         .setup(|app| {
             // Register the ServerClient synchronously; lazy-connect on first use.
@@ -3604,6 +3706,206 @@ pub fn run() {
             if let Ok(mut guard) = state.server_client.lock() {
                 *guard = Some(client);
             }
+
+            // Pre-warm the launcher app index in the background so the
+            // first Option+Space doesn't show a blank palette. The scan
+            // touches every .app bundle under /Applications and friends,
+            // which can take ~100ms on a typical Mac; running it on a
+            // background tokio task means the user almost never notices it.
+            let prewarm_index = state.app_index.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut index = prewarm_index.lock().await;
+                let _ = index.refresh();
+            });
+
+            // Periodically refresh the running-apps cache (every 3s). The
+            // launcher joins this with the static `AppIndex` to mark each
+            // search result as `running`. 3 seconds is short enough that
+            // freshly-launched apps show up quickly, long enough that we
+            // aren't constantly shelling out to `osascript`.
+            crate::launcher::spawn_running_apps_loop(
+                state.running_apps.clone(),
+                std::time::Duration::from_secs(3),
+            );
+
+            // Register global shortcut and launcher window blur handler
+            {
+                let app_handle = app.handle().clone();
+                let shortcut_manager = app_handle.global_shortcut();
+                let _ = shortcut_manager.on_shortcut(
+                    "Option+Space",
+                    move |app_handle, _shortcut, event| {
+                        if event.state() == ShortcutState::Pressed {
+                            if let Some(window) =
+                                app_handle.get_webview_window("launcher")
+                            {
+                                let visible = window.is_visible().unwrap_or(false);
+                                let focused = window.is_focused().unwrap_or(false);
+                                if visible && focused {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                    let _ = app_handle
+                                        .emit("global-shortcut", "Option+Space");
+                                }
+                            }
+                        }
+                    },
+                );
+            }
+            if let Some(window) = app.get_webview_window("launcher") {
+                let window_clone = window.clone();
+                let _ = window.on_window_event(move |event| {
+                    match event {
+                        // Blurring away from the launcher hides it; this is the
+                        // "click outside to dismiss" affordance.
+                        tauri::WindowEvent::Focused(false) => {
+                            let _ = window_clone.hide();
+                        }
+                        // Intercept the close button (red traffic light) and
+                        // hide the window instead of destroying it; the user
+                        // can summon the launcher again with the global
+                        // shortcut or Cmd+K.
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            api.prevent_close();
+                            let _ = window_clone.hide();
+                        }
+                        _ => {}
+                    }
+                });
+            }
+            if let Some(window) = app.get_webview_window("workbench") {
+                let window_clone = window.clone();
+                let _ = window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        // Hide rather than close: the workbench is the
+                        // primary surface and we want it to stay alive in the
+                        // background so a subsequent Cmd+K can revive the
+                        // launcher without losing state.
+                        api.prevent_close();
+                        let _ = window_clone.hide();
+                    }
+                });
+            }
+
+            // Build the system tray icon and menu. The tray gives the user
+            // a way to bring the launcher / workbench back into view after
+            // both windows are hidden, and a proper Quit action so the
+            // app can actually exit (the workbench close button just hides).
+            {
+                let show_launcher_item = MenuItem::with_id(
+                    app,
+                    "show_launcher",
+                    "Show Launcher  ⌥Space",
+                    true,
+                    None::<&str>,
+                )?;
+                let show_workbench_item = MenuItem::with_id(
+                    app,
+                    "show_workbench",
+                    "Show Workbench",
+                    true,
+                    None::<&str>,
+                )?;
+                let quit_item = MenuItem::with_id(
+                    app,
+                    "quit",
+                    "Quit JCode",
+                    true,
+                    None::<&str>,
+                )?;
+                let menu = MenuBuilder::new(app)
+                    .item(&show_launcher_item)
+                    .item(&show_workbench_item)
+                    .separator()
+                    .item(&quit_item)
+                    .build()?;
+
+                // Try the dedicated tray icon first; fall back to the
+                // default window icon if it's missing.
+                //
+                // `default_window_icon()` borrows from `app`, so its
+                // `.cloned()` image is `Image<'a>` for the lifetime of
+                // `app`. We `.to_owned()` to promote it to `Image<'static>`
+                // before assigning to `tray_icon`; otherwise the
+                // `unwrap_or_else(placeholder_icon)` call would force the
+                // compiler to bridge the two lifetimes and fail.
+                let tray_icon: Image<'static> = {
+                    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("icons")
+                        .join("32x32.png");
+                    let owned_default = || {
+                        app.default_window_icon()
+                            .cloned()
+                            .map(|img| img.to_owned())
+                    };
+                    if path.exists() {
+                        // `from_path` returns `Image<'_>` borrowing from
+                        // `path`; convert to `'static` so the tray can
+                        // outlive this scope.
+                        Image::from_path(&path)
+                            .map(|img| img.to_owned())
+                            .unwrap_or_else(|_| {
+                                owned_default().unwrap_or_else(placeholder_icon)
+                            })
+                    } else {
+                        owned_default().unwrap_or_else(placeholder_icon)
+                    }
+                };
+
+                let app_handle_for_menu = app.handle().clone();
+                let _tray = TrayIconBuilder::with_id("jcode-tray")
+                    .icon(tray_icon)
+                    .icon_as_template(false)
+                    .tooltip("JCode")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(move |app, event| match event.id().as_ref() {
+                        "show_launcher" => {
+                            if let Some(window) = app.get_webview_window("launcher") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                                let _ = app.emit("global-shortcut", "tray");
+                            }
+                        }
+                        "show_workbench" => {
+                            if let Some(window) = app.get_webview_window("workbench") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {
+                            let _ = app_handle_for_menu;
+                        }
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("launcher") {
+                                let visible = window.is_visible().unwrap_or(false);
+                                let focused = window.is_focused().unwrap_or(false);
+                                if visible && focused {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                    let _ = app.emit("global-shortcut", "tray");
+                                }
+                            }
+                        }
+                    })
+                    .build(app)?;
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -3691,7 +3993,22 @@ pub fn run() {
             comm_plan_status,
             comm_list_channels,
             comm_read_context,
+            search_applications,
+            refresh_applications,
+            launch_application,
+            quit_application,
+            show_launcher,
+            hide_launcher,
+            show_workbench,
+            hide_workbench,
+            expand_to_workbench,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// A 1×1 transparent RGBA image used as a last-ditch tray icon. We
+/// would rather show a blank square than crash the app at startup.
+fn placeholder_icon() -> Image<'static> {
+    Image::new_owned(vec![0, 0, 0, 0], 1, 1)
 }

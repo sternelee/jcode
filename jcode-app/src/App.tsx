@@ -1,4 +1,5 @@
 import { useJcodeSession } from "@/hooks/useJcodeSession";
+import { TitleBar } from "@/components/TitleBar";
 import { NavBar } from "@/components/NavBar";
 import { ConversationsList } from "@/components/ConversationsList";
 import { ChatArea } from "@/components/ChatArea";
@@ -21,7 +22,9 @@ import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { parseSlashCommand } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
 import type { SessionInfo, PermissionRequest } from "@/types";
+import type { BuiltinPage } from "@/lib/launcherTypes";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useState, useEffect, useRef, useMemo } from "react";
 
 const DEFAULT_WORKSPACE_ID = "default";
@@ -293,6 +296,16 @@ export default function App() {
 			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p") {
 				event.preventDefault();
 				setSessionSwitcherOpen((open) => !open);
+				return;
+			}
+
+			// Cmd/Ctrl+K — summon the launcher palette. The backend also
+			// exposes a global hotkey, but the in-workbench shortcut keeps
+			// the keyboard-only workflow smooth once the workbench is
+			// focused.
+			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+				event.preventDefault();
+				void invoke("show_launcher");
 				return;
 			}
 
@@ -846,6 +859,63 @@ export default function App() {
 
 	const isChatTab = activeNavTab === "chat";
 
+	// Launcher → workbench bridge.
+	//
+	// The launcher window emits events of the form `launcher:open-<kind>`
+	// with a payload describing the requested action. We listen for them
+	// here (in the workbench window) and dispatch the corresponding
+	// state changes. The launcher uses `expand_to_workbench` to hide
+	// itself and raise the workbench before the event fires.
+	useEffect(() => {
+		const unlisteners: Array<Promise<() => void>> = [];
+
+		unlisteners.push(
+			listen<{ kind?: string; sessionId?: string }>(
+				"launcher:open-session",
+				(event) => {
+					const sessionId = event.payload?.sessionId;
+					if (!sessionId) return;
+					const session = state.sessions.find(
+						(s) => s.sessionId === sessionId,
+					);
+					if (!session) return;
+					handleResume(session);
+				},
+			),
+		);
+
+		unlisteners.push(
+			listen<{ kind?: string; page?: BuiltinPage }>(
+				"launcher:open-builtin",
+				(event) => {
+					const page = event.payload?.page;
+					if (!page) return;
+					setActiveNavTab(page);
+				},
+			),
+		);
+
+		unlisteners.push(
+			listen<{ kind?: string; query?: string }>(
+				"launcher:open-agent",
+				(event) => {
+					const query = (event.payload?.query ?? "").trim();
+					if (!query) return;
+					void handleSendMessage(query);
+				},
+			),
+		);
+
+		return () => {
+			for (const unlistenPromise of unlisteners) {
+				void unlistenPromise.then((unlisten) => unlisten());
+			}
+		};
+		// We intentionally re-subscribe when the session list changes so
+		// lookups in the handler pick up the freshest list.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [state.sessions, handleSendMessage, handleResume, setActiveNavTab]);
+
 	// Show onboarding if not completed
 	if (!onboardingComplete) {
 		return (
@@ -858,6 +928,7 @@ export default function App() {
 
 	return (
 		<div className="h-screen bg-background flex flex-col overflow-hidden">
+			<TitleBar />
 			<div className="flex flex-1 overflow-hidden min-w-0">
 				<NavBar
 					activeTab={activeNavTab}
@@ -867,6 +938,7 @@ export default function App() {
 						0,
 					)}
 					onToggleSidebar={() => setSidebarOpen((o) => !o)}
+					onOpenLauncher={() => void invoke("show_launcher")}
 				/>
 
 				{isChatTab ? (

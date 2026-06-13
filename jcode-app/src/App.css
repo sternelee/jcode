@@ -177,6 +177,25 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
+/* Both windows (`workbench` and `launcher`) run with `transparent: true`
+   and `decorations: false` so the OS chrome doesn't break our rounded
+   corners. Rounding `body` clips the entire app into a rounded
+   rectangle; `overflow: hidden` ensures child elements don't poke
+   through the corners. The inset box-shadow outline guarantees the
+   edge is visible regardless of the user's desktop wallpaper — without
+   it, the rounded corners can vanish on a background that happens to
+   be the same color as `bg-background`.
+
+   We use `inset` because a non-inset box-shadow would extend outside
+   the webview bounds and be clipped by the OS; `inset` keeps the
+   outline inside the body so it is always visible. */
+body,
+#root {
+	border-radius: 16px;
+	overflow: hidden;
+	box-shadow: inset 0 0 0 2px var(--border);
+}
+
 /* ============================================================================
    Custom scrollbar
    ============================================================================ */

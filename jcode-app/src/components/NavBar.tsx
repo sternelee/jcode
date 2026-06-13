@@ -11,6 +11,7 @@ import {
 	Menu,
 	Server,
 	Wrench,
+	Search,
 } from "lucide-react";
 
 interface NavBarProps {
@@ -19,6 +20,7 @@ interface NavBarProps {
 	unreadCount: number;
 	onLogout?: () => void;
 	onToggleSidebar?: () => void;
+	onOpenLauncher?: () => void;
 }
 
 const navItems = [
@@ -38,6 +40,7 @@ export function NavBar({
 	unreadCount,
 	onLogout,
 	onToggleSidebar,
+	onOpenLauncher,
 }: NavBarProps) {
 	return (
 		<nav className="w-[52px] min-w-[52px] bg-sidebar border-r border-sidebar-border flex flex-col items-center py-3 select-none gap-0.5">
@@ -45,6 +48,19 @@ export function NavBar({
 			<div className="w-8 h-8 rounded-lg bg-foreground/90 flex items-center justify-center mb-2">
 				<span className="text-background text-[13px] font-semibold">J</span>
 			</div>
+
+			{/* Launcher shortcut. Keeps the keyboard-driven workflow
+			    discoverable for users who haven't memorized Cmd+K. */}
+			{onOpenLauncher && (
+				<button
+					type="button"
+					onClick={onOpenLauncher}
+					className="w-9 h-9 rounded-lg flex items-center justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/60 transition-all duration-150"
+					title="Open launcher (⌘K)"
+				>
+					<Search className="w-[18px] h-[18px]" />
+				</button>
+			)}
 
 			{/* Mobile sidebar toggle */}
 			{onToggleSidebar && (

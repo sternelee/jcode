@@ -13,18 +13,47 @@
     "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "workbench",
         "title": "JCode",
         "width": 1200,
         "height": 800,
         "minWidth": 400,
         "minHeight": 400,
         "resizable": true,
+        "visible": false,
         "acceptFirstMouse": true,
-        "tabbingIdentifier": "JCode"
+        "tabbingIdentifier": "JCode",
+        "decorations": false,
+        "transparent": true
+      },
+      {
+        "label": "launcher",
+        "title": "JCode Launcher",
+        "width": 720,
+        "height": 420,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "closable": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "center": true,
+        "acceptFirstMouse": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "/Applications/**",
+          "/System/Applications/**",
+          "/System/Library/CoreServices/Applications/**",
+          "$HOME/Applications/**"
+        ]
+      }
     }
   },
   "bundle": {

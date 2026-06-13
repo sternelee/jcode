@@ -12,9 +12,15 @@
         try {
           theme = localStorage.getItem('jcode-theme') || 'light';
         } catch (e) {}
-        if (theme === 'dark') {
+        // Honor the OS preference when the user has chosen "system".
+        var isDark = theme === 'dark' ||
+          (theme === 'system' &&
+            window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (isDark) {
           document.documentElement.classList.add('dark');
-          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0a0a0a');
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', '#0a0a0a');
         }
       })();
     </script>

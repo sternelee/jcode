@@ -60,6 +60,21 @@ export function useTheme() {
     return () => media.removeEventListener("change", handler);
   }, [theme, applyTheme]);
 
+  // Keep state in sync across the workbench and launcher webview
+  // windows. `storage` events only fire in *other* windows of the same
+  // origin, which is exactly what we want here.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== STORAGE_KEY || !event.newValue) return;
+      const next = event.newValue as Theme;
+      if (["light", "dark", "system"].includes(next) && next !== theme) {
+        setThemeState(next);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [theme]);
+
   const setTheme = useCallback(
     (newTheme: Theme) => {
       setThemeState(newTheme);
