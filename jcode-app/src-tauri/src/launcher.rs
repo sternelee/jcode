@@ -4,18 +4,18 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-/// Lightweight summary of a macOS application for the launcher UI.
+/// Summary of a macOS application for the launcher UI.
 ///
-/// We intentionally do not depend on `applications-rs` directly here. That crate
-/// pulls a large Objective-C / Cocoa toolchain and exposes `App { name,
-/// icon_path, app_path_exe, app_desktop_path }` without a bundle id. Instead,
-/// we scan the well-known application directories ourselves and parse each
-/// `Info.plist` to extract the small set of fields the UI needs.
+/// Application discovery uses the `applications` crate (v0.3.1), which
+/// queries LaunchServices / `mdfind` to produce a comprehensive list of
+/// installed `.app` bundles — including those in `~/Applications`,
+/// `/System/Applications`, and `/System/Library/CoreServices`. For each
+/// discovered bundle we optionally read `Contents/Info.plist` to extract
+/// the bundle identifier and version string (fields the `applications`
+/// crate does not surface).
 ///
 /// `rename_all = "camelCase"` keeps the wire format in sync with the
-/// TypeScript `AppInfo` interface in `src/lib/launcherTypes.ts`. Without
-/// this, fields like `bundleId`/`iconPath` would arrive as `undefined`
-/// in the launcher and the secondary line would render `undefined`.
+/// TypeScript `AppInfo` interface in `src/lib/launcherTypes.ts`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
@@ -35,23 +35,31 @@ pub struct AppInfo {
     pub running: bool,
 }
 
+// ——— AppIndex (in-memory application catalogue) —————————————————————————
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AppIndex {
     apps: Vec<AppInfo>,
 }
 
 impl AppIndex {
+    /// Re-scan the system for installed applications using the
+    /// `applications` crate (LaunchServices + Spotlight).
     pub fn refresh(&mut self) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
             let apps = std::thread::Builder::new()
                 .name("launcher-app-scan".to_string())
                 .spawn(scan_applications)
-                .map_err(|e| format!("Failed to spawn scanner thread: {e}"))?
+                .map_err(|e| format!("cannot spawn scanner thread: {e}"))?
                 .join()
-                .map_err(|_| "Application scanner thread panicked".to_string())?;
+                .map_err(|_| "app scanner thread panicked".to_string())?;
             let mut apps = apps;
-            apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+            apps.sort_by(|a, b| {
+                a.name
+                    .to_lowercase()
+                    .cmp(&b.name.to_lowercase())
+            });
             self.apps = apps;
             Ok(())
         }
@@ -62,22 +70,23 @@ impl AppIndex {
         }
     }
 
+    /// Filter the index by a case-insensitive name / bundle-id query.
+    /// An empty query returns the first 80 entries.
     pub fn search(&self, query: &str) -> Vec<AppInfo> {
-        let query_lower = query.to_lowercase();
-        if query_lower.is_empty() {
+        let lower = query.to_lowercase();
+        if lower.is_empty() {
             return self.apps.iter().take(80).cloned().collect();
         }
         self.apps
             .iter()
-            .filter(|app| app_matches(app, &query_lower))
+            .filter(|a| app_matches(a, &lower))
             .take(80)
             .cloned()
             .collect()
     }
 
-    /// Like [`search`], but additionally flags each result as `running` if
-    /// its bundle identifier appears in the provided set. The runtime
-    /// maintains the set in a background thread (see `spawn_running_apps_loop`).
+    /// Like [`search`], but additionally marks each result `running`
+    /// when its bundle id appears in the provided set.
     pub fn search_with_running(
         &self,
         query: &str,
@@ -91,8 +100,7 @@ impl AppIndex {
                 }
             }
         }
-        // When no query, surface running apps first so they appear at the
-        // top of the launcher's list (cmdk auto-selects the first item).
+        // When the query is empty, surface running apps first.
         if query.trim().is_empty() && !running.is_empty() {
             results.sort_by(|a, b| {
                 b.running
@@ -108,110 +116,98 @@ impl AppIndex {
     }
 }
 
-fn app_matches(app: &AppInfo, lower_query: &str) -> bool {
-    if app.name.to_lowercase().contains(lower_query) {
+fn app_matches(app: &AppInfo, lower: &str) -> bool {
+    if app.name.to_lowercase().contains(lower) {
         return true;
     }
     if let Some(id) = app.bundle_id.as_ref() {
-        if id.to_lowercase().contains(lower_query) {
+        if id.to_lowercase().contains(lower) {
             return true;
         }
     }
     false
 }
 
+// ——— Application scanning (macOS) —————————————————————————————————————————
+
 #[cfg(target_os = "macos")]
 fn scan_applications() -> Vec<AppInfo> {
-    use std::fs;
+    use applications::{AppInfo as _, AppInfoContext};
 
-    let mut roots: Vec<PathBuf> = Vec::new();
-    roots.push(PathBuf::from("/System/Applications"));
-    roots.push(PathBuf::from("/System/Library/CoreServices/Applications"));
-    roots.push(PathBuf::from("/Applications"));
-    if let Some(home) = dirs::home_dir() {
-        roots.push(home.join("Applications"));
+    let mut ctx = AppInfoContext::new(vec![]);
+    // refresh_apps() queries LaunchServices + Spotlight — synchronous,
+    // may take a few seconds on first call.
+    if ctx.refresh_apps().is_err() {
+        return Vec::new();
     }
 
-    let mut apps: Vec<AppInfo> = Vec::new();
-    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let raw = ctx.get_all_apps();
+    let mut seen: HashSet<PathBuf> = HashSet::new();
+    let mut out: Vec<AppInfo> = Vec::with_capacity(raw.len());
 
-    for root in roots {
-        if !root.exists() {
+    for app in raw {
+        let bundle_path = bundle_root_from_crate_app(&app);
+
+        if !seen.insert(bundle_path.clone()) {
             continue;
         }
-        let entries = match fs::read_dir(&root) {
-            Ok(it) => it,
-            Err(_) => continue,
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let Some(ext) = path.extension() else {
-                continue;
-            };
-            if ext != "app" {
-                continue;
-            }
-            if !seen.insert(path.clone()) {
-                continue;
-            }
-            if let Some(info) = read_app_info(&path) {
-                apps.push(info);
-            }
-        }
+
+        let (bundle_id, version, executable) =
+            read_plist_metadata(&bundle_path);
+
+        let icon_path = app
+            .icon_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string());
+
+        out.push(AppInfo {
+            name: app.name,
+            bundle_id,
+            icon_path,
+            app_path: bundle_path.to_string_lossy().to_string(),
+            executable_path: executable,
+            version,
+            running: false,
+        });
     }
-    apps
+
+    out
 }
 
+/// Derive `.app` bundle root from the `applications` crate's `App`.
+/// `app_path_exe` on macOS is the bundle directory itself (e.g.
+/// `/Applications/Safari.app`), not the inner executable.
 #[cfg(target_os = "macos")]
-fn read_app_info(app_path: &Path) -> Option<AppInfo> {
+fn bundle_root_from_crate_app(app: &applications::App) -> PathBuf {
+    // On macOS the crate sets app_path_exe to the .app directory.
+    if let Some(p) = &app.app_path_exe {
+        return p.clone();
+    }
+    // Fallback: app_desktop_path also points to the .app directory.
+    app.app_desktop_path.clone()
+}
+
+/// Read `Info.plist` for fields the `applications` crate does not
+/// surface: bundle identifier, short version, and executable name.
+#[cfg(target_os = "macos")]
+fn read_plist_metadata(
+    bundle_root: &Path,
+) -> (Option<String>, Option<String>, Option<String>) {
     use std::fs;
 
-    let plist_path = app_path.join("Contents/Info.plist");
-    let data = fs::read(&plist_path).ok()?;
-    let value: plist::Value = plist::from_bytes(&data).ok()?;
-
-    let dict = value.as_dictionary()?;
-
-    let name = dict
-        .get("CFBundleName")
-        .and_then(|v| v.as_string())
-        .map(|s| s.to_string())
-        .or_else(|| {
-            dict.get("CFBundleDisplayName")
-                .and_then(|v| v.as_string())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| {
-            app_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("Unknown")
-                .to_string()
-        });
+    let data = match fs::read(bundle_root.join("Contents/Info.plist")) {
+        Ok(d) => d,
+        Err(_) => return (None, None, None),
+    };
+    let dict = match plist::from_bytes::<plist::Value>(&data) {
+        Ok(plist::Value::Dictionary(d)) => d,
+        _ => return (None, None, None),
+    };
 
     let bundle_id = dict
         .get("CFBundleIdentifier")
         .and_then(|v| v.as_string())
         .map(|s| s.to_string());
-
-    let executable_path = dict
-        .get("CFBundleExecutable")
-        .and_then(|v| v.as_string())
-        .map(|exe| {
-            app_path
-                .join("Contents/MacOS")
-                .join(exe)
-                .to_string_lossy()
-                .to_string()
-        });
-
-    // Prefer high-resolution iconset PNGs over the bundled `.icns` —
-    // modern macOS apps ship an `AppIcon.iconset/` directory of PNGs
-    // at multiple sizes, which the webview renders crisply at any DPR.
-    let icon_path = resolve_icon_path(app_path, dict);
 
     let version = dict
         .get("CFBundleShortVersionString")
@@ -223,116 +219,32 @@ fn read_app_info(app_path: &Path) -> Option<AppInfo> {
                 .map(|s| s.to_string())
         });
 
-    Some(AppInfo {
-        name,
-        bundle_id,
-        icon_path,
-        app_path: app_path.to_string_lossy().to_string(),
-        executable_path,
-        version,
-        running: false,
-    })
-}
-
-#[cfg(target_os = "macos")]
-fn resolve_icon_path(app_path: &Path, dict: &plist::Dictionary) -> Option<String> {
-    let resources_dir: PathBuf = app_path.join("Contents/Resources");
-
-    // 1. Try the modern iconset directory. Apps built against the
-    //    current macOS SDK put retina PNGs here, e.g.
-    //    `icon_128x128@2x.png` (256x256). We pick the largest entry.
-    let iconset = resources_dir.join("AppIcon.iconset");
-    if let Some(png) = largest_png_in(&iconset) {
-        return Some(png.to_string_lossy().to_string());
-    }
-
-    // 2. Try the legacy single-file icon declared in Info.plist
-    //    (`CFBundleIconFile` → e.g. `AppIcon.icns`).
-    let file = dict
-        .get("CFBundleIconFile")
+    let executable = dict
+        .get("CFBundleExecutable")
         .and_then(|v| v.as_string())
-        .map(|s| s.to_string());
-    if let Some(name) = file {
-        let base = resources_dir.join(&name);
-        for candidate in [base.with_extension("icns"), base] {
-            if candidate.exists() {
-                return Some(candidate.to_string_lossy().to_string());
-            }
-        }
-    }
+        .map(|exe| {
+            bundle_root
+                .join("Contents/MacOS")
+                .join(exe)
+                .to_string_lossy()
+                .to_string()
+        });
 
-    // 3. Last resort: any `.icns` directly in Contents/Resources.
-    if let Ok(entries) = std::fs::read_dir(&resources_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("icns") {
-                return Some(path.to_string_lossy().to_string());
-            }
-        }
-    }
-    None
+    (bundle_id, version, executable)
 }
 
-/// Find the largest PNG in an iconset directory by parsing each file's
-/// size out of its name (`icon_128x128@2x.png` → 256×256 = 65536 px²).
-/// Returns the path to the largest, or `None` if no PNGs were found.
-fn largest_png_in(iconset: &Path) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(iconset).ok()?;
-    let mut best: Option<(u64, PathBuf)> = None;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("png") {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        let Some(area) = parse_icon_size(name) else {
-            continue;
-        };
-        if best.as_ref().map_or(true, |(prev, _)| area > *prev) {
-            best = Some((area, path));
-        }
-    }
-    best.map(|(_, p)| p)
-}
+// ——— Running-apps detection (macOS osascript) ——————————————————————————————
 
-/// Parse the pixel area out of an iconset filename. Handles
-/// `icon_16x16.png`, `icon_128x128@2x.png`, and similar variants.
-fn parse_icon_size(name: &str) -> Option<u64> {
-    // Pull the two numeric runs that should appear in the filename.
-    let mut numbers: Vec<u64> = name
-        .split(|c: char| !c.is_ascii_digit())
-        .filter_map(|s| s.parse().ok())
-        .collect();
-    if numbers.len() < 2 {
-        return None;
-    }
-    let w = numbers.remove(0);
-    let h = numbers.remove(0);
-    if w == 0 || h == 0 {
-        return None;
-    }
-    let mut area = w * h;
-    if name.contains("@2x") {
-        // 2x scale in each dimension = 4x area
-        area *= 4;
-    } else if name.contains("@3x") {
-        area *= 9;
-    }
-    Some(area)
-}
-
-/// Query macOS for the bundle identifiers of every foreground app that is
-/// currently running. Uses `osascript` so we avoid pulling in the Cocoa
-/// toolchain. Returns an empty set on non-macOS platforms.
+/// Query macOS for the bundle identifiers of every foreground process.
+/// Uses `osascript` so we avoid pulling in the Cocoa toolchain. Returns
+/// an empty set on non-macOS platforms.
 pub fn get_running_app_bundle_ids() -> HashSet<String> {
     let mut set = HashSet::new();
     #[cfg(target_os = "macos")]
     {
-        // `background only is false` filters out daemons and helper
-        // processes, which keeps the list focused on user-facing apps.
-        let script = "tell application \"System Events\" to get bundle identifier of (every process whose background only is false)";
+        // `background only is false` filters out daemons / helpers.
+        let script = "tell application \"System Events\" to get bundle identifier of \
+                       (every process whose background only is false)";
         if let Ok(out) = Command::new("osascript").arg("-e").arg(script).output() {
             if out.status.success() {
                 let stdout = String::from_utf8_lossy(&out.stdout);
@@ -348,25 +260,37 @@ pub fn get_running_app_bundle_ids() -> HashSet<String> {
     set
 }
 
-/// Spawn a background thread that periodically refreshes the running-apps
-/// cache shared with the rest of the app. The cache is updated eagerly
-/// (first refresh runs immediately) and then every `interval` thereafter.
+/// Spawn a background thread that periodically refreshes the
+/// running-apps cache. The first refresh runs immediately.
 pub fn spawn_running_apps_loop(
     cache: std::sync::Arc<std::sync::Mutex<HashSet<String>>>,
     interval: Duration,
 ) {
     std::thread::Builder::new()
         .name("launcher-running-apps".to_string())
-        .spawn(move || loop {
-            let snapshot = get_running_app_bundle_ids();
-            if let Ok(mut guard) = cache.lock() {
-                *guard = snapshot;
+        .spawn(move || {
+            // Eager first refresh.
+            {
+                let snap = get_running_app_bundle_ids();
+                if let Ok(mut g) = cache.lock() {
+                    *g = snap;
+                }
             }
-            std::thread::sleep(interval);
+            loop {
+                std::thread::sleep(interval);
+                let snap = get_running_app_bundle_ids();
+                if let Ok(mut g) = cache.lock() {
+                    *g = snap;
+                }
+            }
         })
         .expect("failed to spawn running-apps thread");
 }
 
+// ——— Launch / Quit ——————————————————————————————————————————————————————————
+
+/// Launch an application bundle via `open(1)`.
+/// Extra args are forwarded with `--args` on macOS.
 pub fn launch_application(path: &str, args: Option<Vec<String>>) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -375,13 +299,13 @@ pub fn launch_application(path: &str, args: Option<Vec<String>>) -> Result<(), S
         if let Some(extra) = args {
             if !extra.is_empty() {
                 cmd.arg("--args");
-                for arg in extra {
-                    cmd.arg(arg);
+                for a in extra {
+                    cmd.arg(a);
                 }
             }
         }
         cmd.spawn()
-            .map_err(|e| format!("Failed to launch application: {e}"))?;
+            .map_err(|e| format!("failed to launch: {e}"))?;
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
@@ -391,9 +315,7 @@ pub fn launch_application(path: &str, args: Option<Vec<String>>) -> Result<(), S
     }
 }
 
-/// Quit a running app by its bundle identifier. Best-effort: returns
-/// `true` if the app was found in the running cache so the caller can
-/// surface a "stopped" state without a separate lookup.
+/// Quit a running app by its bundle identifier (best-effort osascript).
 #[cfg(target_os = "macos")]
 pub fn quit_application(bundle_id: &str) -> Result<(), String> {
     let script = format!("tell application id \"{bundle_id}\" to quit");
@@ -401,7 +323,7 @@ pub fn quit_application(bundle_id: &str) -> Result<(), String> {
         .arg("-e")
         .arg(&script)
         .status()
-        .map_err(|e| format!("Failed to invoke osascript: {e}"))?;
+        .map_err(|e| format!("failed to invoke osascript: {e}"))?;
     if status.success() {
         Ok(())
     } else {
