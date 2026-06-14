@@ -53,44 +53,43 @@
 ## 🔴 高优先级（直接影响日常使用）
 
 ### Memory 高级管理
-需要新增 Tauri 命令 + 前端 UI：
-- [ ] `memory_list` — 列出所有记忆（支持 scope: project/global/all, tag 过滤）
-- [ ] `memory_search` — 搜索记忆（支持关键词和语义搜索）
-- [ ] `memory_export` — 导出记忆到 JSON 文件
-- [ ] `memory_import` — 从 JSON 文件导入记忆
-- [ ] `memory_stats` — 显示记忆统计信息
+大部分能力已实现，仍缺测试存储清理：
+- [x] `memory_list` — 列出所有记忆（支持 scope: project/global/all, tag 过滤）
+- [x] `memory_search` — 搜索记忆（支持关键词和语义搜索）
+- [x] `memory_export` — 导出记忆到 JSON 文件
+- [x] `memory_import` — 从 JSON 文件导入记忆
+- [x] `memory_stats` — 显示记忆统计信息
 - [ ] `memory_clear_test` — 清除测试记忆存储
 
 ### Session 管理
-- [ ] `session_rename` — 重命名会话
+- [x] `session_rename` — 重命名会话
 
 ### Provider 管理
-- [ ] `provider_list` — 列出现有提供商配置
-- [ ] `provider_current` — 显示当前解析的提供商
-- [ ] `provider_add` — 添加 OpenAI 兼容提供商配置
+- [x] `provider_list` / `get_provider_profiles` — 列出现有提供商配置
+- [x] `provider_current` / `get_models` — 显示当前解析的提供商/模型
+- [x] `provider_add` / `addProviderProfile` — 添加 OpenAI 兼容提供商配置
 
 ### Auth 诊断
-- [ ] `auth_status` — 显示所有配置提供商的认证状态
-- [ ] `auth_doctor` — 诊断认证问题并建议修复步骤
-
+- [x] `auth_status` — 显示所有配置提供商的认证状态
+- [x] `auth_doctor` — 诊断认证问题并建议修复步骤
 ---
 
 ## 🟡 中优先级（增强体验）
+### 配对与同步
+- [x] `pair` — 生成/管理 iOS/web 客户端配对码
+- [x] `pair_list` — 列出已配对设备
+- [x] `pair_revoke` — 撤销配对设备
 
 ### Memory 数据管理
 - [ ] 记忆详情查看（点击记忆条目查看完整内容）
 - [ ] 记忆编辑/删除单个记忆
-
-### 配对与同步
-- [ ] `pair` — 生成/管理 iOS/web 客户端配对码
-- [ ] `pair_list` — 列出已配对设备
-- [ ] `pair_revoke` — 撤销配对设备
-
 ### 基本信息
-- [ ] `version` — 显示版本/构建信息
-- [ ] `usage` — 显示提供商使用限制
+- [x] `version` — 显示版本/构建信息
+- [x] `usage` — 显示提供商使用限制
 
----
+### 配置管理
+- [ ] 配置查看/编辑 UI
+- [ ] 环境变量管理
 
 ## 🟢 低优先级（高级/特殊场景）
 

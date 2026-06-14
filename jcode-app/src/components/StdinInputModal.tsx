@@ -16,9 +16,10 @@ import type { StdinPrompt } from "@/types";
 interface StdinInputModalProps {
 	prompt: StdinPrompt;
 	onSubmit: (requestId: string, input: string) => void;
+	onCancel?: (requestId: string) => void;
 }
 
-export function StdinInputModal({ prompt, onSubmit }: StdinInputModalProps) {
+export function StdinInputModal({ prompt, onSubmit, onCancel }: StdinInputModalProps) {
 	const [value, setValue] = useState("");
 
 	useEffect(() => {
@@ -29,6 +30,25 @@ export function StdinInputModal({ prompt, onSubmit }: StdinInputModalProps) {
 		e.preventDefault();
 		onSubmit(prompt.requestId, value);
 	};
+
+	const handleCancel = () => {
+		if (onCancel) {
+			onCancel(prompt.requestId);
+		} else {
+			onSubmit(prompt.requestId, "");
+		}
+	};
+
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.preventDefault();
+				handleCancel();
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [prompt.requestId, onCancel, onSubmit]);
 
 	const promptText = prompt.prompt?.trim() || "Interactive input requested";
 
@@ -107,9 +127,9 @@ export function StdinInputModal({ prompt, onSubmit }: StdinInputModalProps) {
 						<Button
 							type="button"
 							variant="outline"
-							onClick={() => onSubmit(prompt.requestId, "")}
+							onClick={handleCancel}
 						>
-							Cancel
+							{onCancel ? "Cancel" : "Send empty"}
 						</Button>
 						<Button type="submit" className="text-sm">
 							Submit

@@ -1099,6 +1099,9 @@ export default function App() {
 					onSubmit={(requestId, input) =>
 						sendStdinResponse(requestId, input, state.sessionId || undefined)
 					}
+					onCancel={(requestId) =>
+						sendStdinResponse(requestId, "", state.sessionId || undefined)
+					}
 				/>
 			)}
 			<SessionSwitcherDialog

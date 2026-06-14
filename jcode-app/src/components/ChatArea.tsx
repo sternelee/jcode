@@ -340,6 +340,18 @@ export function ChatArea({
   useEffect(() => {
     const matchId = searchMatchIds[searchMatchIdx];
     if (!matchId || !feedRef.current) return;
+    // Prefer scrolling the highlighted substring into view.
+    const mark = feedRef.current.querySelector<HTMLElement>("#search-current-match");
+    if (mark) {
+      const cr = feedRef.current.getBoundingClientRect();
+      const mr = mark.getBoundingClientRect();
+      feedRef.current.scrollBy({
+        top: mr.top - cr.top - cr.height / 2 + mr.height / 2,
+        behavior: "smooth",
+      });
+      return;
+    }
+    // Fallback: scroll the matching message into view.
     const el = feedRef.current.querySelector(`[data-msg-id="${matchId}"]`);
     if (!el) return;
     const cr = feedRef.current.getBoundingClientRect();

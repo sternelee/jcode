@@ -344,6 +344,8 @@ export function ModelPickerModal({
 		timestamp: number;
 	} | null>(null);
 	const inputRef = useRef<HTMLInputElement>(null);
+	const currentModelRowRef = useRef<HTMLButtonElement>(null);
+	const didAutoScrollRef = useRef(false);
 	const [collapsedProfiles, setCollapsedProfiles] = useState<
 		Record<string, boolean>
 	>({});
@@ -400,8 +402,16 @@ export function ModelPickerModal({
 			setSearch("");
 			void loadModels();
 			setTimeout(() => inputRef.current?.focus(), 50);
+			if (currentProfileId) {
+				setCollapsedProfiles((current) => {
+					if (current[currentProfileId] === false) return current;
+					return { ...current, [currentProfileId]: false };
+				});
+			}
+		} else {
+			didAutoScrollRef.current = false;
 		}
-	}, [open, loadModels]);
+	}, [open, loadModels, currentProfileId]);
 
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
@@ -497,6 +507,14 @@ export function ModelPickerModal({
 		const q = search.toLowerCase();
 		return availableModels.filter((m) => m.toLowerCase().includes(q));
 	}, [routes.length, availableModels, search]);
+	// Scroll the current model into view once when the modal opens and no search is active.
+	useEffect(() => {
+		if (!open || didAutoScrollRef.current || search.trim() || !currentModel) return;
+		if (currentProfileId && collapsedProfiles[currentProfileId]) return;
+		if (!currentModelRowRef.current) return;
+		currentModelRowRef.current.scrollIntoView({ block: "center", behavior: "auto" });
+		didAutoScrollRef.current = true;
+	}, [open, search, filteredGroups, currentModel, currentProfileId, collapsedProfiles]);
 
 	useEffect(() => {
 		setCollapsedProfiles((current) => {
@@ -751,6 +769,7 @@ export function ModelPickerModal({
 								return (
 									<button
 										key={m}
+										ref={isCurrent ? currentModelRowRef : undefined}
 										type="button"
 										onClick={() => {
 											onSelectModel(m, undefined);
@@ -1115,6 +1134,7 @@ export function ModelPickerModal({
 													return (
 														<button
 															key={`${group.profileId}:${route.model}`}
+															ref={isCurrent ? currentModelRowRef : undefined}
 															type="button"
 														onClick={() => {
 															onSelectModel(route.model, group.profileId);

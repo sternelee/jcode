@@ -125,8 +125,8 @@ export function ProviderConfigPage({
 	const [cursorAuthStatus, setCursorAuthStatus] =
 		useState<CursorAuthStatus | null>(null);
 	const [importBusy, setImportBusy] = useState<number | null>(null);
-	const [providerDoctorReport, setProviderDoctorReport] =
-		useState<ProviderDoctorReport | null>(null);
+	const [providerDoctorReports, setProviderDoctorReports] =
+		useState<Record<string, ProviderDoctorReport>>({});
 	const [providerDoctorBusy, setProviderDoctorBusy] = useState<string | null>(
 		null,
 	);
@@ -242,10 +242,22 @@ export function ProviderConfigPage({
 		});
 	}, []);
 
+	const dismissProviderDoctorReport = useCallback((providerId: string) => {
+		setProviderDoctorReports((prev) => {
+			const next = { ...prev };
+			delete next[providerId];
+			return next;
+		});
+	}, []);
+
 	const runProviderDoctor = useCallback(
 		async (providerId: string, model?: string) => {
 			setProviderDoctorBusy(providerId);
-			setProviderDoctorReport(null);
+			setProviderDoctorReports((prev) => {
+				const next = { ...prev };
+				delete next[providerId];
+				return next;
+			});
 			try {
 				const report = await invoke<ProviderDoctorReport>(
 					"run_provider_doctor",
@@ -255,7 +267,10 @@ export function ProviderConfigPage({
 						tier: "catalog",
 					},
 				);
-				setProviderDoctorReport(report);
+				setProviderDoctorReports((prev) => ({
+					...prev,
+					[providerId]: report,
+				}));
 			} catch (e) {
 				setAuthMessage({ text: String(e), type: "error" });
 			} finally {
@@ -773,7 +788,7 @@ export function ProviderConfigPage({
 												size="sm"
 												className="text-[10px] h-6 gap-1"
 												onClick={() => runProviderDoctor(p.provider_key)}
-												disabled={providerDoctorBusy !== null}
+												disabled={providerDoctorBusy === p.provider_key}
 											>
 												{providerDoctorBusy === p.provider_key ? (
 													<Loader2 className="w-3 h-3 animate-spin" />
@@ -804,40 +819,41 @@ export function ProviderConfigPage({
 					</div>
 
 					{/* Provider Doctor Results */}
-					{providerDoctorReport && (
-						<div className="rounded-xl border border-border bg-card overflow-hidden">
+					{Object.entries(providerDoctorReports).map(([providerId, report]) => (
+						<div
+							key={providerId}
+							className="rounded-xl border border-border bg-card overflow-hidden"
+						>
 							<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
 								<div className="flex items-center gap-2">
 									<Stethoscope className="w-4 h-4 text-primary" />
 									<span className="text-[14px] font-semibold text-foreground">
-										Provider Doctor: {providerDoctorReport.provider_label}
+										Provider Doctor: {report.provider_label}
 									</span>
 									<Badge
 										variant={
-											providerDoctorReport.tier_passed
-												? "default"
-												: "destructive"
+											report.tier_passed ? "default" : "destructive"
 										}
 										className="text-[9px]"
 									>
-										{providerDoctorReport.tier_passed ? "PASSED" : "FAILED"}
+										{report.tier_passed ? "PASSED" : "FAILED"}
 									</Badge>
 								</div>
 								<Button
 									variant="ghost"
 									size="sm"
 									className="text-[11px] h-7"
-									onClick={() => setProviderDoctorReport(null)}
+									onClick={() => dismissProviderDoctorReport(providerId)}
 								>
 									Dismiss
 								</Button>
 							</div>
 							<div className="p-4 space-y-2">
 								<div className="text-[12px] text-muted-foreground mb-3">
-									Model: {providerDoctorReport.model} · Tier:{" "}
-									{providerDoctorReport.tier}
+									Model: {report.model} · Tier:{" "}
+									{report.tier}
 								</div>
-								{providerDoctorReport.checks.map((check, i) => (
+								{report.checks.map((check, i) => (
 									<div
 										key={i}
 										className={cn(
@@ -866,14 +882,14 @@ export function ProviderConfigPage({
 										</div>
 									</div>
 								))}
-								{providerDoctorReport.spend_summary && (
+								{report.spend_summary && (
 									<div className="text-[11px] text-muted-foreground mt-2 pt-2 border-t border-border">
-										{providerDoctorReport.spend_summary}
+										{report.spend_summary}
 									</div>
 								)}
 							</div>
 						</div>
-					)}
+					))}
 
 					{/* Connection Test Results */}
 					{Object.entries(connectionTests).map(([providerId, test]) => (

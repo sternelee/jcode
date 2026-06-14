@@ -19,15 +19,24 @@ export function BackgroundTasksSection({
 	useEffect(() => {
 		if (!listBackgroundTasks) return;
 		let cancelled = false;
-		listBackgroundTasks()
-			.then((tasks) => {
+		let fetching = false;
+		const load = async () => {
+			if (fetching) return;
+			fetching = true;
+			try {
+				const tasks = await listBackgroundTasks();
 				if (!cancelled) setBackgroundTasks(tasks);
-			})
-			.catch(() => {
+			} catch {
 				// ignore
-			});
+			} finally {
+				fetching = false;
+			}
+		};
+		void load();
+		const id = window.setInterval(load, 10000);
 		return () => {
 			cancelled = true;
+			window.clearInterval(id);
 		};
 	}, [listBackgroundTasks]);
 

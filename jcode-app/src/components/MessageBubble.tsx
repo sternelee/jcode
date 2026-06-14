@@ -121,6 +121,7 @@ export function HighlightedText({
 	const nodes: ReactNode[] = [];
 	let i = 0;
 	let key = 0;
+	let placedCurrent = false;
 	while (i < text.length) {
 		const idx = text.toLowerCase().indexOf(q, i);
 		if (idx === -1) {
@@ -130,9 +131,12 @@ export function HighlightedText({
 		if (idx > i) {
 			nodes.push(<span key={key++}>{text.slice(i, idx)}</span>);
 		}
+		const isCurrentMark = isCurrent && !placedCurrent;
+		if (isCurrentMark) placedCurrent = true;
 		nodes.push(
 			<mark
 				key={key++}
+				id={isCurrentMark ? "search-current-match" : undefined}
 				className={cn(
 					"rounded px-0.5",
 					isCurrent

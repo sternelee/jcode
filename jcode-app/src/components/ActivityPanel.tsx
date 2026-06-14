@@ -174,16 +174,50 @@ export function ActivityPanel({
 		import("@/types").PermissionRequest[] | null
 	>(null);
 	useEffect(() => {
-		invoke<UsageInfo>("get_usage_info")
-			.then(setUsageInfo)
-			.catch(() => undefined);
+		let cancelled = false;
+		let fetching = false;
+		const load = async () => {
+			if (fetching) return;
+			fetching = true;
+			try {
+				const info = await invoke<UsageInfo>("get_usage_info");
+				if (!cancelled) setUsageInfo(info);
+			} catch {
+				// ignore
+			} finally {
+				fetching = false;
+			}
+		};
+		void load();
+		const id = window.setInterval(load, 60000);
+		return () => {
+			cancelled = true;
+			window.clearInterval(id);
+		};
 	}, []);
 
 	useEffect(() => {
 		if (!getPermissionRequests) return;
-		getPermissionRequests()
-			.then(setPermissionRequests)
-			.catch(() => undefined);
+		let cancelled = false;
+		let fetching = false;
+		const load = async () => {
+			if (fetching) return;
+			fetching = true;
+			try {
+				const requests = await getPermissionRequests();
+				if (!cancelled) setPermissionRequests(requests);
+			} catch {
+				// ignore
+			} finally {
+				fetching = false;
+			}
+		};
+		void load();
+		const id = window.setInterval(load, 10000);
+		return () => {
+			cancelled = true;
+			window.clearInterval(id);
+		};
 	}, [getPermissionRequests]);
 
 
@@ -464,16 +498,6 @@ export function ActivityPanel({
 		})();
 	}, []);
 
-	useEffect(() => {
-		void (async () => {
-			try {
-				const usage = await invoke<UsageInfo>("get_usage_info");
-				setUsageInfo(usage);
-			} catch {
-				// ignore
-			}
-		})();
-	}, []);
 
 
 	const refreshDevices = async () => {
