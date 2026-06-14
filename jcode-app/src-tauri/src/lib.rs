@@ -29,15 +29,21 @@ pub(crate) fn set_dock_visible(visible: bool) {
         // NSApplicationActivationPolicyRegular = 0, Accessory = 1
         let policy: isize = if visible { 0 } else { 1 };
         let _: () = msg_send![ns_app, setActivationPolicy: policy];
-        // Activate the app so the Dock icon responds to clicks.
         if visible {
+            // Activate the app so the Dock icon responds to clicks.
             let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
+            // Force the Dock to reload the app icon. When starting in
+            // accessory mode, macOS may not load the icon from the bundle;
+            // re-setting it forces the correct icon to appear in the Dock.
+            let icon: *mut Object = msg_send![ns_app, applicationIconImage];
+            if !icon.is_null() {
+                let _: () = msg_send![ns_app, setApplicationIconImage: icon];
+            }
         }
     }
     #[cfg(not(target_os = "macos"))]
     let _ = visible;
 }
-
 /// After restoring a workbench/pages window, hide the Dock if neither
 /// is currently minimized.
 pub(crate) fn hide_dock_if_all_visible(app_handle: &tauri::AppHandle) {
