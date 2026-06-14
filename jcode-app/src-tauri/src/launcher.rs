@@ -137,8 +137,24 @@ fn app_matches(app: &AppInfo, lower: &str) -> bool {
 #[cfg(target_os = "macos")]
 fn scan_applications() -> Vec<AppInfo> {
     use applications::{AppInfo as _, AppInfoContext};
+    use applications::common::SearchPath;
 
-    let mut ctx = AppInfoContext::new(vec![]);
+    // mdfind (Spotlight) may miss apps on external volumes or directories
+    // excluded from indexing. Add explicit search paths as a fallback.
+    let extra_paths: Vec<SearchPath> = {
+        let mut paths = vec![
+            SearchPath::new(PathBuf::from("/Applications"), 2),
+            SearchPath::new(PathBuf::from("/System/Applications"), 2),
+            SearchPath::new(PathBuf::from("/System/Library/CoreServices"), 3),
+            SearchPath::new(PathBuf::from("/Applications/Utilities"), 1),
+        ];
+        if let Some(home) = dirs::home_dir() {
+            paths.push(SearchPath::new(home.join("Applications"), 2));
+        }
+        paths
+    };
+
+    let mut ctx = AppInfoContext::new(extra_paths);
 
     match ctx.refresh_apps() {
         Ok(()) => {
