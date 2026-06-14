@@ -85,8 +85,8 @@
 - [x] `memory_clear_test` — 清除测试记忆存储（Activity Panel → Memory → Clear test）
 - [x] `usage` — 显示提供商使用限制
 
-### 配置管理
-- [ ] 配置查看/编辑 UI
+- [x] 配置查看/编辑 UI — SettingsPage 增加了 Config 卡片（配置路径、feature 开关）
+
 - [ ] 环境变量管理
 
 ## 🟢 低优先级（高级/特殊场景）

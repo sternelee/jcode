@@ -346,7 +346,10 @@ pub fn run() {
             commands::launcher::hide_workbench,
             commands::launcher::minimize_window,
             commands::launcher::toggle_maximize_window,
-            commands::launcher::expand_to_workbench
+            commands::launcher::expand_to_workbench,
+            commands::config::get_config_path,
+            commands::config::get_config,
+            commands::config::set_config_value
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -22,6 +22,7 @@ pub mod swarm;
 pub mod system;
 pub mod tools;
 pub mod launcher;
+pub mod config;
 
 
 /// Shared cache of currently-running macOS app bundle IDs. Kept in a

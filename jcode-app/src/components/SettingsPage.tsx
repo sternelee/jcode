@@ -110,6 +110,10 @@ export function SettingsPage({
 		useState<WorkspaceMemoryPreferences | null>(null);
 	const [workspaceMemLoading, setWorkspaceMemLoading] = useState(false);
 
+	const [configPath, setConfigPath] = useState<string>("");
+	const [configData, setConfigData] = useState<Record<string, unknown> | null>(null);
+	const [configLoading, setConfigLoading] = useState(false);
+
 	useEffect(() => {
 		if (!onGetMemoryStats) return;
 		onGetMemoryStats()
@@ -185,6 +189,37 @@ export function SettingsPage({
 			.then(setAuthStatus)
 			.catch(() => {});
 	}, []);
+
+	useEffect(() => {
+		invoke<string>("get_config_path")
+			.then(setConfigPath)
+			.catch(() => {});
+		loadConfig();
+	}, []);
+
+	const loadConfig = useCallback(async () => {
+		try {
+			const cfg = await invoke<Record<string, unknown>>("get_config");
+			setConfigData(cfg);
+		} catch {
+			/* ignore */
+		}
+	}, []);
+
+	const toggleConfigFeature = useCallback(
+		async (key: string, currentValue: boolean) => {
+			setConfigLoading(true);
+			try {
+				await invoke("set_config_value", { key, value: !currentValue });
+				await loadConfig();
+			} catch {
+				/* ignore */
+			} finally {
+				setConfigLoading(false);
+			}
+		},
+		[loadConfig],
+	);
 
 	const copyToClipboard = useCallback(async (text: string, label: string) => {
 		try {
@@ -782,6 +817,72 @@ export function SettingsPage({
 						onSetModel?.(m, pid);
 					}}
 				/>
+
+
+				{/* Config */}
+				<SettingsCard
+					icon={<Database className="w-4 h-4" />}
+					title="Config"
+				>
+					<div className="space-y-3">
+						{configPath && (
+							<div className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2">
+								<span className="text-[12px] text-muted-foreground truncate max-w-[300px]">
+									{configPath}
+								</span>
+								<button
+									type="button"
+									onClick={() => copyToClipboard(configPath, "config-path")}
+									className="text-[11px] px-2 py-0.5 rounded-md bg-muted/50 text-muted-foreground hover:text-foreground transition-colors shrink-0 ml-2"
+								>
+									{copiedText === "config-path" ? "Copied ✓" : "Copy path"}
+								</button>
+							</div>
+						)}
+						{configData && (
+							<div className="space-y-1">
+								{([
+									["features.memory", "Memory"],
+									["features.swarm", "Swarm"],
+									["features.message_timestamps", "Timestamps"],
+									["features.persist_memory_injections", "Persist memory injections"],
+								] as const).map(([key, label]) => {
+									const parts = key.split(".");
+									let val: unknown = configData;
+									for (const p of parts) {
+										if (val && typeof val === "object") {
+											val = (val as Record<string, unknown>)[p];
+										} else {
+											val = undefined;
+											break;
+										}
+									}
+									const enabled = Boolean(val);
+									return (
+										<div
+											key={key}
+											className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2"
+										>
+											<span className="text-[12px] text-foreground">{label}</span>
+											<button
+												type="button"
+												onClick={() => toggleConfigFeature(key, enabled)}
+												disabled={configLoading}
+												className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-50"
+											>
+												{enabled ? (
+													<ToggleRight className="w-5 h-5 text-primary" />
+												) : (
+													<ToggleLeft className="w-5 h-5" />
+												)}
+											</button>
+										</div>
+									);
+								})}
+							</div>
+						)}
+					</div>
+				</SettingsCard>
 
 					{/* Version */}
 					<SettingsCard icon={<Cpu className="w-4 h-4" />} title="Version">
