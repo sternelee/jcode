@@ -182,6 +182,18 @@ export function Launcher() {
 	// items, matching the muscle memory of users coming from Raycast,
 	// Spotlight, Alfred, etc. We attach to `document` so the keydown
 	// fires before the search input consumes the digit.
+	// Cap the rendered list so clearing the query doesn't create a huge DOM.
+	const displayItems = useMemo(() => items.slice(0, 80), [items]);
+	const sections = useMemo(
+		() => buildSections(displayItems),
+		[displayItems],
+	);
+	const hasResults = displayItems.length > 0;
+	const itemIndexById = useMemo(() => {
+		const map = new Map<string, number>();
+		displayItems.forEach((item, i) => map.set(item.id, i));
+		return map;
+	}, [displayItems]);
 	useEffect(() => {
 		const handler = (event: KeyboardEvent) => {
 			if (event.altKey) return;
@@ -189,7 +201,7 @@ export function Launcher() {
 			const num = Number.parseInt(event.key, 10);
 			if (!Number.isFinite(num) || num < 1 || num > 9) return;
 			event.preventDefault();
-			const target = items[num - 1];
+			const target = displayItems[num - 1];
 			if (!target) return;
 			// Don't bypass the "disabled" affordance on the agent prompt
 			// row: pressing ⌘1 with an empty agent query should be a
@@ -199,18 +211,8 @@ export function Launcher() {
 		};
 		document.addEventListener("keydown", handler);
 		return () => document.removeEventListener("keydown", handler);
-	}, [items, selectItem]);
+	}, [displayItems, selectItem]);
 
-	const sections = useMemo(
-		() => buildSections(items),
-		[items],
-	);
-	const hasResults = items.length > 0;
-	const itemIndexById = useMemo(() => {
-		const map = new Map<string, number>();
-		items.forEach((item, i) => map.set(item.id, i));
-		return map;
-	}, [items]);
 	const showNoAppsHint =
 		!applications.loading &&
 		applications.apps.length === 0 &&
@@ -277,8 +279,8 @@ export function Launcher() {
 				>
 					<LauncherInput
 						autoFocus
-						value={query}
-						onChange={setQuery}
+					value={inputValue}
+					onChange={setInputValue}
 						placeholder="Ask JFlow anything…"
 						mode="agent"
 						onClear={handleClearAgent}
@@ -325,8 +327,8 @@ export function Launcher() {
 			>
 				<LauncherInput
 					autoFocus
-					value={query}
-					onChange={setQuery}
+					value={inputValue}
+					onChange={setInputValue}
 					placeholder="Search apps, sessions, or type 'ask ' to chat…"
 					mode="default"
 					onClear={handleClearQuery}

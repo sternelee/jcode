@@ -366,7 +366,7 @@ export function useLauncher() {
 		}
 
 		// Recent sessions (no query only)
-		const sessionItems: LauncherItem[] = [];
+		const sessionItems: Array<Extract<LauncherItem, { kind: "session" }>> = [];
 		if (!trimmed) {
 			for (const session of sessions.slice(0, 5)) {
 				sessionItems.push({
@@ -396,7 +396,7 @@ export function useLauncher() {
 		out.push(...sessionItems);
 
 		// Builtin commands
-		const builtinItems: LauncherItem[] = [];
+		const builtinItems: Array<Extract<LauncherItem, { kind: "builtin" }>> = [];
 		for (const builtin of BUILTIN_COMMANDS) {
 			if (
 				trimmed &&
