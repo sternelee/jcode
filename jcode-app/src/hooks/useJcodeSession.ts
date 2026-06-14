@@ -270,6 +270,7 @@ export function useJcodeSession() {
 			await invoke("export_memories", { path });
 		} catch (e) {
 			dispatch({ type: "SET_ERROR", message: String(e) });
+			throw e;
 		}
 	}, []);
 
@@ -281,7 +282,7 @@ export function useJcodeSession() {
 			};
 		} catch (e) {
 			dispatch({ type: "SET_ERROR", message: String(e) });
-			return null;
+			throw e;
 		}
 	}, []);
 

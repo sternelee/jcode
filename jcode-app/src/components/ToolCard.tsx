@@ -1,6 +1,7 @@
 import type { ToolExecution } from "@/types";
 import { cn } from "@/lib/utils";
 import { Loader2, Check, X } from "lucide-react";
+import { useState, useEffect } from "react";
 import { DiffView, looksLikeDiff } from "./DiffView";
 
 interface ToolCardProps {
@@ -50,31 +51,49 @@ export function ToolCard({ tool }: ToolCardProps) {
 					<pre className="bg-black/30 p-2 rounded text-[10px] font-mono leading-relaxed overflow-x-auto max-h-32 overflow-y-auto text-muted-foreground">
 						{tool.input.length > 2000
 							? tool.input.slice(0, 2000) +
-								`\n... (${tool.input.length - 2000} more)`
+							  `\n... (${tool.input.length - 2000} more)`
 							: tool.input}
 					</pre>
 				</details>
 			)}
-			{tool.output && (
-				<details className="mt-1" open={looksLikeDiff(tool.output)}>
-					<summary className="cursor-pointer text-muted-foreground text-[11px] mb-1">
-						output
-					</summary>
-					{looksLikeDiff(tool.output) ? (
-						<DiffView text={tool.output} />
-					) : (
-						<pre className="bg-black/30 p-2 rounded text-[10px] font-mono leading-relaxed overflow-x-auto max-h-32 overflow-y-auto text-muted-foreground">
-							{tool.output.length > 2000
-								? tool.output.slice(0, 2000) +
-									`\n... (${tool.output.length - 2000} more)`
-								: tool.output}
-						</pre>
-					)}
-				</details>
-			)}
+			<ToolOutput tool={tool} />
 			{tool.error && (
 				<p className="mt-2 text-destructive text-[11px]">{tool.error}</p>
 			)}
 		</div>
+	);
+}
+
+function ToolOutput({ tool }: { tool: ToolExecution }) {
+	const [isOpen, setIsOpen] = useState(() => looksLikeDiff(tool.output ?? ""));
+
+	useEffect(() => {
+		if (tool.output && looksLikeDiff(tool.output)) {
+			setIsOpen(true);
+		}
+	}, [tool.output]);
+
+	if (!tool.output) return null;
+
+	return (
+		<details
+			className="mt-1"
+			open={isOpen}
+			onToggle={(e) => setIsOpen(e.currentTarget.open)}
+		>
+			<summary className="cursor-pointer text-muted-foreground text-[11px] mb-1">
+				output
+			</summary>
+			{looksLikeDiff(tool.output) ? (
+				<DiffView text={tool.output} />
+			) : (
+				<pre className="bg-black/30 p-2 rounded text-[10px] font-mono leading-relaxed overflow-x-auto max-h-32 overflow-y-auto text-muted-foreground">
+					{tool.output.length > 2000
+						? tool.output.slice(0, 2000) +
+						  `\n... (${tool.output.length - 2000} more)`
+						: tool.output}
+				</pre>
+			)}
+		</details>
 	);
 }

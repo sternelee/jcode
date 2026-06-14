@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import type {
 	AuthStatus,
 	VersionInfo,
@@ -41,7 +42,7 @@ interface SettingsPageProps {
 	onExportMemories?: (path: string) => Promise<void>;
 	onImportMemories?: (
 		path: string,
-	) => Promise<{ project_count: number; global_count: number } | null>;
+	) => Promise<{ project_count: number; global_count: number }>;
 	onSearchMemories?: (
 		query: string,
 		semantic: boolean,
@@ -297,106 +298,137 @@ export function SettingsPage({
 						)}
 					</SettingsCard>
 
-					{/* Memory */}
-					{(onExportMemories || onImportMemories) && (
-						<SettingsCard icon={<Brain className="w-4 h-4" />} title="Memory">
-							<div className="space-y-3">
-								{onExportMemories && (
-									<div className="flex items-center gap-2 flex-wrap">
-										<input
-											type="text"
-											value={exportPath}
-											onChange={(e) => setExportPath(e.target.value)}
-											placeholder="Export path (e.g. ~/memories.json)"
-											className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[12px] md:text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 min-w-0"
-										/>
-										<button
-											type="button"
-											onClick={async () => {
-												if (!exportPath.trim()) return;
+				{/* Memory */}
+				{(onExportMemories || onImportMemories) && (
+					<SettingsCard icon={<Brain className="w-4 h-4" />} title="Memory">
+						<div className="space-y-3">
+							{onExportMemories && (
+								<div className="flex items-center gap-2 flex-wrap">
+									<input
+										type="text"
+										value={exportPath}
+										readOnly
+										placeholder="Export path (e.g. ~/memories.json)"
+										className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[12px] md:text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 min-w-0"
+									/>
+									<button
+										type="button"
+										onClick={async () => {
+											try {
+												const path = await save({
+													filters: [{ name: "JSON", extensions: ["json"] }],
+													defaultPath: "jflow-memories.json",
+												});
+												if (path) setExportPath(path);
+											} catch {
+												// ignore cancel
+											}
+										}}
+										className="shrink-0 h-8 px-3 rounded-lg border border-border bg-background text-foreground text-[12px] font-medium hover:bg-muted transition-all flex items-center gap-1.5"
+									>
+										<FolderOpen className="w-3.5 h-3.5" />
+										Browse
+									</button>
+									<button
+										type="button"
+										onClick={async () => {
+											if (!exportPath.trim()) return;
+											setMemoryAction({
+												type: "export",
+												status: "Exporting…",
+											});
+											try {
+												await onExportMemories(exportPath.trim());
 												setMemoryAction({
 													type: "export",
-													status: "Exporting…",
+													status: "Exported successfully",
 												});
-												try {
-													await onExportMemories(exportPath.trim());
-													setMemoryAction({
-														type: "export",
-														status: "Exported successfully",
-													});
-												} catch {
-													setMemoryAction({
-														type: "export",
-														status: "Export failed",
-													});
+											} catch {
+												setMemoryAction({
+													type: "export",
+													status: "Export failed",
+												});
+											}
+											setTimeout(() => setMemoryAction(null), 3000);
+										}}
+										disabled={!exportPath.trim()}
+										className="shrink-0 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+									>
+										<Download className="w-3.5 h-3.5" />
+										Export
+									</button>
+								</div>
+							)}
+							{onImportMemories && (
+								<div className="flex items-center gap-2 flex-wrap">
+									<input
+										type="text"
+										value={importPath}
+										readOnly
+										placeholder="Import path (e.g. ~/memories.json)"
+										className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[12px] md:text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 min-w-0"
+									/>
+									<button
+										type="button"
+										onClick={async () => {
+											try {
+												const selected = await open({
+													filters: [{ name: "JSON", extensions: ["json"] }],
+													multiple: false,
+												});
+												if (selected && typeof selected === "string") {
+													setImportPath(selected);
 												}
-												setTimeout(() => setMemoryAction(null), 3000);
-											}}
-											disabled={!exportPath.trim()}
-											className="shrink-0 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
-										>
-											<Download className="w-3.5 h-3.5" />
-											Export
-										</button>
-									</div>
-								)}
-								{onImportMemories && (
-									<div className="flex items-center gap-2 flex-wrap">
-										<input
-											type="text"
-											value={importPath}
-											onChange={(e) => setImportPath(e.target.value)}
-											placeholder="Import path (e.g. ~/memories.json)"
-											className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[12px] md:text-[13px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 min-w-0"
-										/>
-										<button
-											type="button"
-											onClick={async () => {
-												if (!importPath.trim()) return;
+											} catch {
+												// ignore cancel
+											}
+										}}
+										className="shrink-0 h-8 px-3 rounded-lg border border-border bg-background text-foreground text-[12px] font-medium hover:bg-muted transition-all flex items-center gap-1.5"
+									>
+										<FolderOpen className="w-3.5 h-3.5" />
+										Browse
+									</button>
+									<button
+										type="button"
+										onClick={async () => {
+											if (!importPath.trim()) return;
+											setMemoryAction({
+												type: "import",
+												status: "Importing…",
+											});
+											try {
+												const result = await onImportMemories(
+													importPath.trim(),
+												);
 												setMemoryAction({
 													type: "import",
-													status: "Importing…",
+													status: `Imported ${result.project_count} project + ${result.global_count} global memories`,
 												});
-												try {
-													const result = await onImportMemories(
-														importPath.trim(),
-													);
-													if (result) {
-														setMemoryAction({
-															type: "import",
-															status: `Imported ${result.project_count} project + ${result.global_count} global memories`,
-														});
-													} else {
-														setMemoryAction({
-															type: "import",
-															status: "Import failed",
-														});
-													}
-												} catch {
-													setMemoryAction({
-														type: "import",
-														status: "Import failed",
-													});
-												}
-												setTimeout(() => setMemoryAction(null), 3000);
-											}}
-											disabled={!importPath.trim()}
-											className="shrink-0 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
-										>
-											<Upload className="w-3.5 h-3.5" />
-											Import
-										</button>
-									</div>
-								)}
-								{memoryAction && (
-									<div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-										<CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-										{memoryAction.status}
-									</div>
-								)}
-							</div>
-						</SettingsCard>
-					)}
+											} catch {
+												setMemoryAction({
+													type: "import",
+													status: "Import failed",
+												});
+											}
+											setTimeout(() => setMemoryAction(null), 3000);
+										}}
+										disabled={!importPath.trim()}
+										className="shrink-0 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+									>
+										<Upload className="w-3.5 h-3.5" />
+										Import
+									</button>
+								</div>
+							)}
+							{memoryAction && (
+								<div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+									<CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+									{memoryAction.status}
+								</div>
+							)}
+						</div>
+					</SettingsCard>
+				)}
 
 					{/* Memory Browser */}
 					{(onSearchMemories || onGetMemoryList) && (

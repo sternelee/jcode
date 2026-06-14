@@ -601,17 +601,22 @@ export default function App() {
 		}
 		if (userMsgIndex === -1) return;
 
-		// Compute 1-based visible conversation count up to the user message
+		// Compute 1-based visible conversation count of messages *before* the user
+		// message so the rewind removes the user message and the assistant response.
 		let visibleCount = 0;
-		for (let i = 0; i <= userMsgIndex; i++) {
+		for (let i = 0; i < userMsgIndex; i++) {
 			const role = sessionMsgs[i]?.role;
 			if (role === "user" || role === "assistant") {
 				visibleCount += 1;
 			}
 		}
 
-		// Rewind to remove the user message and the assistant message
-		await rewindChat(visibleCount, targetSessionId);
+		if (visibleCount === 0) {
+			// Nothing to preserve before the user message; clear and resend.
+			await clearChat(targetSessionId);
+		} else {
+			await rewindChat(visibleCount, targetSessionId);
+		}
 
 		// Re-send the user message content
 		const userMsg = sessionMsgs[userMsgIndex];
@@ -634,7 +639,8 @@ export default function App() {
 		const userMsg = sessionMsgs[frontendIndex];
 		if (!userMsg || userMsg.role !== "user") return;
 
-		// Compute 1-based visible conversation count up to the user message
+		// Compute 1-based visible conversation count of messages *before* the user
+		// message so the rewind removes the user message and everything after it.
 		let visibleCount = 0;
 		for (let i = 0; i < frontendIndex; i++) {
 			const role = sessionMsgs[i]?.role;
@@ -643,8 +649,13 @@ export default function App() {
 			}
 		}
 
-		// Rewind to remove the user message and everything after it
-		await rewindChat(visibleCount, targetSessionId);
+		if (visibleCount === 0) {
+			// Nothing to preserve before the first user message; clear and resend.
+			await clearChat(targetSessionId);
+		} else {
+			// Rewind to remove the user message and everything after it
+			await rewindChat(visibleCount, targetSessionId);
+		}
 
 		// Send the edited content
 		const images: [string, string][] | undefined = userMsg.images?.map(

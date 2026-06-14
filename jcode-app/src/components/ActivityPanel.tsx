@@ -2205,18 +2205,18 @@ export function ActivityPanel({
 										});
 									}}
 								>
-									Send
-								</Button>
-							</div>
+								Send
+							</Button>
 						</div>
+					</div>
+				</section>
 
-						<BrowserSection
-							getBrowserStatus={getBrowserStatus}
-							setupBrowser={setupBrowser}
-						/>
-					</section>
+				<BrowserSection
+					getBrowserStatus={getBrowserStatus}
+					setupBrowser={setupBrowser}
+				/>
 
-					<UsageSection usageInfo={usageInfo} />
+				<UsageSection usageInfo={usageInfo} />
 
 					<Separator />
 

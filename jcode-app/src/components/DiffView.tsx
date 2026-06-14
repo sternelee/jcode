@@ -190,26 +190,30 @@ interface SideBySideDiffProps {
 }
 
 function SideBySideDiff({ file }: SideBySideDiffProps) {
-	// Build aligned left/right rows
+	// Build aligned left/right rows without mutating the parsed hunks.
 	const rows: { left?: DiffLine; right?: DiffLine }[] = [];
 
 	for (const hunk of file.hunks) {
-		for (const line of hunk.lines) {
+		let i = 0;
+		while (i < hunk.lines.length) {
+			const line = hunk.lines[i];
 			if (line.type === "context") {
 				rows.push({ left: line, right: line });
+				i++;
 			} else if (line.type === "remove") {
-				// Check if next line is an add — pair them
-				const nextIdx = hunk.lines.indexOf(line) + 1;
-				const next = hunk.lines[nextIdx];
+				const next = hunk.lines[i + 1];
 				if (next && next.type === "add") {
 					rows.push({ left: line, right: next });
-					// Skip the add since we consumed it
-					hunk.lines.splice(nextIdx, 1);
+					i += 2;
 				} else {
 					rows.push({ left: line });
+					i++;
 				}
 			} else if (line.type === "add") {
 				rows.push({ right: line });
+				i++;
+			} else {
+				i++;
 			}
 		}
 	}

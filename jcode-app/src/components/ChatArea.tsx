@@ -418,29 +418,31 @@ export function ChatArea({
           );
           break;
         }
-        case "insert":
-        default: {
-          const ta = textareaRef.current;
-          if (ta) {
-            const cursor = ta.selectionStart ?? text.length;
-            const before = text.slice(0, cursor);
-            const after = text.slice(cursor);
-            const spacer =
-              before.length > 0 && !before.endsWith(" ") ? " " : "";
-            const newText = before + spacer + normalized + after;
-            setText(newText);
-            setTimeout(() => {
-              ta.focus();
-              ta.selectionStart = cursor + spacer.length + normalized.length;
-              ta.selectionEnd = ta.selectionStart;
-            }, 0);
-          } else {
-            setText((prev) =>
-              prev.trim() ? `${prev.trim()} ${normalized}` : normalized,
-            );
-          }
-          break;
-        }
+		case "insert":
+		default: {
+			const ta = textareaRef.current;
+			if (ta) {
+				const cursor =
+					ta.selectionStart == null ? text.length : ta.selectionStart;
+				const before = text.slice(0, cursor);
+				const after = text.slice(cursor);
+				const spacer =
+					before.length > 0 && !before.endsWith(" ") ? " " : "";
+				const newText = before + spacer + normalized + after;
+				const newCursor = before.length + spacer.length + normalized.length;
+				setText(newText);
+				requestAnimationFrame(() => {
+					ta.focus();
+					ta.selectionStart = newCursor;
+					ta.selectionEnd = newCursor;
+				});
+			} else {
+				setText((prev) =>
+					prev.trim() ? `${prev.trim()} ${normalized}` : normalized,
+				);
+			}
+			break;
+		}
       }
     } catch (e) {
       console.error("Dictation failed:", e);

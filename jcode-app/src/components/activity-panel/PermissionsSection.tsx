@@ -9,6 +9,7 @@ interface PermissionsSectionProps {
 	respondToPermission?: (
 		requestId: string,
 		approved: boolean,
+		message?: string,
 	) => Promise<boolean>;
 }
 
@@ -29,12 +30,12 @@ export function PermissionsSection({
 					</Badge>
 					<Button
 						variant="ghost"
-						size="sm"
-						className="h-6 px-2 text-[10px]"
+						size="icon"
+						className="h-6 w-6"
+						title="Refresh permissions"
 						onClick={() => void refreshPermissions()}
 					>
-						<RotateCcw className="w-3 h-3 mr-1" />
-						Refresh
+						<RotateCcw className="w-3.5 h-3.5" />
 					</Button>
 				</div>
 			</div>
@@ -85,7 +86,7 @@ export function PermissionsSection({
 									className="h-6 px-2 text-[10px]"
 									onClick={() => {
 										if (respondToPermission) {
-											void respondToPermission(req.id, true).then(
+											void respondToPermission(req.id, true, undefined).then(
 												(ok) => {
 													if (ok) void refreshPermissions();
 												},
@@ -101,7 +102,7 @@ export function PermissionsSection({
 									className="h-6 px-2 text-[10px]"
 									onClick={() => {
 										if (respondToPermission) {
-											void respondToPermission(req.id, false).then(
+											void respondToPermission(req.id, false, undefined).then(
 												(ok) => {
 													if (ok) void refreshPermissions();
 												},

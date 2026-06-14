@@ -405,11 +405,7 @@ function findStreamingMessageIndex(
 			return idx;
 		}
 	}
-	for (
-		let i = data.messages.length - 1;
-		i >= Math.max(0, data.messages.length - 5);
-		i--
-	) {
+	for (let i = data.messages.length - 1; i >= 0; i--) {
 		const m = data.messages[i];
 		if (m?.role === "assistant" && m?.isStreaming) {
 			if (!roleSessionId || m.roleSessionId === roleSessionId) {
