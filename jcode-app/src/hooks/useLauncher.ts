@@ -297,10 +297,7 @@ export function useLauncher() {
 			}
 		}
 
-		// Applications (capped when no query to keep the list scannable).
-		// Full filtered set when user types.
-		const MAX_UNFILTERED_APPS = 20;
-		let appCount = 0;
+		// Applications
 		for (const app of applications.apps) {
 			if (
 				trimmed &&
@@ -316,8 +313,6 @@ export function useLauncher() {
 				id: `app:${app.appPath}`,
 				app,
 			});
-			appCount++;
-			if (!trimmed && appCount >= MAX_UNFILTERED_APPS) break;
 		}
 
 		// Recent sessions (no query only)
