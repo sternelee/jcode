@@ -1225,10 +1225,19 @@ export function ChatArea({
 
                 <div className="flex items-center gap-2">
                   {/* Model label */}
-                  <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-medium text-muted-foreground/60">
-                    <Circle className="w-2 h-2 fill-current opacity-50" />
-                    {currentModel ? `${currentProfileId ?? ""} ${currentModel}`.trim() : "Agent"}
-                  </span>
+									<span className="hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-muted-foreground/60">
+										<Circle className="w-2 h-2 fill-current opacity-50" />
+										{currentModel ? (
+											<>
+												{currentProfileId && (
+													<span className="text-muted-foreground/40">{currentProfileId}/</span>
+												)}
+												<span>{currentModel}</span>
+											</>
+										) : (
+											"Agent"
+										)}
+									</span>
                   {isProcessing && onSendSoftInterrupt && (
                     <button
                       type="button"

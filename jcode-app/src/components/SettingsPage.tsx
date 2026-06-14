@@ -31,7 +31,9 @@ import {
 	Network,
 	ChevronDown,
 	ChevronRight,
+	Bot,
 } from "lucide-react";
+import { ModelPickerModal } from "./SlashCommands";
 
 interface SettingsPageProps {
 	theme: "light" | "dark";
@@ -55,7 +57,12 @@ interface SettingsPageProps {
 		workingDir: string | null,
 		enabled: boolean,
 	) => Promise<void>;
+	availableModels?: string[];
+	currentModel?: string;
+	currentProfileId?: string;
+	onSetModel?: (model: string, profileId?: string) => void;
 }
+
 
 export function SettingsPage({
 	theme,
@@ -68,6 +75,10 @@ export function SettingsPage({
 	onGetMemoryGraph,
 	onGetWorkspaceMemoryPreferences,
 	onSetWorkspaceMemoryPreference,
+	availableModels,
+	currentModel,
+	currentProfileId,
+	onSetModel,
 }: SettingsPageProps) {
 	const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
 	const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -85,6 +96,7 @@ export function SettingsPage({
 	const [memoryScope, setMemoryScope] = useState<"all" | "project" | "global">(
 		"all",
 	);
+	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const [memoryTag, setMemoryTag] = useState("");
 	const [memoryLoading, setMemoryLoading] = useState(false);
 	const [expandedMemoryId, setExpandedMemoryId] = useState<string | null>(null);
@@ -685,18 +697,59 @@ export function SettingsPage({
 														>
 															{enabled ? (
 																<ToggleRight className="w-4 h-4 text-primary" />
-															) : (
-																<ToggleLeft className="w-4 h-4" />
-															)}
-														</button>
-													</div>
-												),
-											)}
-										</div>
+													) : (
+														<ToggleLeft className="w-4 h-4" />
+													)}
+												</button>
+											</div>
+										),
 									)}
+								</div>
+							)}
+						</div>
+					</SettingsCard>
+				)}
+
+				{onSetModel && (
+					<SettingsCard
+						icon={<Bot className="w-4 h-4" />}
+						title="Default Model"
+						action={
+							<button
+								type="button"
+								onClick={() => setModelPickerOpen(true)}
+								className="text-[11px] px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+							>
+								Change
+							</button>
+						}
+					>
+						<div className="flex items-center justify-between">
+							<div className="min-w-0">
+								<div className="text-[13px] font-medium text-foreground truncate">
+									{currentModel || "No model selected"}
+								</div>
+								{currentProfileId && (
+									<div className="text-[11px] text-muted-foreground truncate">
+										Profile: {currentProfileId}
+									</div>
+								)}
 							</div>
-						</SettingsCard>
-					)}
+						</div>
+					</SettingsCard>
+				)}
+
+				<ModelPickerModal
+					open={modelPickerOpen}
+					onClose={() => setModelPickerOpen(false)}
+					availableModels={availableModels || []}
+					currentModel={currentModel || null}
+					currentProfileId={currentProfileId || null}
+					onSelectModel={(m, pid) => {
+						setModelPickerOpen(false);
+						onSetModel?.(m, pid);
+					}}
+				/>
 
 					{/* Version */}
 					<SettingsCard icon={<Cpu className="w-4 h-4" />} title="Version">

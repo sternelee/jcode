@@ -986,6 +986,12 @@ export default function App() {
 								onGetMemoryGraph={getMemoryGraph}
 								onGetWorkspaceMemoryPreferences={getWorkspaceMemoryPreferences}
 								onSetWorkspaceMemoryPreference={setWorkspaceMemoryPreference}
+								availableModels={state.availableModels}
+								currentModel={state.providerModel || undefined}
+								currentProfileId={state.providerName || undefined}
+								onSetModel={(m, pid) =>
+									void setModel(m, pid, state.sessionId || undefined)
+								}
 							/>
 						) : activeNavTab === "network" ? (
 							<ProviderConfigPage

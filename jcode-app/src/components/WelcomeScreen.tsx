@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
 	ExternalAuthCandidate,
@@ -93,12 +93,27 @@ export function WelcomeScreen({
 		setPhase("ready");
 	};
 
+	const deriveProviderFromModel = useCallback((model: string): string => {
+		const slash = model.indexOf("/");
+		if (slash > 0) return model.slice(0, slash);
+		if (model.toLowerCase().startsWith("gpt") || model.toLowerCase().includes("openai")) return "openai";
+		if (model.toLowerCase().includes("claude")) return "anthropic";
+		if (model.toLowerCase().includes("gemini")) return "google";
+		return "default";
+	}, []);
+
+	const [modelSearch, setModelSearch] = useState("");
+
+	const filteredModels = useMemo(() => {
+		const unique = Array.from(new Set(availableModels));
+		const q = modelSearch.trim().toLowerCase();
+		if (!q) return unique;
+		return unique.filter((m) => m.toLowerCase().includes(q));
+	}, [availableModels, modelSearch]);
+
 	const handleComplete = () => {
 		onComplete(selectedModel || undefined, selectedProvider || undefined);
 	};
-
-	// Get unique models for selection
-	const uniqueModels = Array.from(new Set(availableModels)).slice(0, 20);
 
 	if (loading) {
 		return (
@@ -119,7 +134,7 @@ export function WelcomeScreen({
 								<Bot className="w-8 h-8 text-primary" />
 							</div>
 							<h1 className="text-2xl font-bold text-foreground">
-								Welcome to Jcode
+								Welcome to JFlow
 							</h1>
 							<p className="text-muted-foreground">
 								Your AI coding assistant is ready to help.
@@ -260,29 +275,45 @@ export function WelcomeScreen({
 							</p>
 						</div>
 
-						<div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-							{uniqueModels.map((model) => (
-								<button
-									key={model}
-									className={cn(
-										"p-3 rounded-lg border border-border text-left transition-colors",
-										"hover:border-primary/50 hover:bg-primary/5",
-										selectedModel === model && "border-primary bg-primary/10",
-									)}
-									onClick={() => selectModel(model, "default")}
-								>
-									<div className="text-sm font-medium text-foreground truncate">
-										{model}
-									</div>
-								</button>
-							))}
-						</div>
-
-						{uniqueModels.length === 0 && (
-							<div className="text-center text-sm text-muted-foreground py-8">
-								No models available. Configure a provider in Settings first.
+						<div className="space-y-2">
+							<input
+								type="text"
+								value={modelSearch}
+								onChange={(e) => setModelSearch(e.target.value)}
+								placeholder="Search models..."
+								className="w-full h-9 px-3 rounded-lg border border-border bg-card text-[13px] outline-none focus:border-primary/50"
+							/>
+							<div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+								{filteredModels.map((model) => {
+									const provider = deriveProviderFromModel(model);
+									return (
+										<button
+											key={model}
+											className={cn(
+												"p-3 rounded-lg border border-border text-left transition-colors",
+												"hover:border-primary/50 hover:bg-primary/5",
+												selectedModel === model && "border-primary bg-primary/10",
+											)}
+											onClick={() => selectModel(model, provider)}
+										>
+											<div className="text-sm font-medium text-foreground truncate">
+												{model}
+											</div>
+											<div className="text-[10px] text-muted-foreground truncate">
+												{provider}
+											</div>
+										</button>
+									);
+								})}
 							</div>
-						)}
+							{filteredModels.length === 0 && (
+								<div className="text-center text-sm text-muted-foreground py-8">
+									{modelSearch.trim()
+										? "No models match your search."
+										: "No models available. Configure a provider in Settings first."}
+								</div>
+							)}
+						</div>
 
 						<Button
 							variant="outline"

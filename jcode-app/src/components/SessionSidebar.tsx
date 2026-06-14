@@ -734,25 +734,25 @@ export function SessionSidebar({
 																	))}
 															</div>
 														) : (
-															<button
-																type="button"
-																onClick={(e) => {
-																	e.stopPropagation();
-																	onSelectSession(s);
-																}}
-																className={cn(
-																	"text-[10px] text-muted-foreground font-mono mt-2 truncate text-left",
-																	workspaceModes[ws.id] === "swarm" &&
-																		"hover:text-primary hover:underline cursor-pointer",
-																)}
-																title={
-																	workspaceModes[ws.id] === "swarm"
-																		? "Click to select this character, then use the top model selector to change its model"
-																		: s.model
-																}
-															>
-																{s.model || s.sessionId.slice(0, 8)}
-															</button>
+													<button
+														type="button"
+														onClick={(e) => {
+															e.stopPropagation();
+															onSelectSession(s);
+														}}
+														className={cn(
+															"text-[10px] text-muted-foreground font-mono mt-2 truncate text-left",
+															workspaceModes[ws.id] === "swarm" &&
+																"hover:text-primary hover:underline cursor-pointer",
+														)}
+														title={
+															workspaceModes[ws.id] === "swarm"
+																? "Click to select this character, then use the top model selector to change its model"
+																: s.providerModel || s.model
+														}
+													>
+														{s.providerModel || s.model || s.sessionId.slice(0, 8)}
+													</button>
 														)}
 													</div>
 

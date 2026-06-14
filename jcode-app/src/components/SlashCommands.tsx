@@ -322,8 +322,8 @@ interface ModelPickerModalProps {
 	availableModels: string[];
 	currentModel: string | null;
 	currentProfileId: string | null;
-
 	onSelectModel: (model: string, profileId?: string) => void;
+	closeOnSelect?: boolean;
 }
 
 export function ModelPickerModal({
@@ -332,8 +332,8 @@ export function ModelPickerModal({
 	availableModels,
 	currentModel,
 	currentProfileId,
-
 	onSelectModel,
+	closeOnSelect = true,
 }: ModelPickerModalProps) {
 	const [search, setSearch] = useState("");
 	const [routes, setRoutes] = useState<ModelRoute[]>([]);
@@ -756,8 +756,7 @@ export function ModelPickerModal({
 										type="button"
 										onClick={() => {
 											onSelectModel(m, undefined);
-
-											onClose();
+											if (closeOnSelect) onClose();
 										}}
 										className={cn(
 											"w-full text-left px-3 py-2.5 rounded-xl text-[13px] flex items-center gap-3 transition-colors",
@@ -1119,10 +1118,10 @@ export function ModelPickerModal({
 														<button
 															key={`${group.profileId}:${route.model}`}
 															type="button"
-															onClick={() => {
-																onSelectModel(route.model, group.profileId);
-																onClose();
-															}}
+														onClick={() => {
+															onSelectModel(route.model, group.profileId);
+															if (closeOnSelect) onClose();
+														}}
 															className={cn(
 																"w-full text-left px-3 py-2 rounded-xl text-[13px] flex items-center gap-3 transition-colors",
 																isCurrent
