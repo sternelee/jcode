@@ -113,11 +113,7 @@ impl AppIndex {
                 .join()
                 .map_err(|_| "app scanner thread panicked".to_string())?;
             let mut apps = apps;
-            apps.sort_by(|a, b| {
-                a.name
-                    .to_lowercase()
-                    .cmp(&b.name.to_lowercase())
-            });
+            apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
             self.apps = apps;
             Ok(())
         }
@@ -130,14 +126,13 @@ impl AppIndex {
 
     /// Filter and score the index for the given query.
     ///
-    /// An empty query returns the first 80 apps sorted alphabetically.
     /// A non-empty query scores each app by name (falling back to the
     /// bundle id), sorts by score descending then name ascending, and
     /// returns the top 50.
     pub fn search(&self, query: &str) -> Vec<AppInfo> {
         let trimmed = query.trim();
         if trimmed.is_empty() {
-            return self.apps.iter().take(80).cloned().collect();
+            return self.apps.iter().cloned().collect();
         }
 
         let query_lower = trimmed.to_lowercase();
@@ -170,11 +165,7 @@ impl AppIndex {
     /// Like [`search`], but additionally marks each result `running`
     /// when its bundle id appears in the provided set. Running apps are
     /// surfaced first only when the query is empty.
-    pub fn search_with_running(
-        &self,
-        query: &str,
-        running: &HashSet<String>,
-    ) -> Vec<AppInfo> {
+    pub fn search_with_running(&self, query: &str, running: &HashSet<String>) -> Vec<AppInfo> {
         let mut results = self.search(query);
         for app in &mut results {
             if let Some(id) = app.bundle_id.as_ref() {
@@ -198,13 +189,12 @@ impl AppIndex {
     }
 }
 
-
 // ——— Application scanning (macOS) —————————————————————————————————————————
 
 #[cfg(target_os = "macos")]
 fn scan_applications() -> Vec<AppInfo> {
-    use applications::{AppInfo as _, AppTrait, AppInfoContext};
     use applications::common::SearchPath;
+    use applications::{AppInfo as _, AppInfoContext, AppTrait};
 
     // mdfind (Spotlight) may miss apps on external volumes or directories
     // excluded from indexing. Add explicit search paths as a fallback.
@@ -247,11 +237,7 @@ fn scan_applications() -> Vec<AppInfo> {
 
     for fb in fallback_paths {
         // Only process if this is an .app bundle not already in the list.
-        if !fb
-            .extension()
-            .map(|e| e == "app")
-            .unwrap_or(false)
-        {
+        if !fb.extension().map(|e| e == "app").unwrap_or(false) {
             continue;
         }
         if existing.contains(&fb) {
@@ -279,8 +265,7 @@ fn scan_applications() -> Vec<AppInfo> {
             continue;
         }
 
-        let (name, bundle_id, version, executable) =
-            read_app_metadata(&app, &bundle_path);
+        let (name, bundle_id, version, executable) = read_app_metadata(&app, &bundle_path);
 
         let icon_path = app
             .icon_path
@@ -508,13 +493,13 @@ fn extract_icon_base64(bundle_root: &Path) -> Option<String> {
     // Pick the largest available icon (cap at 128x128 to keep payload
     // under ~15KB per app — base64 512x512 PNGs would blow up Tauri IPC).
     let preferred = [
-        IconType::RGBA32_128x128_2x,   // screen 128, actual 256
-        IconType::RGBA32_128x128,      // screen 128, actual 128
-        IconType::RGBA32_64x64,        // screen 64,  actual 64
-        IconType::RGBA32_32x32_2x,     // screen 32,  actual 64
-        IconType::RGBA32_32x32,        // screen 32,  actual 32
-        IconType::RGBA32_16x16_2x,     // screen 16,  actual 32
-        IconType::RGBA32_16x16,        // screen 16,  actual 16
+        IconType::RGBA32_128x128_2x, // screen 128, actual 256
+        IconType::RGBA32_128x128,    // screen 128, actual 128
+        IconType::RGBA32_64x64,      // screen 64,  actual 64
+        IconType::RGBA32_32x32_2x,   // screen 32,  actual 64
+        IconType::RGBA32_32x32,      // screen 32,  actual 32
+        IconType::RGBA32_16x16_2x,   // screen 16,  actual 32
+        IconType::RGBA32_16x16,      // screen 16,  actual 16
     ];
 
     let best = preferred
@@ -610,7 +595,9 @@ pub fn launch_application(path: &str, args: Option<Vec<String>>) -> Result<(), T
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (path, args);
-        Err(TauriError::Other("Launching applications is only supported on macOS".to_string()))
+        Err(TauriError::Other(
+            "Launching applications is only supported on macOS".to_string(),
+        ))
     }
 }
 
@@ -626,11 +613,15 @@ pub fn quit_application(bundle_id: &str) -> Result<(), TauriError> {
     if status.success() {
         Ok(())
     } else {
-        Err(TauriError::Other(format!("osascript exited with status {status}")))
+        Err(TauriError::Other(format!(
+            "osascript exited with status {status}"
+        )))
     }
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn quit_application(_bundle_id: &str) -> Result<(), TauriError> {
-    Err(TauriError::Other("Quitting applications is only supported on macOS".to_string()))
+    Err(TauriError::Other(
+        "Quitting applications is only supported on macOS".to_string(),
+    ))
 }
