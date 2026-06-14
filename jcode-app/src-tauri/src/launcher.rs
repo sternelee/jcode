@@ -29,6 +29,10 @@ pub struct AppInfo {
     /// Best-effort version string (`CFBundleShortVersionString` then
     /// `CFBundleVersion`). Useful for the launcher's secondary text line.
     pub version: Option<String>,
+    /// PNG icon encoded as base64 data URL. Extracted from the app
+    /// bundle's `.icns` file at scan time.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub icon_base64: Option<String>,
     /// True when the app is currently running. Populated at search time by
     /// combining the static `AppIndex` with the live `running_apps` set.
     #[serde(default)]
@@ -160,6 +164,8 @@ fn scan_applications() -> Vec<AppInfo> {
             .as_ref()
             .map(|p| p.to_string_lossy().to_string());
 
+        let icon_base64 = extract_icon_base64(&bundle_path);
+
         out.push(AppInfo {
             name: app.name,
             bundle_id,
@@ -167,6 +173,7 @@ fn scan_applications() -> Vec<AppInfo> {
             app_path: bundle_path.to_string_lossy().to_string(),
             executable_path: executable,
             version,
+            icon_base64,
             running: false,
         });
     }
@@ -231,6 +238,65 @@ fn read_plist_metadata(
         });
 
     (bundle_id, version, executable)
+}
+
+#[cfg(target_os = "macos")]
+fn extract_icon_base64(bundle_root: &Path) -> Option<String> {
+    use base64::{engine::general_purpose, Engine as _};
+    use std::fs::File;
+    use std::io::{BufReader, Cursor};
+    use tauri_icns::{IconFamily, IconType};
+
+    let resources = bundle_root.join("Contents/Resources");
+
+    // Try the standard AppIcon.icns, then any .icns fallback.
+    let icns_path = resources.join("AppIcon.icns");
+    let icns_path = if icns_path.exists() {
+        icns_path
+    } else {
+        // Walk Resources for any .icns file.
+        std::fs::read_dir(&resources)
+            .ok()?
+            .flatten()
+            .find_map(|entry| {
+                let p = entry.path();
+                if p.extension().and_then(|s| s.to_str()) == Some("icns") {
+                    Some(p)
+                } else {
+                    None
+                }
+            })?
+    };
+
+    let file = BufReader::new(File::open(&icns_path).ok()?);
+    let family = IconFamily::read(file).ok()?;
+
+    // Pick the largest available icon.
+    let preferred = [
+        IconType::RGBA32_512x512_2x,
+        IconType::RGBA32_512x512,
+        IconType::RGBA32_256x256_2x,
+        IconType::RGBA32_256x256,
+        IconType::RGBA32_128x128_2x,
+        IconType::RGBA32_128x128,
+        IconType::RGBA32_64x64,
+        IconType::RGBA32_32x32,
+        IconType::RGBA32_16x16,
+    ];
+
+    let best = preferred
+        .iter()
+        .find_map(|ty| family.get_icon_with_type(*ty).ok())?;
+
+    let mut png = Vec::new();
+    best.write_png(Cursor::new(&mut png)).ok()?;
+    let b64 = general_purpose::STANDARD.encode(&png);
+    Some(format!("data:image/png;base64,{b64}"))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn extract_icon_base64(_bundle: &Path) -> Option<String> {
+    None
 }
 
 // ——— Running-apps detection (macOS osascript) ——————————————————————————————

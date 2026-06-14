@@ -4406,6 +4406,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "applications",
+ "base64 0.22.1",
  "chrono",
  "dirs 5.0.1",
  "futures",
@@ -4416,6 +4417,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "tauri-icns",
  "tauri-plugin-dialog",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-shell",

@@ -9,6 +9,8 @@ export interface AppInfo {
 	executablePath: string | null;
 	/** Human-readable version, e.g. `4.2.1` or `1234`. May be null. */
 	version: string | null;
+	/** PNG icon as a base64 data URL, extracted from .icns at scan time. */
+	iconBase64: string | null;
 	/** True when the OS reports this app is currently running. */
 	running: boolean;
 }

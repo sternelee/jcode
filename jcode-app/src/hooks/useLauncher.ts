@@ -455,8 +455,12 @@ export function useLauncher() {
 	};
 }
 
-/** Convert an icon path into a URL the renderer can load. */
-export function appIconUrl(path: string | null | undefined): string | null {
+/** Convert an icon path or base64 data URL into a URL the renderer can load. */
+export function appIconUrl(
+	path: string | null | undefined,
+	base64: string | null | undefined,
+): string | null {
+	if (base64) return base64;
 	if (!path) return null;
 	try {
 		return convertFileSrc(path);

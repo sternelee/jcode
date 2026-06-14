@@ -23,8 +23,8 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 	message: MessageSquare,
 };
 
-function AppIcon({ appPath, name }: { appPath: string; name: string }) {
-	const url = appIconUrl(appPath);
+function AppIcon({ appPath, name, base64 }: { appPath: string; name: string; base64?: string | null }) {
+	const url = appIconUrl(appPath, base64);
 	const [errored, setErrored] = useState(false);
 	useEffect(() => {
 		setErrored(false);
@@ -213,6 +213,7 @@ function Body({
 						<AppIcon
 							appPath={item.app.iconPath ?? item.app.appPath}
 							name={item.app.name}
+							base64={item.app.iconBase64}
 						/>
 						{item.app.running && (
 							<span
