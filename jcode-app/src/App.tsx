@@ -109,6 +109,7 @@ export default function App() {
 		PermissionRequest[]
 	>([]);
 	const [helpOpen, setHelpOpen] = useState(false);
+	const [sidePanelOpen, setSidePanelOpen] = useState(true);
 	const [onboardingComplete, setOnboardingComplete] = useState(() => {
 		// Check if user has completed onboarding before
 		return localStorage.getItem("jcode-onboarding-complete") === "true";
@@ -959,6 +960,8 @@ export default function App() {
 							}
 							consultantFiles={[]}
 							skillFiles={[]}
+							open={sidePanelOpen}
+							onToggle={() => setSidePanelOpen((o) => !o)}
 						/>
 					</>
 				) : (

@@ -1,12 +1,21 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import type { SidePanelSnapshot } from "@/types";
-import { ListTodo, FileText, BookOpen, Circle } from "lucide-react";
+import {
+	ListTodo,
+	FileText,
+	BookOpen,
+	Circle,
+	PanelRightClose,
+	PanelRightOpen,
+} from "lucide-react";
 
 interface RightSidebarProps {
 	snapshot: SidePanelSnapshot | null;
 	consultantFiles: string[];
 	skillFiles: string[];
+	open: boolean;
+	onToggle: () => void;
 }
 
 /**
@@ -30,6 +39,8 @@ export function RightSidebar({
 	snapshot,
 	consultantFiles,
 	skillFiles,
+	open,
+	onToggle,
 }: RightSidebarProps) {
 	const pages = snapshot?.pages ?? [];
 
@@ -70,8 +81,32 @@ export function RightSidebar({
 	}, [consultantFiles, skillFiles]);
 
 	return (
-		<div className="h-full w-[300px] min-w-[300px] border-l border-border bg-card flex flex-col overflow-hidden">
-			{/* ── Progress section ── */}
+		<div className="flex h-full">
+			{/* Toggle strip */}
+			<div className="w-8 border-l border-border bg-card flex flex-col items-center py-3 gap-2 shrink-0">
+				<button
+					type="button"
+					onClick={onToggle}
+					title={open ? "Close side panel" : "Open side panel"}
+					className={cn(
+						"w-7 h-7 rounded-lg flex items-center justify-center transition-all",
+						open
+							? "text-primary bg-primary/10"
+							: "text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted",
+					)}
+				>
+					{open ? (
+						<PanelRightClose className="w-4 h-4" />
+					) : (
+						<PanelRightOpen className="w-4 h-4" />
+					)}
+				</button>
+			</div>
+
+			{/* Panel content */}
+			{open && (
+				<div className="w-[300px] min-w-[300px] border-l border-border bg-card flex flex-col overflow-hidden animate-slide-in-right">
+					{/* ── Progress section ── */}
 			<div className="flex-1 flex flex-col overflow-hidden min-h-0 border-b border-border">
 				<SectionHeader icon={ListTodo} label="Progress" count={progressItems.length} />
 				<div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
@@ -143,6 +178,8 @@ export function RightSidebar({
 					)}
 				</div>
 			</div>
+			</div>
+			)}
 		</div>
 	);
 }
