@@ -206,7 +206,10 @@ jobs:
       - name: Run e2e tests
         shell: bash
         run: |
-          python3 .github/scripts/run_with_timeout.py 900 \
+          # e2e is fast (~1-2 min of execution); the generous budget only guards
+          # against an occasional slow hosted runner. Compilation is already done
+          # in the dedicated compile step above.
+          python3 .github/scripts/run_with_timeout.py 600 \
             "$(rustup which cargo)" test --target ${{ matrix.target }} --test e2e
 
       - name: Check PowerShell script syntax (Windows)

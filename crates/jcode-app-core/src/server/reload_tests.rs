@@ -55,7 +55,7 @@ async fn receive_reload_signal_consumes_already_pending_value() {
 
     let signal = tokio::time::timeout(
         std::time::Duration::from_millis(100),
-        receive_reload_signal(&mut rx),
+        receive_reload_signal(&mut rx, &mut None),
     )
     .await
     .expect("pending signal should be observed immediately")
@@ -71,7 +71,7 @@ async fn receive_reload_signal_consumes_already_pending_value() {
 async fn receive_reload_signal_waits_for_future_value_when_initially_empty() {
     let (tx, mut rx) = watch::channel(None::<ReloadSignal>);
 
-    let waiter = tokio::spawn(async move { receive_reload_signal(&mut rx).await });
+    let waiter = tokio::spawn(async move { receive_reload_signal(&mut rx, &mut None).await });
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
 
     tx.send(Some(ReloadSignal {
