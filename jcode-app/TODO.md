@@ -53,13 +53,13 @@
 ## 🔴 高优先级（直接影响日常使用）
 
 ### Memory 高级管理
-大部分能力已实现，仍缺测试存储清理：
+已完整实现：
 - [x] `memory_list` — 列出所有记忆（支持 scope: project/global/all, tag 过滤）
 - [x] `memory_search` — 搜索记忆（支持关键词和语义搜索）
 - [x] `memory_export` — 导出记忆到 JSON 文件
 - [x] `memory_import` — 从 JSON 文件导入记忆
 - [x] `memory_stats` — 显示记忆统计信息
-- [ ] `memory_clear_test` — 清除测试记忆存储
+- [x] `memory_clear_test` — 清除测试记忆存储（Activity Panel → Memory → Clear test）
 
 ### Session 管理
 - [x] `session_rename` — 重命名会话

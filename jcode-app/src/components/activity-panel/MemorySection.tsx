@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,7 @@ export function MemorySection({
 	const [memoryScope, setMemoryScope] = useState<"all" | "project" | "global">(
 		"all",
 	);
+	const [clearTestStatus, setClearTestStatus] = useState<string | null>(null);
 
 	useEffect(() => {
 		void (async () => {
@@ -133,7 +134,36 @@ export function MemorySection({
 				>
 					Import
 				</Button>
+				<Button
+					variant="outline"
+					size="sm"
+					className="h-7 text-[10px] gap-1"
+					onClick={async () => {
+						try {
+							const result = await invoke<{ count: number }>("clear_test_memories");
+							const message =
+								result.count === 0
+									? "Test memory storage is already empty."
+									: `Cleared ${result.count} test memory file${result.count === 1 ? "" : "s"}.`;
+							setClearTestStatus(message);
+							const stats = await invoke<MemoryStats>("get_memory_stats");
+							setMemoryStats(stats);
+							const list = await invoke<{ memories: MemoryEntry[] }>("get_memory_list", { scope: memoryScope });
+							setMemoryEntries(list.memories.slice(0, 20));
+							window.setTimeout(() => setClearTestStatus(null), 4000);
+						} catch {
+							setClearTestStatus("Failed to clear test memory storage.");
+							window.setTimeout(() => setClearTestStatus(null), 4000);
+						}
+					}}
+				>
+					<Trash2 className="w-3 h-3" />
+					Clear test
+				</Button>
 			</div>
+			{clearTestStatus && (
+				<div className="text-[11px] text-muted-foreground">{clearTestStatus}</div>
+			)}
 			{memoryStats ? (
 				<div className="space-y-2">
 					<div className="grid grid-cols-3 gap-2">

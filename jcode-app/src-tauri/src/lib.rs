@@ -1074,6 +1074,24 @@ fn import_memories(path: String) -> Result<serde_json::Value, String> {
         "global_count": global_count,
     }))
 }
+#[tauri::command]
+fn clear_test_memories() -> Result<serde_json::Value, String> {
+    use jcode::storage;
+    let test_dir = storage::jcode_dir()
+        .map_err(|e| format!("Failed to resolve jcode dir: {e}"))?
+        .join("memory")
+        .join("test");
+    if !test_dir.exists() {
+        return Ok(serde_json::json!({ "count": 0 }));
+    }
+    let count = std::fs::read_dir(&test_dir)
+        .map_err(|e| format!("Failed to read test memory dir: {e}"))?
+        .count();
+    std::fs::remove_dir_all(&test_dir)
+        .map_err(|e| format!("Failed to clear test memory storage: {e}"))?;
+    Ok(serde_json::json!({ "count": count }))
+}
+
 
 #[tauri::command]
 async fn list_background_tasks() -> Result<Vec<serde_json::Value>, String> {
@@ -4045,6 +4063,7 @@ pub fn run() {
             get_memory_graph,
             export_memories,
             import_memories,
+            clear_test_memories,
             generate_pairing_code,
             list_paired_devices,
             revoke_device,
