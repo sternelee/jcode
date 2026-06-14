@@ -5,7 +5,7 @@ pub mod error;
 mod server_client;
 mod launcher;
 
-use commands::{AppState, SessionRuntime};
+use commands::AppState;
 use server_client::ServerClient;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};

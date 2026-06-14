@@ -1,13 +1,5 @@
 use crate::commands::*;
 use crate::error::TauriError;
-use crate::server_client::ServerClient;
-use crate::utils::*;
-use jcode::protocol::ServerEvent;
-use jcode::provider::Provider;
-use jcode::session::Session;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 #[derive(serde::Serialize)]
@@ -22,7 +14,7 @@ pub struct ShellCommandResult {
 pub async fn execute_shell_command(
     command: String,
     working_dir: Option<String>,
-) -> Result<ShellCommandResult, String> {
+) -> Result<ShellCommandResult, TauriError> {
     let started = std::time::Instant::now();
     let mut cmd = std::process::Command::new("bash");
     cmd.arg("-c").arg(&command);
@@ -60,19 +52,19 @@ pub async fn execute_shell_command(
                 duration_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
             })
         }
-        Err(e) => Err(format!("Failed to run command: {e}")),
+        Err(e) => Err(TauriError::Other(format!("Failed to run command: {e}"))),
     }
 }
 #[tauri::command]
 pub async fn search_applications(
     state: State<'_, AppState>,
     query: String,
-) -> Result<Vec<crate::launcher::AppInfo>, String> {
+) -> Result<Vec<crate::launcher::AppInfo>, TauriError> {
     let index = state.app_index.lock().await;
     let running = state
         .running_apps
         .lock()
-        .map_err(|e| format!("running-apps lock poisoned: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("running-apps lock poisoned: {e}")))?;
     let results = index.search_with_running(&query, &running);
     eprintln!(
         "[launcher] search_applications(\"{query}\") -> {} results (index has {} total)",
@@ -82,26 +74,26 @@ pub async fn search_applications(
     Ok(results)
 }
 #[tauri::command]
-pub async fn refresh_applications(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn refresh_applications(state: State<'_, AppState>) -> Result<(), TauriError> {
     let mut index = state.app_index.lock().await;
-    index.refresh()
+    index.refresh().map_err(|e| TauriError::from(e))
 }
 #[tauri::command]
 pub async fn launch_application(
     path: String,
     args: Option<Vec<String>>,
-) -> Result<(), String> {
-    crate::launcher::launch_application(&path, args)
+) -> Result<(), TauriError> {
+    crate::launcher::launch_application(&path, args).map_err(|e| TauriError::from(e))
 }
 #[tauri::command]
-pub async fn quit_application(bundle_id: String) -> Result<(), String> {
-    crate::launcher::quit_application(&bundle_id)
+pub async fn quit_application(bundle_id: String) -> Result<(), TauriError> {
+    crate::launcher::quit_application(&bundle_id).map_err(|e| TauriError::from(e))
 }
 #[tauri::command]
-pub async fn show_launcher(app_handle: AppHandle) -> Result<(), String> {
+pub async fn show_launcher(app_handle: AppHandle) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("launcher") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
+        window.show().map_err(|e| TauriError::from(e.to_string()))?;
+        window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
         // Mirror the global-hotkey behaviour: tell the launcher to reset
         // its query and re-focus the input. Without this, a Cmd+K
         // invocation from inside the workbench would show the launcher
@@ -111,22 +103,22 @@ pub async fn show_launcher(app_handle: AppHandle) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
-pub async fn hide_launcher(app_handle: AppHandle) -> Result<(), String> {
+pub async fn hide_launcher(app_handle: AppHandle) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("launcher") {
         let _ = window.hide();
     }
     Ok(())
 }
 #[tauri::command]
-pub async fn show_workbench(app_handle: AppHandle) -> Result<(), String> {
+pub async fn show_workbench(app_handle: AppHandle) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("workbench") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
+        window.show().map_err(|e| TauriError::from(e.to_string()))?;
+        window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
     }
     Ok(())
 }
 #[tauri::command]
-pub async fn hide_workbench(app_handle: AppHandle) -> Result<(), String> {
+pub async fn hide_workbench(app_handle: AppHandle) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("workbench") {
         let _ = window.hide();
     }
@@ -136,13 +128,13 @@ pub async fn hide_workbench(app_handle: AppHandle) -> Result<(), String> {
 pub async fn expand_to_workbench(
     app_handle: AppHandle,
     payload: Option<serde_json::Value>,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("launcher") {
         let _ = window.hide();
     }
     if let Some(window) = app_handle.get_webview_window("workbench") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
+        window.show().map_err(|e| TauriError::from(e.to_string()))?;
+        window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
     }
     if let Some(value) = payload {
         let event = match value.get("kind").and_then(|v| v.as_str()) {
@@ -154,9 +146,9 @@ pub async fn expand_to_workbench(
     Ok(())
 }
 #[tauri::command]
-pub async fn hide_pages_window(app_handle: AppHandle) -> Result<(), String> {
+pub async fn hide_pages_window(app_handle: AppHandle) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("pages") {
-        window.hide().map_err(|e| e.to_string())?;
+        window.hide().map_err(|e| TauriError::from(e.to_string()))?;
     }
     Ok(())
 }
@@ -164,38 +156,38 @@ pub async fn hide_pages_window(app_handle: AppHandle) -> Result<(), String> {
 pub async fn open_pages_window(
     app_handle: AppHandle,
     page: String,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("pages") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
+        window.show().map_err(|e| TauriError::from(e.to_string()))?;
+        window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
         let _ = app_handle.emit("pages:navigate", page);
     }
     Ok(())
 }
 #[tauri::command]
-pub async fn drag_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    window.start_dragging().map_err(|e| e.to_string())
+pub async fn drag_window(window: tauri::WebviewWindow) -> Result<(), TauriError> {
+    window.start_dragging().map_err(|e| TauriError::from(e.to_string()))
 }
 #[tauri::command]
-pub async fn minimize_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    window.minimize().map_err(|e| e.to_string())
+pub async fn minimize_window(window: tauri::WebviewWindow) -> Result<(), TauriError> {
+    window.minimize().map_err(|e| TauriError::from(e.to_string()))
 }
 #[tauri::command]
-pub async fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+pub async fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<(), TauriError> {
     #[cfg(target_os = "macos")]
     {
         // NSWindow UI operations (including -zoom:) must run on the main
         // thread. Tauri async commands run on the tokio thread pool, so we
         // dispatch to the main thread via run_on_main_thread and wait for it
         // to complete with a oneshot channel.
-        let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(), TauriError>>();
         window
             .clone()
             .run_on_main_thread(move || {
                 let result = (|| {
-                    let ns_window_ptr = window.ns_window().map_err(|e| e.to_string())?;
+                    let ns_window_ptr = window.ns_window().map_err(|e| TauriError::from(e.to_string()))?;
                     if ns_window_ptr.is_null() {
-                        return Err("native NSWindow is null".to_string());
+                        return Err(TauriError::Other("native NSWindow is null".to_string()));
                     }
                     unsafe {
                         use objc::runtime::Object;
@@ -206,16 +198,16 @@ pub async fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<(), 
                 })();
                 let _ = tx.send(result);
             })
-            .map_err(|e| e.to_string())?;
-        rx.recv().map_err(|e| e.to_string())?
+            .map_err(|e| TauriError::from(e.to_string()))?;
+        rx.recv().map_err(|e| TauriError::from(e.to_string()))?
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let maximized = window.is_maximized().map_err(|e| e.to_string())?;
+        let maximized = window.is_maximized().map_err(|e| TauriError::from(e.to_string()))?;
         if maximized {
-            window.unmaximize().map_err(|e| e.to_string())
+            window.unmaximize().map_err(|e| TauriError::from(e.to_string()))
         } else {
-            window.maximize().map_err(|e| e.to_string())
+            window.maximize().map_err(|e| TauriError::from(e.to_string()))
         }
     }
 }

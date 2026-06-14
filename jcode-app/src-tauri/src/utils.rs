@@ -1,4 +1,5 @@
 use crate::commands::{create_agent_with_session, setup_stdin_channel, AppState, SessionRuntime};
+use crate::error::TauriError;
 use jcode::message::{ContentBlock, Role, ToolCall};
 use jcode::provider::Provider;
 use jcode::session::{Session, StoredDisplayRole, StoredMessage};
@@ -631,7 +632,7 @@ pub async fn refresh_active_runtime_auth(
     app_handle: &AppHandle,
     state: &State<'_, AppState>,
     session_id: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if let Some(sid) = session_id {
         if let Ok(runtime) = get_runtime_by_session_id(state, sid).await {
             let provider = { runtime.agent.lock().await.provider_handle() };
@@ -1118,11 +1119,11 @@ pub fn latest_swarm_plan_summary(value: &Value) -> Option<serde_json::Value> {
     None
 }
 
-pub fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Value>, String> {
+pub fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Value>, TauriError> {
     let raw =
-        fs::read_to_string(path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+        fs::read_to_string(path).map_err(|e| TauriError::Other(format!("failed to read {}: {e}", path.display())))?;
     let value: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("failed to parse {}: {e}", path.display()))?;
+        .map_err(|e| TauriError::Other(format!("failed to parse {}: {e}", path.display())))?;
 
     let id = string_field(&value, "id")
         .or_else(|| {
@@ -1396,20 +1397,20 @@ pub fn live_phase_label(
     "idle"
 }
 
-pub async fn active_runtime(state: &State<'_, AppState>) -> Result<Arc<SessionRuntime>, String> {
+pub async fn active_runtime(state: &State<'_, AppState>) -> Result<Arc<SessionRuntime>, TauriError> {
     let active_session_id = state
         .active_session_id
         .lock()
         .await
         .clone()
-        .ok_or("No active session")?;
+        .ok_or_else(|| TauriError::Other("No active session".to_string()))?;
     get_runtime_by_session_id(state, &active_session_id).await
 }
 
 pub async fn get_runtime_by_session_id(
     state: &State<'_, AppState>,
     session_id: &str,
-) -> Result<Arc<SessionRuntime>, String> {
+) -> Result<Arc<SessionRuntime>, TauriError> {
     let runtime = state
         .runtimes
         .lock()
@@ -1428,10 +1429,10 @@ pub async fn load_session_runtime_silently(
     app_handle: &AppHandle,
     state: &State<'_, AppState>,
     session_id: &str,
-) -> Result<Arc<SessionRuntime>, String> {
+) -> Result<Arc<SessionRuntime>, TauriError> {
     eprintln!("[load_silently] loading session={} from disk", session_id);
     let session = Session::load(session_id)
-        .map_err(|e| format!("Session not found and cannot be auto-loaded: {session_id}: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Session not found and cannot be auto-loaded: {session_id}: {e}")))?;
     let provider = state.get_provider().await?.fork();
     if let Some(ref saved_model) = session.model {
         let model_arg = if let Some(ref pk) = session.provider_key {
@@ -1505,7 +1506,7 @@ pub async fn get_or_load_session_runtime(
     app_handle: &AppHandle,
     state: &State<'_, AppState>,
     session_id: &str,
-) -> Result<Arc<SessionRuntime>, String> {
+) -> Result<Arc<SessionRuntime>, TauriError> {
     if let Ok(rt) = get_runtime_by_session_id(state, session_id).await {
         return Ok(rt);
     }
@@ -1515,7 +1516,7 @@ pub async fn get_or_load_session_runtime(
 pub async fn emit_runtime_snapshot(
     app_handle: &AppHandle,
     runtime: &Arc<SessionRuntime>,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     let session_id = runtime.session_id.clone();
     let snapshot = if let Ok(agent) = runtime.agent.try_lock() {
         let provider = agent.provider_handle();
@@ -1546,7 +1547,7 @@ pub async fn emit_runtime_snapshot(
     } else {
         let session = Session::load(&session_id)
             .or_else(|_| Session::load_startup_stub(&session_id))
-            .map_err(|e| format!("Failed to snapshot busy session {}: {e}", &session_id))?;
+            .map_err(|e| TauriError::Other(format!("Failed to snapshot busy session {}: {e}", &session_id)))?;
         (
             serde_json::to_value(desktop_history_messages(&session))
                 .unwrap_or(serde_json::json!([])),
@@ -1608,7 +1609,7 @@ pub async fn register_runtime_and_emit(
     app_handle: &AppHandle,
     state: &AppState,
     agent: jcode::agent::Agent,
-) -> Result<Arc<SessionRuntime>, String> {
+) -> Result<Arc<SessionRuntime>, TauriError> {
     register_runtime_and_emit_with_active(app_handle, state, agent, true).await
 }
 
@@ -1617,7 +1618,7 @@ pub async fn register_runtime_and_emit_with_active(
     state: &AppState,
     mut agent: jcode::agent::Agent,
     make_active: bool,
-) -> Result<Arc<SessionRuntime>, String> {
+) -> Result<Arc<SessionRuntime>, TauriError> {
     let session_id = agent.session_id().to_string();
     let cancel_signal = agent.graceful_shutdown_signal();
     let (_stdin_tx, mut stdin_rx) = setup_stdin_channel(&mut agent);
@@ -1698,5 +1699,56 @@ pub fn infer_provider_name_from_model(provider_name: &str, model: &str) -> Strin
             .unwrap_or(name)
     } else {
         name
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn message_role_maps_display_role() {
+        use jcode::message::Role;
+        use jcode::session::{StoredDisplayRole, StoredMessage};
+        let msg = StoredMessage {
+            id: "1".to_string(),
+            role: Role::User,
+            content: vec![],
+            display_role: Some(StoredDisplayRole::System),
+            timestamp: None,
+            tool_duration_ms: None,
+            token_usage: None,
+        };
+        assert_eq!(message_role(&msg), "system");
+    }
+
+    #[test]
+    fn message_role_defaults_to_role() {
+        use jcode::message::Role;
+        use jcode::session::StoredMessage;
+        let msg = StoredMessage {
+            id: "2".to_string(),
+            role: Role::Assistant,
+            content: vec![],
+            display_role: None,
+            timestamp: None,
+            tool_duration_ms: None,
+            token_usage: None,
+        };
+        assert_eq!(message_role(&msg), "assistant");
+    }
+    #[test]
+    fn normalize_preview_text_collapses_whitespace() {
+        assert_eq!(normalize_preview_text("  a  \n\t b  c  "), "a b c");
+    }
+    #[test]
+    fn short_session_name_strips_prefix_and_first_segment() {
+        assert_eq!(short_session_name("session_fox_owl_bear"), "fox");
+        assert_eq!(short_session_name("plain_id"), "plain_id");
+    }
+
+    #[test]
+    fn short_session_name_keeps_simple_id() {
+        assert_eq!(short_session_name("fox"), "fox");
     }
 }

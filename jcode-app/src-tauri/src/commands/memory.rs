@@ -1,17 +1,7 @@
-use crate::commands::*;
 use crate::error::TauriError;
-use crate::server_client::ServerClient;
-use crate::utils::*;
-use jcode::protocol::ServerEvent;
-use jcode::provider::Provider;
-use jcode::session::Session;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
-pub async fn get_workspace_memory_preferences() -> Result<serde_json::Value, String> {
+pub async fn get_workspace_memory_preferences() -> Result<serde_json::Value, TauriError> {
     let cfg = jcode::config::Config::load();
     Ok(serde_json::json!({
         "default_enabled": cfg.workspace_memory.default_enabled.unwrap_or(cfg.features.memory),
@@ -22,12 +12,12 @@ pub async fn get_workspace_memory_preferences() -> Result<serde_json::Value, Str
 pub async fn set_workspace_memory_preference(
     working_dir: Option<String>,
     enabled: bool,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     jcode::config::Config::set_workspace_memory_enabled(working_dir.as_deref(), enabled)
-        .map_err(|e| format!("Failed to save workspace memory preference: {e}"))
+        .map_err(|e| TauriError::Other(format!("Failed to save workspace memory preference: {e}")))
 }
 #[tauri::command]
-pub fn get_memory_list(scope: String, tag: Option<String>) -> Result<serde_json::Value, String> {
+pub fn get_memory_list(scope: String, tag: Option<String>) -> Result<serde_json::Value, TauriError> {
     use jcode::memory::MemoryManager;
     let manager = MemoryManager::new();
     let mut all_memories: Vec<serde_json::Value> = Vec::new();
@@ -84,7 +74,7 @@ fn memory_entry_to_json(entry: &jcode::memory_types::MemoryEntry) -> serde_json:
     })
 }
 #[tauri::command]
-pub fn search_memories(query: String, semantic: bool) -> Result<serde_json::Value, String> {
+pub fn search_memories(query: String, semantic: bool) -> Result<serde_json::Value, TauriError> {
     use jcode::memory::MemoryManager;
     let manager = MemoryManager::new();
     let mut results: Vec<serde_json::Value> = Vec::new();
@@ -100,7 +90,7 @@ pub fn search_memories(query: String, semantic: bool) -> Result<serde_json::Valu
                     results.push(json);
                 }
             }
-            Err(e) => return Err(format!("Semantic search failed: {e}")),
+            Err(e) => return Err(TauriError::Other(format!("Semantic search failed: {e}"))),
         }
     } else {
         match manager.search(&query) {
@@ -109,14 +99,14 @@ pub fn search_memories(query: String, semantic: bool) -> Result<serde_json::Valu
                     results.push(memory_entry_to_json(&entry));
                 }
             }
-            Err(e) => return Err(format!("Keyword search failed: {e}")),
+            Err(e) => return Err(TauriError::Other(format!("Keyword search failed: {e}"))),
         }
     }
 
     Ok(serde_json::json!({ "results": results }))
 }
 #[tauri::command]
-pub fn get_memory_stats() -> Result<serde_json::Value, String> {
+pub fn get_memory_stats() -> Result<serde_json::Value, TauriError> {
     use jcode::memory::MemoryManager;
     let manager = MemoryManager::new();
     let mut project_count = 0usize;
@@ -153,7 +143,7 @@ pub fn get_memory_stats() -> Result<serde_json::Value, String> {
     }))
 }
 #[tauri::command]
-pub fn get_memory_graph() -> Result<serde_json::Value, String> {
+pub fn get_memory_graph() -> Result<serde_json::Value, TauriError> {
     use jcode::memory::MemoryManager;
     use jcode::tui::info_widget::build_graph_topology;
 
@@ -197,16 +187,16 @@ pub fn get_memory_graph() -> Result<serde_json::Value, String> {
     }))
 }
 #[tauri::command]
-pub fn export_memories(path: String) -> Result<(), String> {
+pub fn export_memories(path: String) -> Result<(), TauriError> {
     use jcode::memory::MemoryManager;
     let manager = MemoryManager::new();
 
     let project_graph = manager
         .load_project_graph()
-        .map_err(|e| format!("Failed to load project memories: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to load project memories: {e}")))?;
     let global_graph = manager
         .load_global_graph()
-        .map_err(|e| format!("Failed to load global memories: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to load global memories: {e}")))?;
 
     let export = serde_json::json!({
         "version": 1,
@@ -217,21 +207,21 @@ pub fn export_memories(path: String) -> Result<(), String> {
 
     std::fs::write(
         &path,
-        serde_json::to_string_pretty(&export).map_err(|e| e.to_string())?,
+        serde_json::to_string_pretty(&export).map_err(|e| TauriError::from(e.to_string()))?,
     )
-    .map_err(|e| format!("Failed to write export file: {e}"))?;
+    .map_err(|e| TauriError::Other(format!("Failed to write export file: {e}")))?;
 
     Ok(())
 }
 #[tauri::command]
-pub fn import_memories(path: String) -> Result<serde_json::Value, String> {
+pub fn import_memories(path: String) -> Result<serde_json::Value, TauriError> {
     use jcode::memory::MemoryManager;
     let manager = MemoryManager::new();
 
     let content =
-        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read import file: {e}"))?;
+        std::fs::read_to_string(&path).map_err(|e| TauriError::Other(format!("Failed to read import file: {e}")))?;
     let value: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse import file: {e}"))?;
+        serde_json::from_str(&content).map_err(|e| TauriError::Other(format!("Failed to parse import file: {e}")))?;
 
     let mut project_count = 0usize;
     let mut global_count = 0usize;
@@ -239,7 +229,7 @@ pub fn import_memories(path: String) -> Result<serde_json::Value, String> {
     if let Some(entries) = value.get("project_memories").and_then(|v| v.as_array()) {
         let mut graph = manager
             .load_project_graph()
-            .map_err(|e| format!("Failed to load project graph: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to load project graph: {e}")))?;
         for entry_value in entries {
             if let Ok(entry) =
                 serde_json::from_value::<jcode::memory_types::MemoryEntry>(entry_value.clone())
@@ -250,13 +240,13 @@ pub fn import_memories(path: String) -> Result<serde_json::Value, String> {
         }
         manager
             .save_project_graph(&graph)
-            .map_err(|e| format!("Failed to save project graph: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to save project graph: {e}")))?;
     }
 
     if let Some(entries) = value.get("global_memories").and_then(|v| v.as_array()) {
         let mut graph = manager
             .load_global_graph()
-            .map_err(|e| format!("Failed to load global graph: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to load global graph: {e}")))?;
         for entry_value in entries {
             if let Ok(entry) =
                 serde_json::from_value::<jcode::memory_types::MemoryEntry>(entry_value.clone())
@@ -267,7 +257,7 @@ pub fn import_memories(path: String) -> Result<serde_json::Value, String> {
         }
         manager
             .save_global_graph(&graph)
-            .map_err(|e| format!("Failed to save global graph: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to save global graph: {e}")))?;
     }
 
     Ok(serde_json::json!({
@@ -276,19 +266,51 @@ pub fn import_memories(path: String) -> Result<serde_json::Value, String> {
     }))
 }
 #[tauri::command]
-pub fn clear_test_memories() -> Result<serde_json::Value, String> {
+pub fn clear_test_memories() -> Result<serde_json::Value, TauriError> {
     use jcode::storage;
     let test_dir = storage::jcode_dir()
-        .map_err(|e| format!("Failed to resolve jcode dir: {e}"))?
+        .map_err(|e| TauriError::Other(format!("Failed to resolve jcode dir: {e}")))?
         .join("memory")
         .join("test");
     if !test_dir.exists() {
         return Ok(serde_json::json!({ "count": 0 }));
     }
     let count = std::fs::read_dir(&test_dir)
-        .map_err(|e| format!("Failed to read test memory dir: {e}"))?
+        .map_err(|e| TauriError::Other(format!("Failed to read test memory dir: {e}")))?
         .count();
     std::fs::remove_dir_all(&test_dir)
-        .map_err(|e| format!("Failed to clear test memory storage: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to clear test memory storage: {e}")))?;
     Ok(serde_json::json!({ "count": count }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn memory_entry_to_json_includes_all_fields() {
+        let entry = jcode::memory_types::MemoryEntry {
+            id: "mem-1".to_string(),
+            category: jcode::memory_types::MemoryCategory::Custom("note".to_string()),
+            content: "hello world".to_string(),
+            tags: vec!["tag1".to_string()],
+            search_text: String::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            access_count: 0,
+            source: Some("test".to_string()),
+            trust: jcode::memory_types::TrustLevel::default(),
+            strength: 0,
+            active: true,
+            superseded_by: None,
+            reinforcements: vec![],
+            embedding: None,
+            confidence: 1.0,
+        };
+        let json = memory_entry_to_json(&entry);
+        assert_eq!(json["id"], "mem-1");
+        assert_eq!(json["content"], "hello world");
+        assert_eq!(json["category"], "note");
+        assert_eq!(json["source"], "test");
+    }
 }

@@ -1,6 +1,5 @@
 use crate::commands::*;
 use crate::error::TauriError;
-use crate::server_client::ServerClient;
 use crate::utils::*;
 use jcode::protocol::ServerEvent;
 use jcode::provider::Provider;
@@ -19,7 +18,7 @@ pub async fn begin_session(
     memory_enabled: Option<bool>,
     role_name: Option<String>,
     profile_id: Option<String>,
-) -> Result<String, String> {
+) -> Result<String, TauriError> {
     let provider = state.get_provider().await?.fork();
     if let Some(ref model_name) = model {
         let model_arg = if let Some(pid) = profile_id
@@ -32,7 +31,7 @@ pub async fn begin_session(
             model_name.clone()
         };
         jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg)
-            .map_err(|e| format!("Failed to set model: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to set model: {e}")))?;
     }
 
     let mut session = Session::create(None, None);
@@ -76,7 +75,7 @@ pub async fn begin_swarm(
     coordinator_profile_id: Option<String>,
     memory_enabled: Option<bool>,
     members: Vec<SwarmMemberRequest>,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<String>, TauriError> {
     let provider = state.get_provider().await?;
 
     // -- Coordinator --
@@ -92,7 +91,7 @@ pub async fn begin_swarm(
             model_name.clone()
         };
         jcode::provider::set_model_with_auth_refresh(coordinator_provider.as_ref(), &model_arg)
-            .map_err(|e| format!("Failed to set coordinator model: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to set coordinator model: {e}")))?;
     }
 
     let mut coordinator_session = Session::create(None, None);
@@ -103,7 +102,7 @@ pub async fn begin_swarm(
     coordinator_session.rename_title(Some("Coordinator".to_string()));
     coordinator_session
         .save()
-        .map_err(|e| format!("Failed to persist coordinator session: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to persist coordinator session: {e}")))?;
 
     let mut coordinator_agent = create_agent_with_session(
         coordinator_provider,
@@ -160,17 +159,17 @@ pub async fn begin_swarm(
             session.rename_title(Some(role_name.clone()));
             session
                 .save()
-                .map_err(|e| format!("Failed to persist member session '{}': {}", role_name, e))?;
+                .map_err(|e| TauriError::Other(format!("Failed to persist member session '{}': {}", role_name, e)))?;
 
             let mut agent = create_agent_with_session(provider, session, working_dir.as_deref())
                 .await
-                .map_err(|e| format!("Swarm creation failed for member '{}': {}.", role_name, e))?;
+                .map_err(|e| TauriError::Other(format!("Swarm creation failed for member '{}': {}.", role_name, e)))?;
             agent.set_memory_enabled(resolved_memory_enabled);
 
             let runtime = register_runtime_and_emit_with_active(&app_handle, &state, agent, false)
                 .await
-                .map_err(|e| format!("Swarm creation failed for member '{}': {}.", role_name, e))?;
-            Ok::<String, String>(runtime.session_id.clone())
+                .map_err(|e| TauriError::Other(format!("Swarm creation failed for member '{}': {}.", role_name, e)))?;
+            Ok::<String, TauriError>(runtime.session_id.clone())
         }
         .await;
 
@@ -190,7 +189,7 @@ pub async fn begin_swarm(
                     let _ = state.runtimes.lock().await.remove(id);
                     state.swarm.lock().await.remove_session(id);
                 }
-                return Err(format!("{} All sessions rolled back.", e));
+                return Err(TauriError::Other(format!("{} All sessions rolled back.", e)));
             }
         }
     }
@@ -206,7 +205,7 @@ pub async fn add_swarm_member(
     model: Option<String>,
     provider_key: Option<String>,
     memory_enabled: Option<bool>,
-) -> Result<String, String> {
+) -> Result<String, TauriError> {
     let trimmed_provider_key = provider_key
         .as_deref()
         .map(str::trim)
@@ -221,7 +220,7 @@ pub async fn add_swarm_member(
             model_name.clone()
         };
         jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg)
-            .map_err(|e| format!("Failed to set swarm member model: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to set swarm member model: {e}")))?;
     }
 
     let mut session = Session::create(None, None);
@@ -231,7 +230,7 @@ pub async fn add_swarm_member(
     session.rename_title(Some(role_name.clone()));
     session
         .save()
-        .map_err(|e| format!("Failed to persist member session '{}': {}", role_name, e))?;
+        .map_err(|e| TauriError::Other(format!("Failed to persist member session '{}': {}", role_name, e)))?;
 
     let mut agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
     let resolved_memory_enabled = memory_enabled.unwrap_or_else(|| {
@@ -248,7 +247,7 @@ pub async fn resume_session(
     state: State<'_, AppState>,
     session_id: String,
     working_dir: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if let Some(runtime) = state.runtimes.lock().await.get(&session_id).cloned() {
         {
             let mut active = state.active_session_id.lock().await;
@@ -340,7 +339,7 @@ pub async fn resume_session(
     }
 
     let session = Session::load(&session_id)
-        .map_err(|e| format!("Failed to load session {}: {e}", &session_id))?;
+        .map_err(|e| TauriError::Other(format!("Failed to load session {}: {e}", &session_id)))?;
     let provider = state.get_provider().await?.fork();
     if let Some(ref saved_model) = session.model {
         let model_arg = if let Some(ref pk) = session.provider_key {
@@ -355,6 +354,7 @@ pub async fn resume_session(
     register_runtime_and_emit(&app_handle, &state, agent)
         .await
         .map(|_| ())
+        .map_err(|e| TauriError::from(e))
 }
 #[tauri::command]
 pub async fn send_message(
@@ -364,7 +364,7 @@ pub async fn send_message(
     content: String,
     images: Option<Vec<(String, String)>>,
     system_reminder: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     eprintln!(
         "[send_message] → session={} content={:?}",
         session_id,
@@ -393,7 +393,7 @@ pub async fn send_message(
         }
         Err(e) => {
             eprintln!("[send_message] ERROR: runtime not found: {e}");
-            return Err(e);
+            return Err(TauriError::from(e));
         }
     };
     {
@@ -655,7 +655,7 @@ pub async fn send_message(
     Ok(())
 }
 #[tauri::command]
-pub async fn cancel(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+pub async fn cancel(state: State<'_, AppState>, session_id: String) -> Result<(), TauriError> {
     if state.server_managed_sessions.lock().await.contains(&session_id) {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::Cancel { id: 1 };
@@ -672,7 +672,7 @@ pub async fn send_soft_interrupt(
     session_id: String,
     content: String,
     urgent: bool,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if state.server_managed_sessions.lock().await.contains(&session_id) {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::SoftInterrupt {
@@ -698,7 +698,7 @@ pub async fn set_model(
     session_id: String,
     model: String,
     profile_id: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if state.server_managed_sessions.lock().await.contains(&session_id) {
         let client = get_server_client(&state)?;
         let model_arg = if let Some(pid) = profile_id
@@ -730,7 +730,7 @@ pub async fn set_model(
     };
     guard
         .set_model(&model_arg)
-        .map_err(|e| format!("Failed to set model: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to set model: {e}")))?;
     let provider = guard.provider_handle();
     let current = provider.model();
     let provider_name = infer_provider_name_from_model(provider.name(), &current);
@@ -755,7 +755,7 @@ pub async fn set_memory_enabled(
     state: State<'_, AppState>,
     session_id: String,
     enabled: bool,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     let runtime = get_runtime_by_session_id(&state, &session_id).await?;
     let mut guard = runtime.agent.lock().await;
     guard.set_memory_enabled(enabled);
@@ -768,19 +768,19 @@ pub async fn set_memory_enabled(
         .ok();
     Ok(())
 }
-fn delete_session_artifacts(session_id: &str) -> Result<(), String> {
+fn delete_session_artifacts(session_id: &str) -> Result<(), TauriError> {
     let session_path = jcode::session::session_path(session_id)
-        .map_err(|e| format!("Failed to resolve session path for {session_id}: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to resolve session path for {session_id}: {e}")))?;
     if session_path.exists() {
         fs::remove_file(&session_path)
-            .map_err(|e| format!("Failed to remove {}: {e}", session_path.display()))?;
+            .map_err(|e| TauriError::Other(format!("Failed to remove {}: {e}", session_path.display())))?;
     }
 
     let journal_path = jcode::session::session_journal_path(session_id)
-        .map_err(|e| format!("Failed to resolve journal path for {session_id}: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to resolve journal path for {session_id}: {e}")))?;
     if journal_path.exists() {
         fs::remove_file(&journal_path)
-            .map_err(|e| format!("Failed to remove {}: {e}", journal_path.display()))?;
+            .map_err(|e| TauriError::Other(format!("Failed to remove {}: {e}", journal_path.display())))?;
     }
 
     Ok(())
@@ -790,7 +790,7 @@ pub async fn rename_session(
     state: State<'_, AppState>,
     session_id: String,
     title: String,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if state.server_managed_sessions.lock().await.contains(&session_id) {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::RenameSession {
@@ -801,15 +801,15 @@ pub async fn rename_session(
         return Ok(());
     }
     let session_path = jcode::session::session_path(&session_id)
-        .map_err(|e| format!("Failed to resolve session path for {session_id}: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to resolve session path for {session_id}: {e}")))?;
     if !session_path.exists() {
-        return Err(format!("Session file not found for {session_id}"));
+        return Err(TauriError::Other(format!("Session file not found for {session_id}")));
     }
 
     let raw = fs::read_to_string(&session_path)
-        .map_err(|e| format!("failed to read {}: {e}", session_path.display()))?;
+        .map_err(|e| TauriError::Other(format!("failed to read {}: {e}", session_path.display())))?;
     let mut value: Value = serde_json::from_str(&raw)
-        .map_err(|e| format!("failed to parse {}: {e}", session_path.display()))?;
+        .map_err(|e| TauriError::Other(format!("failed to parse {}: {e}", session_path.display())))?;
 
     value["custom_title"] = serde_json::json!(title.trim());
 
@@ -817,15 +817,15 @@ pub async fn rename_session(
         &session_path,
         serde_json::to_string_pretty(&value).unwrap_or_default(),
     )
-    .map_err(|e| format!("failed to write {}: {e}", session_path.display()))?;
+    .map_err(|e| TauriError::Other(format!("failed to write {}: {e}", session_path.display())))?;
 
     Ok(())
 }
 #[tauri::command]
-pub async fn delete_session(state: State<'_, AppState>, session_id: String) -> Result<(), String> {
+pub async fn delete_session(state: State<'_, AppState>, session_id: String) -> Result<(), TauriError> {
     if let Some(runtime) = state.runtimes.lock().await.get(&session_id).cloned() {
         if *runtime.is_processing.lock().await {
-            return Err("Cannot delete a running session.".to_string());
+            return Err(TauriError::Other("Cannot delete a running session.".to_string()));
         }
     }
 
@@ -847,7 +847,7 @@ pub async fn delete_session(state: State<'_, AppState>, session_id: String) -> R
 pub async fn delete_workspace_sessions(
     state: State<'_, AppState>,
     working_dir: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, TauriError> {
     let workspace_key = working_dir
         .as_deref()
         .filter(|value| !value.trim().is_empty())
@@ -878,21 +878,21 @@ pub async fn delete_workspace_sessions(
     }
 
     if !blocked_sessions.is_empty() {
-        return Err(format!(
+        return Err(TauriError::Other(format!(
             "Cannot delete workspace while active/running sessions exist: {}",
-            blocked_sessions.join(", ")
+            blocked_sessions.join(", "))
         ));
     }
 
     let dir = jcode::storage::jcode_dir()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| TauriError::from(e.to_string()))?
         .join("sessions");
     if !dir.exists() {
         return Ok(serde_json::json!({ "deleted_count": 0, "deleted_ids": Vec::<String>::new() }));
     }
 
     let candidates = fs::read_dir(&dir)
-        .map_err(|e| format!("failed to read {}: {e}", dir.display()))?
+        .map_err(|e| TauriError::Other(format!("failed to read {}: {e}", dir.display())))?
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| session_file_candidate(entry.path()))
         .collect::<Vec<_>>();
@@ -938,21 +938,21 @@ pub async fn delete_workspace_sessions(
 #[tauri::command]
 pub async fn get_workspace_thread_history(
     working_dir: Option<String>,
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<Vec<serde_json::Value>, TauriError> {
     let workspace_key = working_dir
         .as_deref()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("default")
         .to_string();
     let dir = jcode::storage::jcode_dir()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| TauriError::from(e.to_string()))?
         .join("sessions");
     if !dir.exists() {
         return Ok(Vec::new());
     }
 
     let mut candidates = fs::read_dir(&dir)
-        .map_err(|e| format!("failed to read {}: {e}", dir.display()))?
+        .map_err(|e| TauriError::Other(format!("failed to read {}: {e}", dir.display())))?
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| session_file_candidate(entry.path()))
         .collect::<Vec<_>>();
@@ -1007,16 +1007,16 @@ pub async fn get_workspace_thread_history(
     Ok(messages)
 }
 #[tauri::command]
-pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, String> {
+pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, TauriError> {
     let dir = jcode::storage::jcode_dir()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| TauriError::from(e.to_string()))?
         .join("sessions");
     if !dir.exists() {
         return Ok(Vec::new());
     }
 
     let mut candidates = fs::read_dir(&dir)
-        .map_err(|e| format!("failed to read {}: {e}", dir.display()))?
+        .map_err(|e| TauriError::Other(format!("failed to read {}: {e}", dir.display())))?
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| session_file_candidate(entry.path()))
         .collect::<Vec<_>>();
@@ -1288,7 +1288,7 @@ pub async fn send_stdin_response(
     state: State<'_, AppState>,
     request_id: String,
     input: String,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     let active = state.active_session_id.lock().await.clone();
     if let Some(ref session_id) = active {
         if state.server_managed_sessions.lock().await.contains(session_id) {
@@ -1307,7 +1307,7 @@ pub async fn send_stdin_response(
         let _ = tx.send(input);
         Ok(())
     } else {
-        Err(format!("No pending stdin request with id {}", request_id))
+        Err(TauriError::Other(format!("No pending stdin request with id {}", request_id)))
     }
 }
 #[tauri::command]
@@ -1315,7 +1315,7 @@ pub async fn clear_chat(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if state.server_managed_sessions.lock().await.contains(&session_id) {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::Clear { id: 1 };
@@ -1326,7 +1326,7 @@ pub async fn clear_chat(
     // In swarm/workspace mode, clear every session that shares the same
     // working directory so the whole thread is wiped.
     let target_session = jcode::session::Session::load(&session_id)
-        .map_err(|e| format!("Failed to load session: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to load session: {e}")))?;
     let workspace = target_session.working_dir;
 
     let runtimes = state.runtimes.lock().await;
@@ -1370,7 +1370,7 @@ pub async fn rewind_chat(
     state: State<'_, AppState>,
     session_id: String,
     message_index: usize,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if state.server_managed_sessions.lock().await.contains(&session_id) {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::Rewind { id: 1, message_index };
@@ -1381,7 +1381,7 @@ pub async fn rewind_chat(
     let mut guard = runtime.agent.lock().await;
     guard
         .rewind_to_message(message_index)
-        .map_err(|e| format!("Failed to rewind: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to rewind: {e}")))?;
     drop(guard);
     app_handle
         .emit(
@@ -1397,7 +1397,7 @@ pub async fn set_reasoning_effort(
     state: State<'_, AppState>,
     session_id: String,
     effort: String,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if state.server_managed_sessions.lock().await.contains(&session_id) {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::SetReasoningEffort {
@@ -1412,7 +1412,7 @@ pub async fn set_reasoning_effort(
     let mut guard = runtime.agent.lock().await;
     let current = guard
         .set_reasoning_effort(&effort)
-        .map_err(|e| format!("Failed to set reasoning effort: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to set reasoning effort: {e}")))?;
     drop(guard);
     app_handle
         .emit(
@@ -1432,7 +1432,7 @@ pub async fn compact_context(
     app_handle: AppHandle,
     state: State<'_, AppState>,
     session_id: String,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     if state.server_managed_sessions.lock().await.contains(&session_id) {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::Compact { id: 1 };

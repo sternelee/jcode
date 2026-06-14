@@ -1,14 +1,8 @@
 use crate::commands::*;
 use crate::error::TauriError;
-use crate::server_client::ServerClient;
 use crate::utils::*;
-use jcode::protocol::ServerEvent;
 use jcode::provider::Provider;
-use jcode::session::Session;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, State};
 
 use jcode::cli::login::scriptable::{complete_scriptable_login_data, start_scriptable_login_data};
 use jcode::cli::login::LoginOptions;
@@ -18,7 +12,7 @@ use jcode::provider_catalog::resolve_login_provider;
 pub async fn run_auth_test(
     state: State<'_, AppState>,
     provider_id: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, TauriError> {
     let provider = state.get_provider().await?;
 
     // If a specific provider_id is given, try to set a model from that provider
@@ -55,7 +49,7 @@ pub async fn run_auth_test(
     }
 }
 #[tauri::command]
-pub fn run_auth_doctor() -> Result<serde_json::Value, String> {
+pub fn run_auth_doctor() -> Result<serde_json::Value, TauriError> {
     let status = jcode::auth::AuthStatus::check();
     let validation = jcode::auth::validation::load_all();
     let providers = jcode::provider_catalog::auth_status_login_providers();
@@ -115,7 +109,7 @@ pub fn run_auth_doctor() -> Result<serde_json::Value, String> {
     }))
 }
 #[tauri::command]
-pub fn get_auth_status() -> Result<serde_json::Value, String> {
+pub fn get_auth_status() -> Result<serde_json::Value, TauriError> {
     let status = jcode::auth::AuthStatus::check();
     let validation = jcode::auth::validation::load_all();
     let providers = jcode::provider_catalog::auth_status_login_providers();
@@ -147,7 +141,7 @@ pub fn get_auth_status() -> Result<serde_json::Value, String> {
     }))
 }
 #[tauri::command]
-pub async fn get_usage_info() -> Result<serde_json::Value, String> {
+pub async fn get_usage_info() -> Result<serde_json::Value, TauriError> {
     let providers = jcode::usage::fetch_all_provider_usage().await;
     let reports: Vec<serde_json::Value> = providers
         .into_iter()
@@ -168,9 +162,9 @@ pub async fn get_usage_info() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "providers": reports }))
 }
 #[tauri::command]
-pub async fn get_external_auth_candidates() -> Result<serde_json::Value, String> {
+pub async fn get_external_auth_candidates() -> Result<serde_json::Value, TauriError> {
     let candidates = jcode::external_auth::pending_external_auth_review_candidates()
-        .map_err(|e| format!("Failed to check external auth sources: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to check external auth sources: {e}")))?;
     let items: Vec<serde_json::Value> = candidates
         .iter()
         .enumerate()
@@ -186,18 +180,18 @@ pub async fn get_external_auth_candidates() -> Result<serde_json::Value, String>
     Ok(serde_json::json!({ "candidates": items, "total": items.len() }))
 }
 #[tauri::command]
-pub async fn approve_external_auth_candidate(index: usize) -> Result<serde_json::Value, String> {
+pub async fn approve_external_auth_candidate(index: usize) -> Result<serde_json::Value, TauriError> {
     let candidates = jcode::external_auth::pending_external_auth_review_candidates()
-        .map_err(|e| format!("Failed to check external auth sources: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to check external auth sources: {e}")))?;
     if index >= candidates.len() {
-        return Err(format!(
+        return Err(TauriError::Other(format!(
             "Invalid candidate index {index} (only {} available)",
             candidates.len()
-        ));
+        )));
     }
     let candidate = &candidates[index];
     jcode::external_auth::approve_external_auth_review_candidate(candidate)
-        .map_err(|e| format!("Failed to import auth source: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to import auth source: {e}")))?;
     let validation: String =
         jcode::external_auth::validate_external_auth_review_candidate(candidate)
             .await
@@ -210,7 +204,7 @@ pub async fn approve_external_auth_candidate(index: usize) -> Result<serde_json:
     }))
 }
 #[tauri::command]
-pub async fn check_cursor_auth_status() -> Result<serde_json::Value, String> {
+pub async fn check_cursor_auth_status() -> Result<serde_json::Value, TauriError> {
     let has_api_key = jcode::auth::cursor::has_cursor_api_key();
     let has_native = jcode::auth::cursor::has_cursor_native_auth();
     let has_vscdb = jcode::auth::cursor::has_cursor_vscdb_token();
@@ -231,7 +225,7 @@ pub async fn run_provider_doctor(
     provider_id: String,
     model: Option<String>,
     tier: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, TauriError> {
     use jcode::auth::provider_e2e::{run_provider_e2e, DoctorTier};
     use jcode::provider_catalog;
 
@@ -260,15 +254,15 @@ pub async fn run_provider_doctor(
     let api_key_ref = api_key.as_deref().filter(|k| !k.trim().is_empty());
 
     if doctor_tier.requires_api_key() && api_key_ref.is_none() {
-        return Err(format!(
+        return Err(TauriError::Other(format!(
             "Provider '{provider_id}' requires an API key for {:?} tier",
             doctor_tier
-        ));
+        )));
     }
 
     let report = run_provider_e2e(*profile, api_key_ref, model.as_deref(), doctor_tier)
         .await
-        .map_err(|e| format!("Provider doctor failed: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Provider doctor failed: {e}")))?;
 
     Ok(serde_json::json!({
         "provider_id": report.provider_id,
@@ -296,7 +290,7 @@ pub async fn run_provider_doctor(
     }))
 }
 #[tauri::command]
-pub async fn test_provider_connection(provider_id: String) -> Result<serde_json::Value, String> {
+pub async fn test_provider_connection(provider_id: String) -> Result<serde_json::Value, TauriError> {
     use jcode::auth::live_provider_probes::fetch_live_openai_compatible_models;
     use jcode::provider_catalog;
 
@@ -321,7 +315,7 @@ pub async fn test_provider_connection(provider_id: String) -> Result<serde_json:
     let start = std::time::Instant::now();
     let models = fetch_live_openai_compatible_models(*profile, &api_key)
         .await
-        .map_err(|e| format!("Connection test failed: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Connection test failed: {e}")))?;
     let elapsed = start.elapsed();
 
     Ok(serde_json::json!({
@@ -333,7 +327,7 @@ pub async fn test_provider_connection(provider_id: String) -> Result<serde_json:
     }))
 }
 #[tauri::command]
-pub async fn get_models(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+pub async fn get_models(state: State<'_, AppState>) -> Result<serde_json::Value, TauriError> {
     let (raw_routes, current_provider_name) = if let Ok(runtime) = active_runtime(&state).await {
         let provider = { runtime.agent.lock().await.provider_handle() };
         let _ = provider.prefetch_models().await;
@@ -381,7 +375,7 @@ pub async fn get_models(state: State<'_, AppState>) -> Result<serde_json::Value,
     }))
 }
 #[tauri::command]
-pub async fn get_provider_profiles(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+pub async fn get_provider_profiles(state: State<'_, AppState>) -> Result<serde_json::Value, TauriError> {
     let (raw_routes, current_provider_name) = if let Ok(runtime) = active_runtime(&state).await {
         let provider = { runtime.agent.lock().await.provider_handle() };
         let _ = provider.prefetch_models().await;
@@ -429,10 +423,10 @@ pub async fn save_provider_api_key(
     api_key: String,
     region: Option<String>,
     api_base: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     let trimmed_key = api_key.trim();
     if trimmed_key.is_empty() {
-        return Err("API key cannot be empty".to_string());
+        return Err(TauriError::Other("API key cannot be empty".to_string()));
     }
 
     match provider_id.as_str() {
@@ -442,7 +436,7 @@ pub async fn save_provider_api_key(
                 "OPENROUTER_API_KEY",
                 trimmed_key,
             )
-            .map_err(|e| format!("Failed to save OpenRouter API key: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to save OpenRouter API key: {e}")))?;
         }
         "openai-api" => {
             jcode::cli::provider_init::save_named_api_key(
@@ -450,7 +444,7 @@ pub async fn save_provider_api_key(
                 "OPENAI_API_KEY",
                 trimmed_key,
             )
-            .map_err(|e| format!("Failed to save OpenAI API key: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to save OpenAI API key: {e}")))?;
         }
         "cursor" => {
             jcode::cli::provider_init::save_named_api_key(
@@ -458,7 +452,7 @@ pub async fn save_provider_api_key(
                 "CURSOR_API_KEY",
                 trimmed_key,
             )
-            .map_err(|e| format!("Failed to save Cursor API key: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to save Cursor API key: {e}")))?;
         }
         "jcode" => {
             jcode::cli::provider_init::save_named_api_key(
@@ -466,7 +460,7 @@ pub async fn save_provider_api_key(
                 jcode::subscription_catalog::JCODE_API_KEY_ENV,
                 trimmed_key,
             )
-            .map_err(|e| format!("Failed to save Jcode API key: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to save Jcode API key: {e}")))?;
 
             if let Some(api_base) = api_base
                 .as_deref()
@@ -478,7 +472,7 @@ pub async fn save_provider_api_key(
                     jcode::subscription_catalog::JCODE_ENV_FILE,
                     Some(api_base),
                 )
-                .map_err(|e| format!("Failed to save Jcode API base: {e}"))?;
+                .map_err(|e| TauriError::Other(format!("Failed to save Jcode API base: {e}")))?;
                 jcode::env::set_var(jcode::subscription_catalog::JCODE_API_BASE_ENV, api_base);
             }
         }
@@ -493,13 +487,13 @@ pub async fn save_provider_api_key(
                 jcode::provider::bedrock::API_KEY_ENV,
                 trimmed_key,
             )
-            .map_err(|e| format!("Failed to save Bedrock API key: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to save Bedrock API key: {e}")))?;
             jcode::provider_catalog::save_env_value_to_env_file(
                 jcode::provider::bedrock::REGION_ENV,
                 jcode::provider::bedrock::ENV_FILE,
                 Some(region),
             )
-            .map_err(|e| format!("Failed to save Bedrock region: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("Failed to save Bedrock region: {e}")))?;
             jcode::env::set_var(jcode::provider::bedrock::REGION_ENV, region);
         }
         provider_id => {
@@ -517,11 +511,11 @@ pub async fn save_provider_api_key(
                     &resolved.api_key_env,
                     trimmed_key,
                 )
-                .map_err(|e| format!("Failed to save {} API key: {e}", resolved.display_name))?;
+                .map_err(|e| TauriError::Other(format!("Failed to save {} API key: {e}", resolved.display_name)))?;
             } else {
-                return Err(format!(
+                return Err(TauriError::Other(format!(
                     "Inline API key save is not supported for provider `{provider_id}`"
-                ));
+                )));
             }
         }
     }
@@ -532,7 +526,7 @@ pub async fn save_provider_api_key(
     Ok(())
 }
 #[tauri::command]
-pub async fn start_provider_auth_flow(provider_id: String) -> Result<serde_json::Value, String> {
+pub async fn start_provider_auth_flow(provider_id: String) -> Result<serde_json::Value, TauriError> {
     let provider = resolve_login_provider(&provider_id)
         .ok_or_else(|| format!("Unknown provider: {provider_id}"))?;
     let options = LoginOptions {
@@ -542,8 +536,8 @@ pub async fn start_provider_auth_flow(provider_id: String) -> Result<serde_json:
     };
     let prompt = start_scriptable_login_data(provider, None, &options)
         .await
-        .map_err(|e| e.to_string())?;
-    serde_json::to_value(prompt).map_err(|e| e.to_string())
+        .map_err(|e| TauriError::from(e.to_string()))?;
+    serde_json::to_value(prompt).map_err(|e| TauriError::from(e.to_string()))
 }
 #[tauri::command]
 pub async fn complete_provider_auth_flow(
@@ -553,7 +547,7 @@ pub async fn complete_provider_auth_flow(
     provider_id: String,
     input_kind: String,
     input: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, TauriError> {
     let provided_input = match input_kind.as_str() {
         "complete" => None,
         "callback_url" => {
@@ -592,7 +586,7 @@ pub async fn complete_provider_auth_flow(
                 ))
             }
         }
-        other => return Err(format!("Unsupported auth completion kind `{other}`")),
+        other => return Err(TauriError::Other(format!("Unsupported auth completion kind `{other}`"))),
     };
 
     let provider = resolve_login_provider(&provider_id)
@@ -604,10 +598,10 @@ pub async fn complete_provider_auth_flow(
     };
     let (success, _) = complete_scriptable_login_data(provider, None, &options, provided_input)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| TauriError::from(e.to_string()))?;
     jcode::auth::AuthStatus::invalidate_cache();
     refresh_active_runtime_auth(&app_handle, &state, session_id.as_deref()).await?;
-    serde_json::to_value(success).map_err(|e| e.to_string())
+    serde_json::to_value(success).map_err(|e| TauriError::from(e.to_string()))
 }
 #[tauri::command]
 pub async fn add_provider_profile(
@@ -616,7 +610,7 @@ pub async fn add_provider_profile(
     model: String,
     api_key: Option<String>,
     auth: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<serde_json::Value, TauriError> {
     use jcode::cli::commands::provider_setup::{configure_provider_profile, ProviderAddOptions};
     let auth_arg = auth.as_deref().and_then(|a| match a {
         "bearer" => Some(jcode::cli::args::ProviderAuthArg::Bearer),

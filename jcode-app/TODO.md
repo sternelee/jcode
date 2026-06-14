@@ -82,9 +82,7 @@
 
 ### Memory 数据管理
 - [ ] 记忆详情查看（点击记忆条目查看完整内容）
-- [ ] 记忆编辑/删除单个记忆
-### 基本信息
-- [x] `version` — 显示版本/构建信息
+- [x] `memory_clear_test` — 清除测试记忆存储（Activity Panel → Memory → Clear test）
 - [x] `usage` — 显示提供商使用限制
 
 ### 配置管理
@@ -125,9 +123,9 @@
 ## 🔧 技术债务 / 改进项
 
 ### 架构改进
-- [ ] 将 `lib.rs`（~2300 行）拆分为模块（commands/, handlers/, events/）
-- [ ] 统一错误处理模式（当前部分用 `String`, 部分用 `anyhow::Result`）
-- [ ] 添加后端单元测试（当前 jcode-app 无测试）
+- [x] 将 `lib.rs`（~2300 行）拆分为模块（commands/, handlers/, events/）
+- [x] 统一错误处理模式（当前部分用 `String`, 部分用 `anyhow::Result`）
+- [x] 添加后端单元测试（当前 jcode-app 无测试）
 
 ### Swarm 管理
 - [ ] 显式 swarm 创建/加入/离开命令（当前只读事件解析）

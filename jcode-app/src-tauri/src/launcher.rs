@@ -1,3 +1,4 @@
+use crate::error::TauriError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -102,13 +103,13 @@ fn is_fuzzy_word_start(c: char) -> bool {
 impl AppIndex {
     /// Re-scan the system for installed applications using the
     /// `applications` crate (LaunchServices + Spotlight).
-    pub fn refresh(&mut self) -> Result<(), String> {
+    pub fn refresh(&mut self) -> Result<(), TauriError> {
         #[cfg(target_os = "macos")]
         {
             let apps = std::thread::Builder::new()
                 .name("launcher-app-scan".to_string())
                 .spawn(scan_applications)
-                .map_err(|e| format!("cannot spawn scanner thread: {e}"))?
+                .map_err(|e| TauriError::Other(format!("cannot spawn scanner thread: {e}")))?
                 .join()
                 .map_err(|_| "app scanner thread panicked".to_string())?;
             let mut apps = apps;
@@ -589,7 +590,7 @@ pub fn spawn_running_apps_loop(
 
 /// Launch an application bundle via `open(1)`.
 /// Extra args are forwarded with `--args` on macOS.
-pub fn launch_application(path: &str, args: Option<Vec<String>>) -> Result<(), String> {
+pub fn launch_application(path: &str, args: Option<Vec<String>>) -> Result<(), TauriError> {
     #[cfg(target_os = "macos")]
     {
         let mut cmd = Command::new("open");
@@ -603,33 +604,33 @@ pub fn launch_application(path: &str, args: Option<Vec<String>>) -> Result<(), S
             }
         }
         cmd.spawn()
-            .map_err(|e| format!("failed to launch: {e}"))?;
+            .map_err(|e| TauriError::Other(format!("failed to launch: {e}")))?;
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (path, args);
-        Err("Launching applications is only supported on macOS".to_string())
+        Err(TauriError::Other("Launching applications is only supported on macOS".to_string()))
     }
 }
 
 /// Quit a running app by its bundle identifier (best-effort osascript).
 #[cfg(target_os = "macos")]
-pub fn quit_application(bundle_id: &str) -> Result<(), String> {
+pub fn quit_application(bundle_id: &str) -> Result<(), TauriError> {
     let script = format!("tell application id \"{bundle_id}\" to quit");
     let status = Command::new("osascript")
         .arg("-e")
         .arg(&script)
         .status()
-        .map_err(|e| format!("failed to invoke osascript: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("failed to invoke osascript: {e}")))?;
     if status.success() {
         Ok(())
     } else {
-        Err(format!("osascript exited with status {status}"))
+        Err(TauriError::Other(format!("osascript exited with status {status}")))
     }
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn quit_application(_bundle_id: &str) -> Result<(), String> {
-    Err("Quitting applications is only supported on macOS".to_string())
+pub fn quit_application(_bundle_id: &str) -> Result<(), TauriError> {
+    Err(TauriError::Other("Quitting applications is only supported on macOS".to_string()))
 }

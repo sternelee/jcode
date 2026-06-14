@@ -1,17 +1,5 @@
-use crate::commands::*;
 use crate::error::TauriError;
-use crate::server_client::ServerClient;
-use crate::utils::*;
-use jcode::protocol::ServerEvent;
-use jcode::provider::Provider;
-use jcode::session::Session;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
 
-use std::fs;
-use std::path::Path;
 
 fn load_mcp_from_value(value: &serde_json::Value) -> Vec<serde_json::Value> {
     let servers_obj = value
@@ -130,11 +118,11 @@ fn user_jcode_dir() -> Option<std::path::PathBuf> {
     dirs::home_dir().map(|h| h.join(".jcode"))
 }
 #[tauri::command]
-pub async fn list_mcp_servers() -> Result<Vec<serde_json::Value>, String> {
+pub async fn list_mcp_servers() -> Result<Vec<serde_json::Value>, TauriError> {
     let mut all_servers = Vec::new();
 
     // 1. Desktop app's isolated config (JCODE_HOME)
-    let app_jcode = jcode::storage::jcode_dir().map_err(|e| e.to_string())?;
+    let app_jcode = jcode::storage::jcode_dir().map_err(|e| TauriError::from(e.to_string()))?;
     all_servers.extend(load_mcp_from_path(&app_jcode.join("mcp.json")));
 
     // 2. User's CLI-level ~/.jcode/mcp.json (fallback)
@@ -156,11 +144,11 @@ pub async fn list_mcp_servers() -> Result<Vec<serde_json::Value>, String> {
     Ok(all_servers)
 }
 #[tauri::command]
-pub async fn list_skills() -> Result<Vec<serde_json::Value>, String> {
+pub async fn list_skills() -> Result<Vec<serde_json::Value>, TauriError> {
     let mut skills_out = Vec::new();
 
     // 1. Desktop app's isolated config (JCODE_HOME)
-    let app_jcode = jcode::storage::jcode_dir().map_err(|e| e.to_string())?;
+    let app_jcode = jcode::storage::jcode_dir().map_err(|e| TauriError::from(e.to_string()))?;
     skills_out.extend(scan_skills_from_dir(&app_jcode.join("skills")));
 
     // 2. User's CLI-level ~/.jcode/skills/ (fallback)
@@ -179,10 +167,10 @@ pub async fn list_skills() -> Result<Vec<serde_json::Value>, String> {
     Ok(skills_out)
 }
 #[tauri::command]
-pub async fn reload_skills() -> Result<usize, String> {
+pub async fn reload_skills() -> Result<usize, TauriError> {
     let registry = jcode::skill::SkillRegistry::shared_registry();
     let mut guard = registry.write().await;
-    guard.reload_all().map_err(|e| e.to_string())
+    guard.reload_all().map_err(|e| TauriError::from(e.to_string()))
 }
 #[tauri::command]
 pub async fn save_mcp_server(
@@ -192,8 +180,8 @@ pub async fn save_mcp_server(
     env: Option<std::collections::HashMap<String, String>>,
     url: Option<String>,
     shared: bool,
-) -> Result<(), String> {
-    let jcode_dir = user_jcode_dir().ok_or("Cannot resolve home directory")?;
+) -> Result<(), TauriError> {
+    let jcode_dir = user_jcode_dir().ok_or_else(|| TauriError::Other("Cannot resolve home directory".to_string()))?;
     let mcp_path = jcode_dir.join("mcp.json");
 
     let mut value = if mcp_path.exists() {
@@ -205,7 +193,7 @@ pub async fn save_mcp_server(
         serde_json::json!({"servers": {}})
     };
 
-    let obj = value.as_object_mut().ok_or("Invalid mcp.json root")?;
+    let obj = value.as_object_mut().ok_or_else(|| TauriError::Other("Invalid mcp.json root".to_string()))?;
 
     // Determine which key to use (preserve existing)
     let key = if obj.contains_key("mcpServers") && !obj.contains_key("servers") {
@@ -218,7 +206,7 @@ pub async fn save_mcp_server(
         .entry(key)
         .or_insert_with(|| serde_json::json!({}))
         .as_object_mut()
-        .ok_or("Invalid servers object")?;
+        .ok_or_else(|| TauriError::Other("Invalid servers object".to_string()))?;
 
     let server_val = if let Some(url) = url {
         serde_json::json!({
@@ -241,31 +229,31 @@ pub async fn save_mcp_server(
 
     servers.insert(name, server_val);
 
-    let content = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-    std::fs::write(&mcp_path, content).map_err(|e| e.to_string())?;
+    let content = serde_json::to_string_pretty(&value).map_err(|e| TauriError::from(e.to_string()))?;
+    std::fs::write(&mcp_path, content).map_err(|e| TauriError::from(e.to_string()))?;
     Ok(())
 }
 #[tauri::command]
-pub async fn delete_mcp_server(name: String) -> Result<(), String> {
-    let jcode_dir = user_jcode_dir().ok_or("Cannot resolve home directory")?;
+pub async fn delete_mcp_server(name: String) -> Result<(), TauriError> {
+    let jcode_dir = user_jcode_dir().ok_or_else(|| TauriError::Other("Cannot resolve home directory".to_string()))?;
     let mcp_path = jcode_dir.join("mcp.json");
 
     if !mcp_path.exists() {
         return Ok(());
     }
 
-    let content = std::fs::read_to_string(&mcp_path).map_err(|e| e.to_string())?;
-    let mut value: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    let content = std::fs::read_to_string(&mcp_path).map_err(|e| TauriError::from(e.to_string()))?;
+    let mut value: serde_json::Value = serde_json::from_str(&content).map_err(|e| TauriError::from(e.to_string()))?;
 
-    let obj = value.as_object_mut().ok_or("Invalid mcp.json root")?;
+    let obj = value.as_object_mut().ok_or_else(|| TauriError::Other("Invalid mcp.json root".to_string()))?;
     for key in &["servers", "mcpServers"] {
         if let Some(serde_json::Value::Object(servers)) = obj.get_mut(*key) {
             servers.remove(&name);
         }
     }
 
-    let content = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
-    std::fs::write(&mcp_path, content).map_err(|e| e.to_string())?;
+    let content = serde_json::to_string_pretty(&value).map_err(|e| TauriError::from(e.to_string()))?;
+    std::fs::write(&mcp_path, content).map_err(|e| TauriError::from(e.to_string()))?;
     Ok(())
 }
 #[tauri::command]
@@ -274,11 +262,11 @@ pub async fn save_skill(
     description: String,
     allowed_tools: Option<Vec<String>>,
     content: String,
-) -> Result<(), String> {
-    let jcode_dir = user_jcode_dir().ok_or("Cannot resolve home directory")?;
+) -> Result<(), TauriError> {
+    let jcode_dir = user_jcode_dir().ok_or_else(|| TauriError::Other("Cannot resolve home directory".to_string()))?;
     let skills_dir = jcode_dir.join("skills");
     let skill_dir = skills_dir.join(&name);
-    std::fs::create_dir_all(&skill_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&skill_dir).map_err(|e| TauriError::from(e.to_string()))?;
 
     let file_path = skill_dir.join("SKILL.md");
     let mut file_content = String::new();
@@ -291,7 +279,7 @@ pub async fn save_skill(
     file_content.push_str("---\n\n");
     file_content.push_str(&content);
 
-    std::fs::write(&file_path, file_content).map_err(|e| e.to_string())?;
+    std::fs::write(&file_path, file_content).map_err(|e| TauriError::from(e.to_string()))?;
 
     // Reload shared registry so changes are visible immediately
     let registry = jcode::skill::SkillRegistry::shared_registry();
@@ -301,8 +289,8 @@ pub async fn save_skill(
     Ok(())
 }
 #[tauri::command]
-pub async fn delete_skill(name: String) -> Result<(), String> {
-    let jcode_dir = user_jcode_dir().ok_or("Cannot resolve home directory")?;
+pub async fn delete_skill(name: String) -> Result<(), TauriError> {
+    let jcode_dir = user_jcode_dir().ok_or_else(|| TauriError::Other("Cannot resolve home directory".to_string()))?;
     let skills_dir = jcode_dir.join("skills");
 
     // Try deleting the directory first, then a direct .md file
@@ -310,10 +298,10 @@ pub async fn delete_skill(name: String) -> Result<(), String> {
     let skill_file = skills_dir.join(format!("{}.md", name));
 
     let removed = if skill_dir.exists() {
-        std::fs::remove_dir_all(&skill_dir).map_err(|e| e.to_string())?;
+        std::fs::remove_dir_all(&skill_dir).map_err(|e| TauriError::from(e.to_string()))?;
         true
     } else if skill_file.exists() {
-        std::fs::remove_file(&skill_file).map_err(|e| e.to_string())?;
+        std::fs::remove_file(&skill_file).map_err(|e| TauriError::from(e.to_string()))?;
         true
     } else {
         false
@@ -322,7 +310,7 @@ pub async fn delete_skill(name: String) -> Result<(), String> {
     if removed {
         let registry = jcode::skill::SkillRegistry::shared_registry();
         let mut guard = registry.write().await;
-        guard.reload_all().map_err(|e| e.to_string())?;
+        guard.reload_all().map_err(|e| TauriError::from(e.to_string()))?;
     }
 
     Ok(())

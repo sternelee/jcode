@@ -1,40 +1,31 @@
 use crate::commands::*;
 use crate::error::TauriError;
-use crate::server_client::ServerClient;
-use crate::utils::*;
-use jcode::protocol::ServerEvent;
-use jcode::provider::Provider;
-use jcode::session::Session;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use crate::commands::session::send_message;
-use std::fs;
 #[tauri::command]
-pub async fn list_background_tasks() -> Result<Vec<serde_json::Value>, String> {
+pub async fn list_background_tasks() -> Result<Vec<serde_json::Value>, TauriError> {
     use jcode::background::global;
     let tasks = global().list().await;
     tasks
         .into_iter()
-        .map(|task| serde_json::to_value(task).map_err(|e| e.to_string()))
+        .map(|task| serde_json::to_value(task).map_err(|e| TauriError::from(e.to_string())))
         .collect()
 }
 #[tauri::command]
-pub async fn cancel_background_task(task_id: String) -> Result<bool, String> {
+pub async fn cancel_background_task(task_id: String) -> Result<bool, TauriError> {
     jcode::background::global()
         .cancel(&task_id)
         .await
-        .map_err(|e| format!("Failed to cancel task: {e}"))
+        .map_err(|e| TauriError::Other(format!("Failed to cancel task: {e}")))
 }
 #[tauri::command]
-pub fn generate_pairing_code() -> Result<String, String> {
+pub fn generate_pairing_code() -> Result<String, TauriError> {
     let mut registry = jcode::gateway::DeviceRegistry::load();
     let code = registry.generate_pairing_code();
     Ok(code)
 }
 #[tauri::command]
-pub fn list_paired_devices() -> Result<serde_json::Value, String> {
+pub fn list_paired_devices() -> Result<serde_json::Value, TauriError> {
     let registry = jcode::gateway::DeviceRegistry::load();
     let devices: Vec<serde_json::Value> = registry
         .devices
@@ -51,18 +42,18 @@ pub fn list_paired_devices() -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "devices": devices }))
 }
 #[tauri::command]
-pub fn revoke_device(device_id: String) -> Result<(), String> {
+pub fn revoke_device(device_id: String) -> Result<(), TauriError> {
     let mut registry = jcode::gateway::DeviceRegistry::load();
     registry.devices.retain(|d| d.id != device_id);
     registry
         .save()
-        .map_err(|e| format!("Failed to save device registry: {e}"))
+        .map_err(|e| TauriError::Other(format!("Failed to save device registry: {e}")))
 }
 #[tauri::command]
-pub fn get_ambient_status() -> Result<serde_json::Value, String> {
+pub fn get_ambient_status() -> Result<serde_json::Value, TauriError> {
     use jcode::ambient::{AmbientManager, AmbientStatus};
     let manager =
-        AmbientManager::new().map_err(|e| format!("Failed to load ambient manager: {e}"))?;
+        AmbientManager::new().map_err(|e| TauriError::Other(format!("Failed to load ambient manager: {e}")))?;
     let state = manager.state();
     let queue = manager.queue();
 
@@ -117,17 +108,17 @@ pub fn get_ambient_status() -> Result<serde_json::Value, String> {
     }))
 }
 #[tauri::command]
-pub fn get_ambient_transcripts() -> Result<serde_json::Value, String> {
+pub fn get_ambient_transcripts() -> Result<serde_json::Value, TauriError> {
     use jcode::ambient::VisibleCycleContext;
     let mut transcripts: Vec<serde_json::Value> = Vec::new();
 
     let dir = jcode::storage::jcode_dir()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| TauriError::from(e.to_string()))?
         .join("ambient")
         .join("transcripts");
     if dir.exists() {
         let mut entries: Vec<_> = std::fs::read_dir(&dir)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| TauriError::from(e.to_string()))?
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
             .collect();
@@ -158,7 +149,7 @@ pub fn get_ambient_transcripts() -> Result<serde_json::Value, String> {
     }))
 }
 #[tauri::command]
-pub fn get_version_info() -> Result<serde_json::Value, String> {
+pub fn get_version_info() -> Result<serde_json::Value, TauriError> {
     Ok(serde_json::json!({
         "version": option_env!("JCODE_VERSION").unwrap_or("unknown"),
         "semver": option_env!("JCODE_SEMVER").unwrap_or("unknown"),
@@ -171,7 +162,7 @@ pub fn get_version_info() -> Result<serde_json::Value, String> {
     }))
 }
 #[tauri::command]
-pub async fn get_permission_requests() -> Result<serde_json::Value, String> {
+pub async fn get_permission_requests() -> Result<serde_json::Value, TauriError> {
     let safety = jcode::safety::SafetySystem::new();
     let requests = safety.pending_requests();
     let items: Vec<serde_json::Value> = requests
@@ -196,11 +187,11 @@ pub async fn respond_to_permission(
     request_id: String,
     approved: bool,
     message: Option<String>,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     let safety = jcode::safety::SafetySystem::new();
     safety
         .record_decision(&request_id, approved, "desktop", message)
-        .map_err(|e| e.to_string())
+        .map_err(|e| TauriError::from(e.to_string()))
 }
 #[tauri::command]
 pub async fn send_transcript(
@@ -208,11 +199,11 @@ pub async fn send_transcript(
     state: State<'_, AppState>,
     text: String,
     mode: String,
-) -> Result<(), String> {
+) -> Result<(), TauriError> {
     const TRANSCRIPTION_PREFIX: &str = "[transcription]";
     let trimmed = text.trim();
     if trimmed.is_empty() {
-        return Err("Transcript text is empty".to_string());
+        return Err(TauriError::Other("Transcript text is empty".to_string()));
     }
 
     let effective_text = if mode == "send" {
@@ -235,7 +226,7 @@ pub async fn send_transcript(
             .lock()
             .await
             .clone()
-            .ok_or("No active session")?;
+            .ok_or_else(|| TauriError::Other("No active session".to_string()))?;
         return send_message(
             app_handle,
             state,
@@ -255,12 +246,12 @@ pub async fn send_transcript(
                     "mode": mode,
                 }),
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| TauriError::from(e.to_string()))?;
     }
     Ok(())
 }
 #[tauri::command]
-pub async fn get_browser_status() -> Result<serde_json::Value, String> {
+pub async fn get_browser_status() -> Result<serde_json::Value, TauriError> {
     match jcode::browser::ensure_browser_ready_noninteractive().await {
         Ok(status) => Ok(serde_json::json!({
             "backend": status.backend,
@@ -272,48 +263,48 @@ pub async fn get_browser_status() -> Result<serde_json::Value, String> {
             "missing_actions": status.missing_actions,
             "ready": status.ready,
         })),
-        Err(e) => Err(format!("Browser status check failed: {e}")),
+        Err(e) => Err(TauriError::Other(format!("Browser status check failed: {e}"))),
     }
 }
 #[tauri::command]
-pub async fn setup_browser() -> Result<String, String> {
+pub async fn setup_browser() -> Result<String, TauriError> {
     match jcode::browser::ensure_browser_setup().await {
         Ok(log) => Ok(log),
-        Err(e) => Err(format!("Browser setup failed: {e}")),
+        Err(e) => Err(TauriError::Other(format!("Browser setup failed: {e}"))),
     }
 }
 #[tauri::command]
-pub async fn save_session_state(session_id: String, working_dir: Option<String>) -> Result<(), String> {
+pub async fn save_session_state(session_id: String, working_dir: Option<String>) -> Result<(), TauriError> {
     let state = serde_json::json!({
         "session_id": session_id,
         "working_dir": working_dir,
         "saved_at": chrono::Utc::now().to_rfc3339(),
     });
     let path = jcode::storage::jcode_dir()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| TauriError::from(e.to_string()))?
         .join("desktop_app_state.json");
     std::fs::write(
         &path,
         serde_json::to_string_pretty(&state).unwrap_or_default(),
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| TauriError::from(e.to_string()))
 }
 #[tauri::command]
-pub async fn get_last_session_state() -> Result<Option<serde_json::Value>, String> {
+pub async fn get_last_session_state() -> Result<Option<serde_json::Value>, TauriError> {
     let path = jcode::storage::jcode_dir()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| TauriError::from(e.to_string()))?
         .join("desktop_app_state.json");
     if !path.exists() {
         return Ok(None);
     }
-    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let state: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let text = std::fs::read_to_string(&path).map_err(|e| TauriError::from(e.to_string()))?;
+    let state: serde_json::Value = serde_json::from_str(&text).map_err(|e| TauriError::from(e.to_string()))?;
     Ok(Some(state))
 }
 #[tauri::command]
-pub async fn clear_session_state() -> Result<(), String> {
+pub async fn clear_session_state() -> Result<(), TauriError> {
     let path = jcode::storage::jcode_dir()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| TauriError::from(e.to_string()))?
         .join("desktop_app_state.json");
     if path.exists() {
         let _ = std::fs::remove_file(&path);
@@ -321,10 +312,10 @@ pub async fn clear_session_state() -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
-pub async fn run_dictation() -> Result<serde_json::Value, String> {
+pub async fn run_dictation() -> Result<serde_json::Value, TauriError> {
     let run = jcode::dictation::run_configured()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| TauriError::from(e.to_string()))?;
     let mode_str = match run.mode {
         jcode::protocol::TranscriptMode::Insert => "insert",
         jcode::protocol::TranscriptMode::Append => "append",
@@ -337,7 +328,7 @@ pub async fn run_dictation() -> Result<serde_json::Value, String> {
     }))
 }
 #[tauri::command]
-pub async fn list_workspace_files(working_dir: Option<String>) -> Result<Vec<String>, String> {
+pub async fn list_workspace_files(working_dir: Option<String>) -> Result<Vec<String>, TauriError> {
     let root = working_dir.as_deref().unwrap_or(".");
     let mut files = Vec::new();
 
@@ -384,7 +375,7 @@ pub async fn list_workspace_files(working_dir: Option<String>) -> Result<Vec<Str
     Ok(files)
 }
 #[tauri::command]
-pub async fn git_status(working_dir: Option<String>) -> Result<String, String> {
+pub async fn git_status(working_dir: Option<String>) -> Result<String, TauriError> {
     let output = tokio::process::Command::new("git")
         .arg("status")
         .arg("--short")
@@ -392,11 +383,11 @@ pub async fn git_status(working_dir: Option<String>) -> Result<String, String> {
         .current_dir(working_dir.as_deref().unwrap_or("."))
         .output()
         .await
-        .map_err(|e| format!("Failed to run git status: {e}"))?;
+        .map_err(|e| TauriError::Other(format!("Failed to run git status: {e}")))?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() {
-        return Err(format!("git status failed: {stderr}"));
+        return Err(TauriError::Other(format!("git status failed: {stderr}")));
     }
     Ok(if stdout.trim().is_empty() {
         "Working tree clean".to_string()
@@ -405,7 +396,7 @@ pub async fn git_status(working_dir: Option<String>) -> Result<String, String> {
     })
 }
 #[tauri::command]
-pub async fn trigger_ambient() -> Result<(), String> {
+pub async fn trigger_ambient() -> Result<(), TauriError> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     if matches!(
         state.status,
@@ -413,11 +404,11 @@ pub async fn trigger_ambient() -> Result<(), String> {
     ) {
         state.status = jcode::ambient::AmbientStatus::Idle;
     }
-    state.save().map_err(|e| e.to_string())
+    state.save().map_err(|e| TauriError::from(e.to_string()))
 }
 #[tauri::command]
-pub async fn stop_ambient() -> Result<(), String> {
+pub async fn stop_ambient() -> Result<(), TauriError> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
     state.status = jcode::ambient::AmbientStatus::Disabled;
-    state.save().map_err(|e| e.to_string())
+    state.save().map_err(|e| TauriError::from(e.to_string()))
 }
