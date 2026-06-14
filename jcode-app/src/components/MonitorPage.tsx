@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
+import type {
+	AmbientStatusInfo,
+	AmbientTranscript,
+	AmbientScheduleItem,
+	BrowserStatus,
+} from "@/types";
 import {
 	Activity,
 	Loader2,
@@ -16,71 +22,34 @@ import {
 	XCircle,
 	MessageSquare,
 	BookOpen,
+	CalendarClock,
 } from "lucide-react";
 
-interface AmbientStatus {
-	enabled: boolean;
-	state: string;
-	last_summary?: string;
-	last_compactions?: number;
-	last_memories_modified?: number;
-	total_cycles: number;
-	scheduled_count: number;
-	scheduled_items: Array<{
-		type: string;
-		summary: string;
-		scheduled_at_ms: number;
-	}>;
-}
-
-interface BrowserStatus {
-	backend: string;
-	browser: string;
-	setup_complete: boolean;
-	binary_installed: boolean;
-	responding: boolean;
-	compatible: boolean;
-	missing_actions: string[];
-	ready: boolean;
-}
-
-interface AmbientTranscript {
-	session_id: string;
-	started_at: string;
-	ended_at?: string;
-	status: string;
-	provider: string;
-	model: string;
-	actions: unknown[];
-	pending_permissions: number;
-	summary?: string;
-	compactions: number;
-	memories_modified: number;
-	conversation?: string;
-}
-
-interface AmbientTranscriptsResult {
-	transcripts: AmbientTranscript[];
-	visible_cycle?: {
-		system_prompt?: string;
-		initial_message?: string;
-	};
+function formatDate(iso?: string): string {
+	if (!iso) return "—";
+	const d = new Date(iso);
+	return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
 export function MonitorPage() {
-	const [status, setStatus] = useState<AmbientStatus | null>(null);
+	const [status, setStatus] = useState<AmbientStatusInfo | null>(null);
 	const [browserStatus, setBrowserStatus] = useState<BrowserStatus | null>(
 		null,
 	);
 	const [transcripts, setTranscripts] = useState<AmbientTranscript[]>([]);
 	const [visibleCycle, setVisibleCycle] = useState<
-		AmbientTranscriptsResult["visible_cycle"] | undefined
+		| {
+				system_prompt?: string;
+				initial_message?: string;
+		  }
+		| undefined
 	>(undefined);
 	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 
 	const fetchStatus = async () => {
 		try {
-			const result = await invoke<AmbientStatus>("get_ambient_status");
+			const result = await invoke<AmbientStatusInfo>("get_ambient_status");
 			setStatus(result);
 		} catch (e) {
 			console.error("Failed to get ambient status:", e);
@@ -98,9 +67,13 @@ export function MonitorPage() {
 
 	const fetchTranscripts = async () => {
 		try {
-			const result = await invoke<AmbientTranscriptsResult>(
-				"get_ambient_transcripts",
-			);
+			const result = await invoke<{
+				transcripts: AmbientTranscript[];
+				visible_cycle?: {
+					system_prompt?: string;
+					initial_message?: string;
+				};
+			}>("get_ambient_transcripts");
 			setTranscripts(result.transcripts || []);
 			setVisibleCycle(result.visible_cycle);
 		} catch (e) {
@@ -122,6 +95,7 @@ export function MonitorPage() {
 
 	const toggleAmbient = async () => {
 		try {
+			setError(null);
 			if (status?.enabled) {
 				await invoke("stop_ambient");
 			} else {
@@ -129,11 +103,29 @@ export function MonitorPage() {
 			}
 			await fetchStatus();
 		} catch (e) {
+			const message = e instanceof Error ? e.message : String(e);
+			setError(message);
 			console.error("Ambient toggle failed:", e);
 		}
 	};
 
 	const isActive = status?.enabled ?? false;
+	const ambientStatus = status?.status || "disabled";
+
+	const statusColor = (s: string) => {
+		switch (s) {
+			case "running":
+				return "bg-emerald-500 animate-pulse";
+			case "scheduled":
+				return "bg-amber-500";
+			case "paused":
+				return "bg-amber-500/60";
+			case "disabled":
+				return "bg-muted-foreground/30";
+			default:
+				return "bg-primary/60";
+		}
+	};
 
 	return (
 		<div className="flex-1 flex flex-col bg-card overflow-hidden">
@@ -157,7 +149,11 @@ export function MonitorPage() {
 						type="button"
 						onClick={() => {
 							setLoading(true);
-							fetchStatus().finally(() => setLoading(false));
+							Promise.all([
+								fetchStatus(),
+								fetchBrowserStatus(),
+								fetchTranscripts(),
+							]).finally(() => setLoading(false));
 						}}
 						className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
 						title="Refresh"
@@ -170,6 +166,12 @@ export function MonitorPage() {
 			{/* Content */}
 			<div className="flex-1 overflow-y-auto px-6 py-4">
 				<div className="max-w-3xl mx-auto space-y-4">
+					{error && (
+						<div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-[13px] text-destructive">
+							Failed to toggle ambient mode: {error}
+						</div>
+					)}
+
 					{/* Ambient status card */}
 					<div className="rounded-xl border border-border bg-card p-5 space-y-4">
 						<div className="flex items-center justify-between">
@@ -190,15 +192,10 @@ export function MonitorPage() {
 									</div>
 									<div className="flex items-center gap-1.5 mt-0.5">
 										<span
-											className={cn(
-												"w-2 h-2 rounded-full",
-												isActive
-													? "bg-emerald-500 animate-pulse"
-													: "bg-muted-foreground/30",
-											)}
+											className={cn("w-2 h-2 rounded-full", statusColor(ambientStatus))}
 										/>
-										<span className="text-[12px] text-muted-foreground">
-											{status?.state || "Idle"}
+										<span className="text-[12px] text-muted-foreground capitalize">
+											{ambientStatus}
 										</span>
 									</div>
 								</div>
@@ -260,6 +257,19 @@ export function MonitorPage() {
 								<p className="text-[13px] text-foreground leading-relaxed">
 									{status.last_summary}
 								</p>
+							</div>
+						)}
+
+						{status?.next_wake && (
+							<div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+								<CalendarClock className="w-3.5 h-3.5" />
+								Next wake {formatDate(status.next_wake)}
+							</div>
+						)}
+						{status?.last_run && !status.next_wake && (
+							<div className="flex items-center gap-2 text-[12px] text-muted-foreground">
+								<Clock className="w-3.5 h-3.5" />
+								Last run {formatDate(status.last_run)}
 							</div>
 						)}
 					</div>
@@ -396,7 +406,7 @@ export function MonitorPage() {
 												</span>
 											</div>
 											<span className="text-[10px] text-muted-foreground">
-												{new Date(t.started_at).toLocaleString()}
+												{formatDate(t.started_at)}
 											</span>
 										</div>
 										{t.summary && (
@@ -459,9 +469,9 @@ export function MonitorPage() {
 								Scheduled Items
 							</div>
 							<div className="space-y-2">
-								{status.scheduled_items.map((item, i) => (
+								{status.scheduled_items.map((item: AmbientScheduleItem, i: number) => (
 									<div
-										key={i}
+										key={item.id || i}
 										className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/30 border border-border"
 									>
 										<div className="w-6 h-6 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0">
@@ -469,13 +479,27 @@ export function MonitorPage() {
 										</div>
 										<div className="flex-1 min-w-0">
 											<div className="text-[12px] font-medium text-foreground truncate">
-												{item.summary}
+												{item.task_description || item.id}
 											</div>
 											<div className="text-[11px] text-muted-foreground">
-												{item.type} ·{" "}
-												{new Date(item.scheduled_at_ms).toLocaleString()}
+												{item.target.kind}
+												{item.target.session_id ? ` · ${item.target.session_id.slice(-6)}` : ""}
+												{" · "}
+												{formatDate(item.scheduled_for)}
 											</div>
 										</div>
+										<span
+											className={cn(
+												"text-[10px] px-1.5 py-0.5 rounded-full border uppercase",
+												item.priority === "high"
+													? "bg-destructive/10 text-destructive border-destructive/20"
+													: item.priority === "normal"
+														? "bg-primary/10 text-primary border-primary/20"
+														: "bg-muted text-muted-foreground border-border",
+											)}
+										>
+											{item.priority}
+										</span>
 									</div>
 								))}
 							</div>
@@ -497,12 +521,14 @@ function StatCard({
 	icon: React.ReactNode;
 }) {
 	return (
-		<div className="rounded-lg bg-muted/30 border border-border p-3 space-y-1">
-			<div className="flex items-center gap-1.5 text-muted-foreground">
+		<div className="rounded-lg border border-border bg-muted/30 p-3">
+			<div className="flex items-center gap-2 text-muted-foreground mb-1">
 				{icon}
-				<span className="text-[11px] font-medium">{label}</span>
+				<span className="text-[10px] font-medium uppercase tracking-wider">
+					{label}
+				</span>
 			</div>
-			<div className="text-[18px] font-semibold text-foreground">{value}</div>
+			<div className="text-[16px] font-semibold text-foreground">{value}</div>
 		</div>
 	);
 }
