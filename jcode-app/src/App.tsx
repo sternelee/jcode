@@ -954,8 +954,11 @@ export default function App() {
 							onRegenerateMessage={handleRegenerateMessage}
 							onEditMessage={handleEditMessage}
 							onQuoteMessage={handleQuoteMessage}
-							currentWorkingDir={state.workingDir}
 							onExecuteShellCommand={executeShellCommandAndDisplay}
+							onNewSession={() => {
+								setCreateDialogInitMode("normal");
+								setCreateDialogOpen(true);
+							}}
 						/>
 						<RightSidebar
 							snapshot={

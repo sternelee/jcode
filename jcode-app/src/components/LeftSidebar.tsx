@@ -115,10 +115,7 @@ export function LeftSidebar({
 					className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-sidebar-foreground hover:bg-sidebar-accent/60 transition-all group"
 				>
 					<Circle className="w-4 h-4 text-sidebar-foreground/60" strokeWidth={1.5} />
-					<span className="flex-1">New Task</span>
-					<span className="text-[10px] text-sidebar-foreground/30 rounded border border-sidebar-border px-1.5 py-0.5 font-mono leading-none">
-						⌘K
-					</span>
+					<span className="flex-1">New Session</span>
 				</button>
 				<button
 					type="button"
@@ -169,11 +166,7 @@ export function LeftSidebar({
 					</div>
 					<div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-sidebar-foreground/70 transition-all">
 						<Folder className="w-4 h-4 text-sidebar-foreground/50" strokeWidth={1.5} />
-						wtf-claude
-					</div>
-					<div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-sidebar-foreground bg-sidebar-accent transition-all">
-						<BarChart3 className="w-4 h-4 text-sidebar-foreground/70" strokeWidth={1.5} />
-						<span className="truncate">Claude Profanity Tracker...</span>
+						<span className="truncate">No project selected</span>
 					</div>
 				</div>
 			)}
@@ -226,15 +219,12 @@ export function LeftSidebar({
 			{/* User profile */}
 			<div className="border-t border-sidebar-border px-3 py-2.5 flex items-center gap-2.5 shrink-0">
 				<div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-[11px] font-semibold shrink-0">
-					SC
+					U
 				</div>
 				<div className="flex-1 min-w-0">
 					<div className="flex items-center gap-1.5">
 						<span className="text-[13px] font-medium text-sidebar-foreground truncate">
-							Sero Ch
-						</span>
-						<span className="text-[10px] text-sidebar-foreground/50 rounded border border-sidebar-border px-1.5 py-0.5 leading-none">
-							Allegretto
+							User
 						</span>
 					</div>
 				</div>
