@@ -12,7 +12,7 @@ use crate::{browser, gateway, memory, session, storage, tui};
 
 use super::terminal::init_tui_runtime;
 
-mod provider_setup;
+pub mod provider_setup;
 mod report_info;
 mod restart;
 
@@ -3246,6 +3246,52 @@ fn filter_cli_model_routes_for_choice(
         filtered
     }
 }
+
+async fn send_simple_request(request: crate::protocol::Request) -> Result<()> {
+    let mut client = crate::server::Client::connect_debug().await?;
+    let request_id = client.send_request(request).await?;
+
+    loop {
+        match client.read_event().await? {
+            crate::protocol::ServerEvent::Ack { id } if id == request_id => {}
+            crate::protocol::ServerEvent::Done { id } if id == request_id => return Ok(()),
+            crate::protocol::ServerEvent::Error {
+                id,
+                message,
+                ..
+            } if id == request_id => {
+                anyhow::bail!(message)
+            }
+            _ => {}
+        }
+    }
+}
+
+pub async fn run_clear_command() -> Result<()> {
+    send_simple_request(crate::protocol::Request::Clear { id: 0 }).await
+}
+
+pub async fn run_rewind_command(message_index: usize) -> Result<()> {
+    send_simple_request(crate::protocol::Request::Rewind {
+        id: 0,
+        message_index,
+    })
+    .await
+}
+
+pub async fn run_set_reasoning_effort_command(effort: &str) -> Result<()> {
+    send_simple_request(crate::protocol::Request::SetReasoningEffort {
+        id: 0,
+        effort: effort.to_string(),
+        target_session_id: None,
+    })
+    .await
+}
+
+pub async fn run_compact_command() -> Result<()> {
+    send_simple_request(crate::protocol::Request::Compact { id: 0 }).await
+}
+
 #[cfg(test)]
 #[path = "commands_tests.rs"]
 mod tests;
