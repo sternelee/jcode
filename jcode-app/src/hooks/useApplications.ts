@@ -2,14 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppInfo } from "@/lib/launcherTypes";
 
-/** Minimum time between automatic refreshes triggered by the global
- * shortcut. Manual refreshes via the footer button ignore this cap. */
+/** Minimum time between automatic filesystem rescans triggered by the
+ * global shortcut or window visibility changes. Manual refreshes via the
+ * footer button ignore this cap. */
 const AUTO_REFRESH_COOLDOWN_MS = 30_000;
-
-/** How often we re-poll the backend for the latest `running` flags. The
- * Rust background thread refreshes the running-apps cache every 3s, so
- * 5s here is a good balance between freshness and IPC chatter. */
-const RUNNING_POLL_INTERVAL_MS = 5_000;
 
 /**
  * Wraps the `search_applications` and `refresh_applications` Tauri commands
@@ -19,16 +15,9 @@ const RUNNING_POLL_INTERVAL_MS = 5_000;
  *   - `refresh_applications` triggers a fresh filesystem scan on the Rust
  *     side (slow; gated by a cooldown to avoid blocking the launcher
  *     show-animation).
- *   - `search_applications` just filters the in-memory `AppIndex`. It is
- *     cheap; we call it both to mirror the backend's current state into
- *     the React `apps` cache and to pick up `running` flag updates
- *     coming from the background thread.
- *
- * Earlier versions of this hook only updated the React state when the
- * user typed a query, which left the launcher with an empty list on
- * first open even though the Rust index was already populated. Both
- * `refresh` and `refreshIfStale` now follow up with a `search("")` so
- * the React cache mirrors the backend.
+ *   - `search_applications` filters/scores the in-memory `AppIndex`. It is
+ *     cheap; we call it on mount, on window visibility, and as the user
+ *     types so the React `apps` cache mirrors the backend.
  */
 export function useApplications() {
 	const [apps, setApps] = useState<AppInfo[]>([]);
@@ -80,8 +69,8 @@ export function useApplications() {
 	}, [doRefresh, fetchApps]);
 
 	/** Refresh only if we haven't refreshed in a while. The global-shortcut
-	 * hook calls this so the launcher's show-animation isn't blocked by a
-	 * filesystem scan on every invocation. */
+	 * hook and visibility handler call this so we don't rescan on every
+	 * launcher invocation. */
 	const refreshIfStale = useCallback(async () => {
 		if (inFlightRef.current) return;
 		if (Date.now() - lastRefreshAtRef.current < AUTO_REFRESH_COOLDOWN_MS) return;
@@ -89,9 +78,8 @@ export function useApplications() {
 		await fetchApps();
 	}, [doRefresh, fetchApps]);
 
-	/** Wrapper kept for callers that want to query with a non-empty term.
-	 * The launcher's filtering happens in JS (so the cmdk value attribute
-	 * still works), so this is mostly used for one-off fetches. */
+	/** Query the backend with a specific term and update React state. The
+	 * launcher uses this for debounced type-ahead search. */
 	const search = useCallback(
 		async (query: string): Promise<AppInfo[]> => {
 			return fetchApps(query);
@@ -99,16 +87,21 @@ export function useApplications() {
 		[fetchApps],
 	);
 
-	// Pull the apps into React state on mount and then poll periodically so
-	// the `running` flags stay current (the Rust thread updates them every
-	// 3s; we re-fetch every 5s).
+	// Pull the apps into React state once on mount and refresh when the
+	// launcher window becomes visible again. We avoid a polling interval
+	// because Page Visibility gives us the exact moments we care about.
 	useEffect(() => {
 		void fetchApps();
-		const interval = setInterval(() => {
-			void fetchApps();
-		}, RUNNING_POLL_INTERVAL_MS);
-		return () => clearInterval(interval);
-	}, [fetchApps]);
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === "visible") {
+				void refreshIfStale();
+			}
+		};
+		document.addEventListener("visibilitychange", handleVisibilityChange);
+		return () => {
+			document.removeEventListener("visibilitychange", handleVisibilityChange);
+		};
+	}, [fetchApps, refreshIfStale]);
 
 	return {
 		apps,

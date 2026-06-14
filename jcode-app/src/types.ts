@@ -18,6 +18,9 @@ export interface ToolStartEvent {
 export interface ToolInputEvent {
 	type: "tool_input";
 	delta: string;
+	/** Tool call id when the backend provides one; otherwise tracking falls
+	 * back to the most-recent tool on the current message. */
+	id?: string;
 }
 
 export interface ToolExecEvent {

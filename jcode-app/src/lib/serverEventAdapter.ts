@@ -13,7 +13,7 @@ export type DesktopSemanticEvent =
 	| { type: "append-text"; text: string }
 	| { type: "replace-text"; text: string }
 	| { type: "tool-start"; id: string; name: string }
-	| { type: "tool-input"; delta: string }
+| { type: "tool-input"; id?: string; delta: string }
 	| { type: "tool-exec"; id: string; name: string }
 	| { type: "tool-done"; id: string; output: string; error?: string }
 	| { type: "assistant-message"; content: string; images?: AttachedImage[] }
@@ -206,7 +206,7 @@ export function rawServerEventToDesktopEvents(
 		case "tool_start":
 			return [{ type: "tool-start", id: event.id, name: event.name }];
 		case "tool_input":
-			return [{ type: "tool-input", delta: event.delta }];
+			return [{ type: "tool-input", id: event.id, delta: event.delta }];
 		case "tool_exec":
 			return [{ type: "tool-exec", id: event.id, name: event.name }];
 		case "tool_done":

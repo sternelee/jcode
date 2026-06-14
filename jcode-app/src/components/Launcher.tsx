@@ -98,6 +98,7 @@ export function Launcher() {
 		applications,
 		refreshSessions,
 	} = useLauncher();
+	const [inputValue, setInputValue] = useState("");
 
 	// Listen for the global shortcut so the launcher resets state every time
 	// it appears. Without this, a half-typed query from the previous
@@ -106,6 +107,7 @@ export function Launcher() {
 		let unlisten: (() => void) | null = null;
 		void listen<string>("global-shortcut", () => {
 			setQuery("");
+			setInputValue("");
 			setError(null);
 			void refreshSessions();
 			// Skip the app-index rescan if we already refreshed within the
@@ -128,6 +130,16 @@ export function Launcher() {
 			if (unlisten) unlisten();
 		};
 	}, [setQuery, setError, refreshSessions, applications]);
+	// Debounce typing so we only ask the backend to filter/score apps once
+	// the user pauses. This keeps the launcher responsive and avoids a
+	// command invocation per keystroke.
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			setQuery(inputValue);
+			void applications.search(inputValue);
+		}, 150);
+		return () => clearTimeout(timer);
+	}, [inputValue, setQuery, applications.search]);
 
 	// Track which item the keyboard cursor is hovering so we can give a
 	// visible hint. `cmdk` handles the actual selection state internally;
@@ -229,13 +241,20 @@ export function Launcher() {
 		}
 	};
 
-	const handleClearQuery = () => setQuery("");
+	const handleClearQuery = () => {
+		setInputValue("");
+		setQuery("");
+	};
 
-	const handleClearAgent = () => setQuery("");
+	const handleClearAgent = () => {
+		setInputValue("");
+		setQuery("");
+	};
 
 	// Strip just the `ask ` prefix so the user can quickly pivot from
 	// agent mode back to regular search without re-typing their query.
 	const handleStripAgent = () => {
+		setInputValue((current) => current.replace(/^ask\s*/i, ""));
 		setQuery((current) => current.replace(/^ask\s*/i, ""));
 	};
 

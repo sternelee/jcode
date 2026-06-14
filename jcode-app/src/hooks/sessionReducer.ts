@@ -653,13 +653,17 @@ export function sessionReducer(
 				if (targetIdx !== -1) {
 					const l = ms[targetIdx];
 					const tls = [...l.toolExecutions];
-					const c = tls[tls.length - 1];
-					if (c && c.status !== "done" && c.status !== "error")
-						tls[tls.length - 1] = {
-							...c,
-							input: c.input + action.delta,
+					const targetTool = action.id
+						? tls.find((t) => t.id === action.id && t.status !== "done" && t.status !== "error")
+						: tls[tls.length - 1];
+					if (targetTool) {
+						const i = tls.indexOf(targetTool);
+						tls[i] = {
+							...targetTool,
+							input: targetTool.input + action.delta,
 							status: "collecting_input",
 						};
+					}
 					ms[targetIdx] = { ...l, toolExecutions: tls };
 				}
 				return { ...data, messages: ms };

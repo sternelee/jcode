@@ -43,7 +43,7 @@ export function processEvent(
 			case "tool-input":
 				dispatch({
 					type: "TOOL_INPUT",
-					id: "",
+					id: desktopEvent.id ?? "",
 					delta: desktopEvent.delta,
 					sessionId: sid,
 					roleSessionId,

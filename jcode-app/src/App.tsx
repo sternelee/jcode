@@ -862,7 +862,14 @@ export default function App() {
 				<LeftSidebar
 					activeTab={activeNavTab}
 					onOpenLauncher={() => void invoke("show_launcher")}
-					onOpenPage={(page) => void invoke("open_pages_window", { page })}
+					onOpenPage={(page) => {
+						const inline = ["skills", "tasks", "mcp", "monitor", "team", "media", "settings"];
+						if (inline.includes(page)) {
+							setActiveNavTab(page);
+						} else {
+							void invoke("open_pages_window", { page });
+						}
+					}}
 					onNewTask={() => {
 						setCreateDialogInitMode("normal");
 						setCreateDialogOpen(true);
@@ -966,8 +973,6 @@ export default function App() {
 									? (state.sessionData[selectedConvId]?.sidePanel ?? null)
 									: null
 							}
-							consultantFiles={[]}
-							skillFiles={[]}
 							open={sidePanelOpen}
 							onToggle={() => setSidePanelOpen((o) => !o)}
 						/>

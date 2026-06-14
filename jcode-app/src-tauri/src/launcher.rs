@@ -46,6 +46,59 @@ pub struct AppIndex {
     apps: Vec<AppInfo>,
 }
 
+/// Score how well `query` matches `name` using a simple fuzzy algorithm.
+///
+/// Returns a positive score when every query character appears in `name`
+/// in order, and `0` otherwise. Bonuses are given for matches at the
+/// start of the string, after word separators, and for consecutive
+/// characters; gaps between matched characters are penalized.
+pub fn fuzzy_score(name: &str, query: &str) -> i32 {
+    if query.is_empty() {
+        return 1;
+    }
+
+    let name_lower = name.to_lowercase();
+    let query_lower = query.to_lowercase();
+    let name_chars: Vec<char> = name_lower.chars().collect();
+
+    let mut score = 0;
+    let mut name_idx = 0;
+    let mut prev_idx: Option<usize> = None;
+
+    for q in query_lower.chars() {
+        let slice = &name_chars[name_idx..];
+        let pos = match slice.iter().position(|&c| c == q) {
+            Some(p) => p,
+            None => return 0,
+        };
+        let idx = name_idx + pos;
+
+        score += 10;
+        if prev_idx.map_or(false, |p| p + 1 == idx) {
+            score += 7; // consecutive match
+        }
+        if idx == 0 {
+            score += 8; // start of string
+        } else if is_fuzzy_word_start(name_chars[idx - 1]) {
+            score += 5; // start of a word
+        }
+        if let Some(p) = prev_idx {
+            let gap = idx - p;
+            if gap > 1 {
+                score -= ((gap - 1) as i32) * 3; // gap penalty
+            }
+        }
+
+        name_idx = idx + 1;
+        prev_idx = Some(idx);
+    }
+
+    score.max(1)
+}
+
+fn is_fuzzy_word_start(c: char) -> bool {
+    !c.is_alphanumeric()
+}
 impl AppIndex {
     /// Re-scan the system for installed applications using the
     /// `applications` crate (LaunchServices + Spotlight).
@@ -74,22 +127,48 @@ impl AppIndex {
         }
     }
 
-    /// Filter the index by a case-insensitive name / bundle-id query.
-    /// An empty query returns the first 80 entries.
+    /// Filter and score the index for the given query.
+    ///
+    /// An empty query returns the first 80 apps sorted alphabetically.
+    /// A non-empty query scores each app by name (falling back to the
+    /// bundle id), sorts by score descending then name ascending, and
+    /// returns the top 50.
     pub fn search(&self, query: &str) -> Vec<AppInfo> {
-        let lower = query.to_lowercase();
-        if lower.is_empty() {
-            return self.apps.clone();
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return self.apps.iter().take(80).cloned().collect();
         }
-        self.apps
+
+        let query_lower = trimmed.to_lowercase();
+        let mut scored: Vec<(AppInfo, i32)> = self
+            .apps
             .iter()
-            .filter(|a| app_matches(a, &lower))
-            .cloned()
-            .collect()
+            .filter_map(|app| {
+                let score = fuzzy_score(&app.name, &query_lower);
+                if score > 0 {
+                    return Some((app.clone(), score));
+                }
+                if let Some(id) = app.bundle_id.as_ref() {
+                    let score = fuzzy_score(id, &query_lower);
+                    if score > 0 {
+                        return Some((app.clone(), score));
+                    }
+                }
+                None
+            })
+            .collect();
+
+        scored.sort_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then_with(|| a.0.name.to_lowercase().cmp(&b.0.name.to_lowercase()))
+        });
+
+        scored.into_iter().take(50).map(|(app, _)| app).collect()
     }
 
     /// Like [`search`], but additionally marks each result `running`
-    /// when its bundle id appears in the provided set.
+    /// when its bundle id appears in the provided set. Running apps are
+    /// surfaced first only when the query is empty.
     pub fn search_with_running(
         &self,
         query: &str,
@@ -103,7 +182,6 @@ impl AppIndex {
                 }
             }
         }
-        // When the query is empty, surface running apps first.
         if query.trim().is_empty() && !running.is_empty() {
             results.sort_by(|a, b| {
                 b.running
@@ -119,17 +197,6 @@ impl AppIndex {
     }
 }
 
-fn app_matches(app: &AppInfo, lower: &str) -> bool {
-    if app.name.to_lowercase().contains(lower) {
-        return true;
-    }
-    if let Some(id) = app.bundle_id.as_ref() {
-        if id.to_lowercase().contains(lower) {
-            return true;
-        }
-    }
-    false
-}
 
 // ——— Application scanning (macOS) —————————————————————————————————————————
 

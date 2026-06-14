@@ -33,6 +33,51 @@ function matchesSession(session: SessionInfo, lowerQuery: string): boolean {
 	}
 	return false;
 }
+/** Simple fuzzy scorer. Returns a positive number when every query
+ * character appears in `text` in order, and `0` otherwise. Matches at
+ * the start of the string, after word separators, and consecutive
+ * characters earn bonuses; gaps are penalized. */
+function fuzzyScore(text: string, query: string): number {
+	if (!query) return 0;
+	const t = text.toLowerCase();
+	const q = query.toLowerCase();
+	let score = 0;
+	let ti = 0;
+	let prev = -1;
+	for (let i = 0; i < q.length; i++) {
+		const idx = t.indexOf(q[i], ti);
+		if (idx === -1) return 0;
+		score += 10;
+		if (prev !== -1 && idx === prev + 1) score += 7;
+		if (idx === 0) score += 8;
+		if (idx > 0 && /[^a-z0-9]/.test(t[idx - 1])) score += 5;
+		if (prev !== -1 && idx - prev > 1) score -= (idx - prev - 1) * 3;
+		ti = idx + 1;
+		prev = idx;
+	}
+	return Math.max(score, 1);
+}
+
+/** Best fuzzy score across the session fields the user can search by. */
+function sessionScore(session: SessionInfo, query: string): number {
+	const fields = [
+		session.title,
+		session.subtitle,
+		session.detail,
+		session.workingDir,
+		session.model,
+		session.provider,
+		session.providerName,
+		session.providerModel,
+		...(session.previewLines ?? []),
+		...(session.detailLines ?? []),
+	];
+	let best = 0;
+	for (const field of fields) {
+		if (field) best = Math.max(best, fuzzyScore(field, query));
+	}
+	return best;
+}
 
 const BUILTIN_COMMANDS: ReadonlyArray<{
 	page: BuiltinPage;
@@ -84,6 +129,17 @@ const BUILTIN_COMMANDS: ReadonlyArray<{
 		iconName: "settings",
 	},
 ];
+/** Best fuzzy score across a builtin's title, keyword, and page name. */
+function builtinScore(
+	b: { page: BuiltinPage; title: string; keyword: string },
+	query: string,
+): number {
+	return Math.max(
+		fuzzyScore(b.title, query),
+		fuzzyScore(b.keyword, query),
+		fuzzyScore(b.page, query),
+	);
+}
 
 const AGENT_ITEM: LauncherItem = {
 	kind: "agent",
@@ -297,15 +353,9 @@ export function useLauncher() {
 			}
 		}
 
-		// Applications
+		// Applications: the backend has already filtered/scored them, so we
+		// just deduplicate against the Recent list.
 		for (const app of applications.apps) {
-			if (
-				trimmed &&
-				!app.name.toLowerCase().includes(lower) &&
-				!(app.bundleId?.toLowerCase().includes(lower) ?? false)
-			) {
-				continue;
-			}
 			// Don't re-show recent apps in the main list to avoid duplicates.
 			if (recentIds.has(`app:${app.appPath}`)) continue;
 			out.push({
@@ -316,9 +366,10 @@ export function useLauncher() {
 		}
 
 		// Recent sessions (no query only)
+		const sessionItems: LauncherItem[] = [];
 		if (!trimmed) {
 			for (const session of sessions.slice(0, 5)) {
-				out.push({
+				sessionItems.push({
 					kind: "session",
 					id: `session:${session.sessionId}`,
 					session,
@@ -327,15 +378,25 @@ export function useLauncher() {
 		} else {
 			for (const session of sessions) {
 				if (!matchesSession(session, lower)) continue;
-				out.push({
+				sessionItems.push({
 					kind: "session",
 					id: `session:${session.sessionId}`,
 					session,
 				});
 			}
+			sessionItems.sort((a, b) => {
+				const sa = sessionScore(a.session, lower);
+				const sb = sessionScore(b.session, lower);
+				if (sb !== sa) return sb - sa;
+				return (a.session.title ?? "")
+					.toLowerCase()
+					.localeCompare((b.session.title ?? "").toLowerCase());
+			});
 		}
+		out.push(...sessionItems);
 
 		// Builtin commands
+		const builtinItems: LauncherItem[] = [];
 		for (const builtin of BUILTIN_COMMANDS) {
 			if (
 				trimmed &&
@@ -345,7 +406,7 @@ export function useLauncher() {
 			) {
 				continue;
 			}
-			out.push({
+			builtinItems.push({
 				kind: "builtin",
 				id: `builtin:${builtin.page}`,
 				page: builtin.page,
@@ -355,6 +416,15 @@ export function useLauncher() {
 				iconName: builtin.iconName,
 			});
 		}
+		if (trimmed) {
+			builtinItems.sort((a, b) => {
+				const sa = builtinScore(a, lower);
+				const sb = builtinScore(b, lower);
+				if (sb !== sa) return sb - sa;
+				return a.title.toLowerCase().localeCompare(b.title.toLowerCase());
+			});
+		}
+		out.push(...builtinItems);
 
 		return out;
 	}, [query, applications.apps, sessions, recent, frequency]);
