@@ -112,6 +112,7 @@ pub async fn hide_launcher(app_handle: AppHandle) -> Result<(), TauriError> {
 #[tauri::command]
 pub async fn show_workbench(app_handle: AppHandle) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("workbench") {
+        let _ = window.unminimize(); // restore if miniaturized
         window.show().map_err(|e| TauriError::from(e.to_string()))?;
         window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
     }
@@ -134,6 +135,7 @@ pub async fn expand_to_workbench(
         let _ = window.hide();
     }
     if let Some(window) = app_handle.get_webview_window("workbench") {
+        let _ = window.unminimize(); // restore if miniaturized
         window.show().map_err(|e| TauriError::from(e.to_string()))?;
         window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
     }
@@ -160,6 +162,7 @@ pub async fn open_pages_window(
     page: String,
 ) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("pages") {
+        let _ = window.unminimize(); // restore if miniaturized
         window.show().map_err(|e| TauriError::from(e.to_string()))?;
         window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
         let _ = app_handle.emit("pages:navigate", page);
@@ -174,11 +177,13 @@ pub async fn drag_window(window: tauri::WebviewWindow) -> Result<(), TauriError>
 #[tauri::command]
 pub async fn minimize_window(window: tauri::WebviewWindow) -> Result<(), TauriError> {
     let label = window.label().to_string();
-    let is_main = label == "workbench" || label == "pages";
-    if is_main {
+    window.minimize().map_err(|e| TauriError::from(e.to_string()))?;
+    // Show the Dock AFTER minimizing so macOS knows a miniaturized
+    // window exists and will restore it on Dock click.
+    if label == "workbench" || label == "pages" {
         crate::set_dock_visible(true);
     }
-    window.minimize().map_err(|e| TauriError::from(e.to_string()))
+    Ok(())
 }
 #[tauri::command]
 pub async fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<(), TauriError> {

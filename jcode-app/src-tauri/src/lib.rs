@@ -29,6 +29,10 @@ pub(crate) fn set_dock_visible(visible: bool) {
         // NSApplicationActivationPolicyRegular = 0, Accessory = 1
         let policy: isize = if visible { 0 } else { 1 };
         let _: () = msg_send![ns_app, setActivationPolicy: policy];
+        // Activate the app so the Dock icon responds to clicks.
+        if visible {
+            let _: () = msg_send![ns_app, activateIgnoringOtherApps: true];
+        }
     }
     #[cfg(not(target_os = "macos"))]
     let _ = visible;
@@ -151,17 +155,23 @@ pub fn run() {
                             let _ = window_clone.hide();
                         }
                         // When the user clicks the Dock icon to restore a
-                        // minimized workbench, the system restores it and
-                        // fires Focused(true). Check if we should hide the
-                        // Dock now (after a short delay for the animation).
+                        // minimized window, the system restores it and fires
+                        // Focused(true). Wait for the unminimize animation
+                        // to finish, then hide the Dock only if the window
+                        // is actually visible (not minimized).
                         tauri::WindowEvent::Focused(true) => {
+                            let w = window_clone.clone();
                             let ah = app_handle.clone();
                             tauri::async_runtime::spawn(async move {
                                 tokio::time::sleep(
-                                    std::time::Duration::from_millis(600),
+                                    std::time::Duration::from_millis(800),
                                 )
                                 .await;
-                                hide_dock_if_all_visible(&ah);
+                                if w.is_visible().unwrap_or(false)
+                                    && !w.is_minimized().unwrap_or(true)
+                                {
+                                    hide_dock_if_all_visible(&ah);
+                                }
                             });
                         }
                         _ => {}
@@ -178,13 +188,18 @@ pub fn run() {
                             let _ = window_clone.hide();
                         }
                         tauri::WindowEvent::Focused(true) => {
+                            let w = window_clone.clone();
                             let ah = app_handle.clone();
                             tauri::async_runtime::spawn(async move {
                                 tokio::time::sleep(
-                                    std::time::Duration::from_millis(600),
+                                    std::time::Duration::from_millis(800),
                                 )
                                 .await;
-                                hide_dock_if_all_visible(&ah);
+                                if w.is_visible().unwrap_or(false)
+                                    && !w.is_minimized().unwrap_or(true)
+                                {
+                                    hide_dock_if_all_visible(&ah);
+                                }
                             });
                         }
                         _ => {}
