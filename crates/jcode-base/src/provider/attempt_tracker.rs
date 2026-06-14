@@ -17,8 +17,8 @@
 
 use crate::message::StreamEvent;
 use anyhow::Result;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -91,10 +91,10 @@ pub(crate) fn track_attempt_output(
     let saw_output_writer = Arc::clone(&saw_output);
     let forwarder = tokio::spawn(async move {
         while let Some(item) = attempt_rx.recv().await {
-            if let Ok(event) = &item {
-                if stream_event_is_replay_visible(event) {
-                    saw_output_writer.store(true, Ordering::SeqCst);
-                }
+            if let Ok(event) = &item
+                && stream_event_is_replay_visible(event)
+            {
+                saw_output_writer.store(true, Ordering::SeqCst);
             }
             if outer.send(item).await.is_err() {
                 // Consumer hung up; closing the attempt channel lets the
@@ -159,9 +159,11 @@ mod tests {
             cache_read_input_tokens: None,
             cache_creation_input_tokens: None,
         }));
-        assert!(!stream_event_is_replay_visible(&StreamEvent::StatusDetail {
-            detail: "https".into(),
-        }));
+        assert!(!stream_event_is_replay_visible(
+            &StreamEvent::StatusDetail {
+                detail: "https".into(),
+            }
+        ));
         assert!(!stream_event_is_replay_visible(
             &StreamEvent::RetryRollback { attempt: 1, max: 3 }
         ));

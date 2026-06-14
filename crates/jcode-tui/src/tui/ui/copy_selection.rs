@@ -135,21 +135,21 @@ pub(super) fn copy_selection_metrics_from_raw_lines(
             chars += text.chars().count();
             continue;
         }
-        let line_width = line_display_width(&text);
+        let line_width = line_display_width(text);
         let start_col = if raw_line == start.raw_line {
-            clamp_display_col(&text, start.column)
+            clamp_display_col(text, start.column)
         } else {
             0
         };
         let end_col = if raw_line == end.raw_line {
-            clamp_display_col(&text, end.column)
+            clamp_display_col(text, end.column)
         } else {
             line_width
         };
         if end_col < start_col {
             continue;
         }
-        chars += display_col_slice(&text, start_col, end_col).chars().count();
+        chars += display_col_slice(text, start_col, end_col).chars().count();
     }
 
     Some((chars, lines.max(1)))

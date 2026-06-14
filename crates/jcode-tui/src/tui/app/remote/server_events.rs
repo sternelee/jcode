@@ -106,10 +106,10 @@ fn should_defer_history_for_runtime_identity_with_allow(
 /// from a dev/dirty test binary (whose real version would otherwise be
 /// unorderable and short-circuit the comparison).
 fn client_release_version() -> String {
-    if cfg!(test) || cfg!(debug_assertions) {
-        if let Some(v) = std::env::var_os("JCODE_TEST_CLIENT_VERSION_OVERRIDE") {
-            return v.to_string_lossy().into_owned();
-        }
+    if (cfg!(test) || cfg!(debug_assertions))
+        && let Some(v) = std::env::var_os("JCODE_TEST_CLIENT_VERSION_OVERRIDE")
+    {
+        return v.to_string_lossy().into_owned();
     }
     jcode_build_meta::VERSION.to_string()
 }
@@ -242,6 +242,39 @@ pub(in crate::tui::app) fn handle_server_event(
     }
 
     let had_remote_resume_activity = app.remote_resume_activity.is_some();
+
+    // A turn can start in this session without this client sending a message:
+    // swarm wake delivery, background-task wakes, scheduled tasks, resume-all,
+    // or another window attached to the same session. When live turn-stream
+    // events arrive while this client thinks the session is idle, adopt the
+    // turn so the status line/spinner reflect the in-progress work and the
+    // terminal Done/Error event can settle it like a resumed remote turn.
+    let externally_started_turn_event = app.current_message_id.is_none()
+        && !app.is_processing
+        && matches!(
+            &event,
+            ServerEvent::TextDelta { .. }
+                | ServerEvent::TextReplace { .. }
+                | ServerEvent::ReasoningDelta { .. }
+                | ServerEvent::ReasoningDone { .. }
+                | ServerEvent::ToolStart { .. }
+                | ServerEvent::ToolInput { .. }
+                | ServerEvent::ToolExec { .. }
+                | ServerEvent::ToolDone { .. }
+                | ServerEvent::BatchProgress { .. }
+                | ServerEvent::ConnectionPhase { .. }
+                | ServerEvent::StatusDetail { .. }
+        );
+    if externally_started_turn_event {
+        crate::logging::info(
+            "Adopting externally started turn: stream event received while idle with no current_message_id",
+        );
+        app.is_processing = true;
+        if app.processing_started.is_none() {
+            app.processing_started = Some(Instant::now());
+        }
+        app.last_stream_activity = Some(Instant::now());
+    }
 
     if matches!(
         &event,
@@ -616,9 +649,10 @@ pub(in crate::tui::app) fn handle_server_event(
             ));
             app.rollback_streaming_attempt();
             remote.clear_pending();
-            app.status = ProcessingStatus::Connecting(
-                crate::message::ConnectionPhase::Retrying { attempt, max },
-            );
+            app.status = ProcessingStatus::Connecting(crate::message::ConnectionPhase::Retrying {
+                attempt,
+                max,
+            });
             true
         }
         ServerEvent::UpstreamProvider { provider } => {

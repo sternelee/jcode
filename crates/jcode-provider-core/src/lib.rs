@@ -3,6 +3,7 @@ pub mod auth_mode;
 pub mod catalog_refresh;
 pub mod failover;
 pub mod fingerprint;
+pub mod model_id;
 pub mod models;
 pub mod openai_schema;
 pub mod pricing;
@@ -994,6 +995,8 @@ pub enum RouteCostSource {
     RuntimePlan,
     OpenRouterEndpoint,
     OpenRouterCatalog,
+    /// Live models.dev pricing catalog (https://models.dev/api.json).
+    ModelsDevCatalog,
     Heuristic,
 }
 

@@ -12,7 +12,7 @@ use crate::{browser, gateway, memory, session, storage, tui};
 
 use super::terminal::init_tui_runtime;
 
-pub mod provider_setup;
+mod provider_setup;
 mod report_info;
 mod restart;
 
@@ -160,17 +160,15 @@ fn run_cloud_sessions_command(action: CloudSessionsSubcommand) -> Result<()> {
             user_id,
             helper,
             clear,
-        } => {
-            run_cloud_sessions_configure(
-                api_base,
-                api_token,
-                api_token_env,
-                api_token_id,
-                user_id,
-                helper,
-                clear,
-            )
-        }
+        } => run_cloud_sessions_configure(
+            api_base,
+            api_token,
+            api_token_env,
+            api_token_id,
+            user_id,
+            helper,
+            clear,
+        ),
         CloudSessionsSubcommand::Status { json } => run_cloud_sessions_status(json),
         CloudSessionsSubcommand::Dashboard {
             limit,
@@ -181,18 +179,16 @@ fn run_cloud_sessions_command(action: CloudSessionsSubcommand) -> Result<()> {
             profile,
             region,
             helper,
-        } => {
-            run_cloud_sessions_dashboard(CloudSessionsDashboardRequest {
-                limit,
-                output,
-                open,
-                with_view,
-                user_id,
-                profile,
-                region,
-                helper,
-            })
-        }
+        } => run_cloud_sessions_dashboard(CloudSessionsDashboardRequest {
+            limit,
+            output,
+            open,
+            with_view,
+            user_id,
+            profile,
+            region,
+            helper,
+        }),
         CloudSessionsSubcommand::Sync {
             sessions_dir,
             since_days,
@@ -207,23 +203,21 @@ fn run_cloud_sessions_command(action: CloudSessionsSubcommand) -> Result<()> {
             profile,
             region,
             helper,
-        } => {
-            run_cloud_sessions_sync(CloudSessionsSyncRequest {
-                sessions_dir,
-                since_days,
-                all,
-                max,
-                min_interval_mins,
-                raw,
-                dry_run,
-                force,
-                json,
-                user_id,
-                profile,
-                region,
-                helper,
-            })
-        }
+        } => run_cloud_sessions_sync(CloudSessionsSyncRequest {
+            sessions_dir,
+            since_days,
+            all,
+            max,
+            min_interval_mins,
+            raw,
+            dry_run,
+            force,
+            json,
+            user_id,
+            profile,
+            region,
+            helper,
+        }),
         other => run_cloud_sessions_helper_command(other),
     }
 }
@@ -3252,48 +3246,6 @@ fn filter_cli_model_routes_for_choice(
         filtered
     }
 }
-
-async fn send_simple_request(request: crate::protocol::Request) -> Result<()> {
-    let mut client = crate::server::Client::connect_debug().await?;
-    let request_id = client.send_request(request).await?;
-
-    loop {
-        match client.read_event().await? {
-            crate::protocol::ServerEvent::Ack { id } if id == request_id => {}
-            crate::protocol::ServerEvent::Done { id } if id == request_id => return Ok(()),
-            crate::protocol::ServerEvent::Error { id, message, .. } if id == request_id => {
-                anyhow::bail!(message)
-            }
-            _ => {}
-        }
-    }
-}
-
-pub async fn run_clear_command() -> Result<()> {
-    send_simple_request(crate::protocol::Request::Clear { id: 0 }).await
-}
-
-pub async fn run_rewind_command(message_index: usize) -> Result<()> {
-    send_simple_request(crate::protocol::Request::Rewind {
-        id: 0,
-        message_index,
-    })
-    .await
-}
-
-pub async fn run_set_reasoning_effort_command(effort: &str) -> Result<()> {
-    send_simple_request(crate::protocol::Request::SetReasoningEffort {
-        id: 0,
-        effort: effort.to_string(),
-        target_session_id: None,
-    })
-    .await
-}
-
-pub async fn run_compact_command() -> Result<()> {
-    send_simple_request(crate::protocol::Request::Compact { id: 0 }).await
-}
-
 #[cfg(test)]
 #[path = "commands_tests.rs"]
 mod tests;

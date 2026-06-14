@@ -802,9 +802,10 @@ impl AnthropicProvider {
         // Max/Pro users expect.
         if matches!(mode, AnthropicCredentialMode::Auto)
             && auth::claude::load_credentials().is_err()
-            && let Ok(key) = load_anthropic_api_key() {
-                return Ok((key, false));
-            }
+            && let Ok(key) = load_anthropic_api_key()
+        {
+            return Ok((key, false));
+        }
 
         self.get_oauth_access_token().await
     }
@@ -1068,6 +1069,7 @@ impl Provider for AnthropicProvider {
         let client = self.client.clone();
         let credentials = Arc::clone(&self.credentials);
         let oauth_session_id = self.oauth_session_id.clone();
+        let model_state = Arc::clone(&self.model);
 
         // Spawn task to handle streaming with retry logic.
         // This includes forced OAuth refresh on auth failures.
@@ -1090,6 +1092,7 @@ impl Provider for AnthropicProvider {
                 credentials,
                 model,
                 oauth_session_id,
+                model_state,
             )
             .await;
         });
@@ -1372,6 +1375,7 @@ impl Provider for AnthropicProvider {
         let client = self.client.clone();
         let credentials = Arc::clone(&self.credentials);
         let oauth_session_id = self.oauth_session_id.clone();
+        let model_state = Arc::clone(&self.model);
 
         // Spawn task to handle streaming with retry logic
         tokio::spawn(async move {
@@ -1393,6 +1397,7 @@ impl Provider for AnthropicProvider {
                 credentials,
                 model,
                 oauth_session_id,
+                model_state,
             )
             .await;
         });
@@ -1409,15 +1414,21 @@ async fn run_stream_with_retries(
     client: Client,
     initial_token: String,
     is_oauth: bool,
-    request: ApiRequest,
+    mut request: ApiRequest,
     tx: mpsc::Sender<Result<StreamEvent>>,
     credentials: Arc<RwLock<Option<CachedCredentials>>>,
     model_name: String,
     oauth_session_id: String,
+    model_state: Arc<std::sync::RwLock<String>>,
 ) {
     let mut token = initial_token;
     let mut last_error = None;
     let mut attempted_forced_refresh = false;
+    let original_model = model_name.clone();
+    let mut model_name = model_name;
+    // Track every model id we have already attempted so a retired/renamed
+    // model only falls back to genuinely new candidates.
+    let mut tried_models: Vec<String> = vec![original_model.clone()];
 
     for attempt in 0..MAX_RETRIES {
         if attempt > 0 {
@@ -1509,6 +1520,30 @@ async fn run_stream_with_retries(
                             return;
                         }
                     }
+                }
+
+                // Model not found (e.g. a retired or renamed model id): the
+                // server rejects the request up front with a 404 before any
+                // output streams. Transparently fall back to an available
+                // model so the in-flight request still completes instead of
+                // hard-failing, and persist the switch so later turns reuse
+                // the working model.
+                if is_model_not_found_error(&error_str)
+                    && !saw_output
+                    && let Some(fallback) = anthropic_fallback_model(&tried_models)
+                {
+                    crate::logging::warn(&format!(
+                        "Anthropic model '{}' is not available ({}); retrying with fallback '{}'",
+                        model_name, e, fallback
+                    ));
+                    request.model = strip_1m_suffix(&fallback).to_string();
+                    *model_state
+                        .write()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner()) = fallback.clone();
+                    tried_models.push(fallback.clone());
+                    model_name = fallback;
+                    last_error = Some(e);
+                    continue;
                 }
 
                 // Check if this is a transient/retryable error
@@ -1708,12 +1743,7 @@ async fn stream_response(
     // Parse SSE stream
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
-    let mut current_tool_use: Option<ToolUseAccumulator> = None;
-    let mut current_thinking_block = false;
-    let mut input_tokens: Option<u64> = None;
-    let mut output_tokens: Option<u64> = None;
-    let mut cache_read_input_tokens: Option<u64> = None;
-    let mut cache_creation_input_tokens: Option<u64> = None;
+    let mut sse_state = SseStreamState::default();
 
     const SSE_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
 
@@ -1731,16 +1761,7 @@ async fn stream_response(
 
         // Process complete SSE events
         while let Some(event) = parse_sse_event(&mut buffer) {
-            let events = process_sse_event(
-                &event,
-                &mut current_tool_use,
-                &mut current_thinking_block,
-                &mut input_tokens,
-                &mut output_tokens,
-                &mut cache_read_input_tokens,
-                &mut cache_creation_input_tokens,
-                is_oauth,
-            );
+            let events = process_sse_event(&event, &mut sse_state, is_oauth);
             for stream_event in events {
                 if let StreamEvent::Error { ref message, .. } = stream_event
                     && is_retryable_error(&message.to_lowercase())
@@ -1755,20 +1776,22 @@ async fn stream_response(
     }
 
     // Send final token usage if we have it
-    if input_tokens.is_some() || output_tokens.is_some() {
+    if sse_state.input_tokens.is_some() || sse_state.output_tokens.is_some() {
         // Log cache usage for debugging
-        if cache_read_input_tokens.is_some() || cache_creation_input_tokens.is_some() {
+        if sse_state.cache_read_input_tokens.is_some()
+            || sse_state.cache_creation_input_tokens.is_some()
+        {
             crate::logging::info(&format!(
                 "Prompt cache: read={:?} created={:?}",
-                cache_read_input_tokens, cache_creation_input_tokens
+                sse_state.cache_read_input_tokens, sse_state.cache_creation_input_tokens
             ));
         }
         let _ = tx
             .send(Ok(StreamEvent::TokenUsage {
-                input_tokens,
-                output_tokens,
-                cache_read_input_tokens,
-                cache_creation_input_tokens,
+                input_tokens: sse_state.input_tokens,
+                output_tokens: sse_state.output_tokens,
+                cache_read_input_tokens: sse_state.cache_read_input_tokens,
+                cache_creation_input_tokens: sse_state.cache_creation_input_tokens,
             }))
             .await;
     }
@@ -1792,6 +1815,41 @@ fn is_retryable_error(error_str: &str) -> bool {
         // API-level server errors (SSE error events)
         || error_str.contains("api_error")
         || error_str.contains("internal server error")
+}
+
+/// Detect an Anthropic "model not found" rejection.
+///
+/// Anthropic returns HTTP 404 with `"type":"not_found_error"` when a model id
+/// has been retired or renamed (e.g. `claude-fable-5` after it was folded into
+/// Opus 4.8). The message text varies, so match on the stable structural
+/// markers. `error_str` is expected to already be lowercased.
+fn is_model_not_found_error(error_str: &str) -> bool {
+    let mentions_model = error_str.contains("model");
+    let is_not_found = error_str.contains("not_found_error")
+        || error_str.contains("404 not found")
+        || error_str.contains("(404 ");
+    is_not_found
+        && (mentions_model
+            || error_str.contains("is not available")
+            || error_str.contains("please use"))
+}
+
+/// Pick the next Anthropic model to try after a "model not found" failure.
+///
+/// Walks the known model catalog (live catalog when available, otherwise the
+/// static list) in preference order and returns the first model that has not
+/// already been attempted. Returns `None` once every candidate is exhausted so
+/// the caller can surface the original error.
+fn anthropic_fallback_model(tried: &[String]) -> Option<String> {
+    let already_tried = |candidate: &str| {
+        tried.iter().any(|model| {
+            AnthropicProvider::normalized_model_key(model)
+                == AnthropicProvider::normalized_model_key(candidate)
+        })
+    };
+    crate::provider::known_anthropic_model_ids()
+        .into_iter()
+        .find(|candidate| !already_tried(candidate))
 }
 
 fn is_oauth_auth_error(error_str: &str) -> bool {
@@ -1849,15 +1907,22 @@ struct SseEvent {
     data: String,
 }
 
+/// Mutable accumulator state threaded through [`process_sse_event`] across a
+/// single SSE response stream.
+#[derive(Default)]
+struct SseStreamState {
+    current_tool_use: Option<ToolUseAccumulator>,
+    current_thinking_block: bool,
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
+    cache_read_input_tokens: Option<u64>,
+    cache_creation_input_tokens: Option<u64>,
+}
+
 /// Process an SSE event and return StreamEvents if applicable
 fn process_sse_event(
     event: &SseEvent,
-    current_tool_use: &mut Option<ToolUseAccumulator>,
-    current_thinking_block: &mut bool,
-    input_tokens: &mut Option<u64>,
-    output_tokens: &mut Option<u64>,
-    cache_read_input_tokens: &mut Option<u64>,
-    cache_creation_input_tokens: &mut Option<u64>,
+    state: &mut SseStreamState,
     is_oauth: bool,
 ) -> Vec<StreamEvent> {
     let mut events = Vec::new();
@@ -1868,9 +1933,10 @@ fn process_sse_event(
             if let Ok(parsed) = serde_json::from_str::<MessageStartEvent>(&event.data)
                 && let Some(usage) = parsed.message.usage
             {
-                *input_tokens = usage.input_tokens.map(|t| t as u64);
-                *cache_read_input_tokens = usage.cache_read_input_tokens.map(|t| t as u64);
-                *cache_creation_input_tokens = usage.cache_creation_input_tokens.map(|t| t as u64);
+                state.input_tokens = usage.input_tokens.map(|t| t as u64);
+                state.cache_read_input_tokens = usage.cache_read_input_tokens.map(|t| t as u64);
+                state.cache_creation_input_tokens =
+                    usage.cache_creation_input_tokens.map(|t| t as u64);
                 if let Some(tier) = usage.service_tier.as_deref() {
                     crate::logging::info(&format!("Anthropic granted service_tier={}", tier));
                     if std::env::var("JCODE_LOG_SERVICE_TIER").is_ok() {
@@ -1886,14 +1952,14 @@ fn process_sse_event(
                         // Text block starting - nothing to emit yet
                     }
                     ApiContentBlockStart::Thinking { _thinking, .. } => {
-                        *current_thinking_block = true;
+                        state.current_thinking_block = true;
                         events.push(StreamEvent::ThinkingStart);
                         if !_thinking.is_empty() {
                             events.push(StreamEvent::ThinkingDelta(_thinking));
                         }
                     }
                     ApiContentBlockStart::RedactedThinking { .. } => {
-                        *current_thinking_block = true;
+                        state.current_thinking_block = true;
                         events.push(StreamEvent::ThinkingStart);
                     }
                     ApiContentBlockStart::ToolUse { id, name } => {
@@ -1903,7 +1969,7 @@ fn process_sse_event(
                             name.clone()
                         };
                         // Start accumulating tool use
-                        *current_tool_use = Some(ToolUseAccumulator {
+                        state.current_tool_use = Some(ToolUseAccumulator {
                             input_json: String::new(),
                         });
                         events.push(StreamEvent::ToolUseStart {
@@ -1917,19 +1983,19 @@ fn process_sse_event(
         "content_block_delta" => {
             if let Ok(parsed) = serde_json::from_str::<ContentBlockDeltaEvent>(&event.data) {
                 match parsed.delta {
-                    ApiDelta::TextDelta { text } => {
+                    ApiDelta::Text { text } => {
                         events.push(StreamEvent::TextDelta(text));
                     }
-                    ApiDelta::InputJsonDelta { partial_json } => {
-                        if let Some(tool) = current_tool_use {
+                    ApiDelta::InputJson { partial_json } => {
+                        if let Some(tool) = state.current_tool_use.as_mut() {
                             tool.input_json.push_str(&partial_json);
                         }
                         events.push(StreamEvent::ToolInputDelta(partial_json));
                     }
-                    ApiDelta::ThinkingDelta { thinking } => {
+                    ApiDelta::Thinking { thinking } => {
                         events.push(StreamEvent::ThinkingDelta(thinking));
                     }
-                    ApiDelta::SignatureDelta { signature } => {
+                    ApiDelta::Signature { signature } => {
                         events.push(StreamEvent::ThinkingSignatureDelta(signature));
                     }
                 }
@@ -1937,17 +2003,17 @@ fn process_sse_event(
         }
         "content_block_stop" => {
             // If we were accumulating a tool_use, it's complete now
-            if current_tool_use.take().is_some() {
+            if state.current_tool_use.take().is_some() {
                 events.push(StreamEvent::ToolUseEnd);
-            } else if *current_thinking_block {
-                *current_thinking_block = false;
+            } else if state.current_thinking_block {
+                state.current_thinking_block = false;
                 events.push(StreamEvent::ThinkingEnd);
             }
         }
         "message_delta" => {
             if let Ok(parsed) = serde_json::from_str::<MessageDeltaEvent>(&event.data) {
                 if let Some(usage) = parsed.usage {
-                    *output_tokens = usage.output_tokens.map(|t| t as u64);
+                    state.output_tokens = usage.output_tokens.map(|t| t as u64);
                 }
                 if let Some(stop_reason) = parsed.delta.stop_reason {
                     events.push(StreamEvent::MessageEnd {
@@ -2061,13 +2127,13 @@ struct ContentBlockDeltaEvent {
 #[serde(tag = "type")]
 enum ApiDelta {
     #[serde(rename = "text_delta")]
-    TextDelta { text: String },
+    Text { text: String },
     #[serde(rename = "input_json_delta")]
-    InputJsonDelta { partial_json: String },
+    InputJson { partial_json: String },
     #[serde(rename = "thinking_delta")]
-    ThinkingDelta { thinking: String },
+    Thinking { thinking: String },
     #[serde(rename = "signature_delta")]
-    SignatureDelta {
+    Signature {
         #[serde(rename = "signature")]
         signature: String,
     },
@@ -2094,5 +2160,6 @@ struct UsageInfo {
 }
 
 #[cfg(test)]
+#[allow(clippy::await_holding_lock)]
 #[path = "anthropic_tests.rs"]
 mod tests;
