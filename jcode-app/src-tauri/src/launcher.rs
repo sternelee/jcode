@@ -181,8 +181,8 @@ fn scan_applications() -> Vec<AppInfo> {
             continue;
         }
 
-        let (bundle_id, version, executable) =
-            read_plist_metadata(&bundle_path);
+        let (name, bundle_id, version, executable) =
+            read_app_metadata(&app, &bundle_path);
 
         let icon_path = app
             .icon_path
@@ -197,7 +197,7 @@ fn scan_applications() -> Vec<AppInfo> {
         }
 
         out.push(AppInfo {
-            name: app.name,
+            name,
             bundle_id,
             icon_path,
             app_path: bundle_path.to_string_lossy().to_string(),
@@ -239,22 +239,33 @@ fn bundle_root_from_crate_app(app: &applications::App) -> PathBuf {
     PathBuf::from("/Applications/Unknown.app")
 }
 
-/// Read `Info.plist` for fields the `applications` crate does not
-/// surface: bundle identifier, short version, and executable name.
+/// Read `Info.plist` for all metadata fields.
 #[cfg(target_os = "macos")]
-fn read_plist_metadata(
+fn read_app_metadata(
+    app: &applications::App,
     bundle_root: &Path,
-) -> (Option<String>, Option<String>, Option<String>) {
+) -> (String, Option<String>, Option<String>, Option<String>) {
     use std::fs;
 
     let data = match fs::read(bundle_root.join("Contents/Info.plist")) {
         Ok(d) => d,
-        Err(_) => return (None, None, None),
+        Err(_) => return (app.name.clone(), None, None, None),
     };
     let dict = match plist::from_bytes::<plist::Value>(&data) {
         Ok(plist::Value::Dictionary(d)) => d,
-        _ => return (None, None, None),
+        _ => return (app.name.clone(), None, None, None),
     };
+
+    let name = dict
+        .get("CFBundleDisplayName")
+        .and_then(|v| v.as_string())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            dict.get("CFBundleName")
+                .and_then(|v| v.as_string())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| app.name.clone());
 
     let bundle_id = dict
         .get("CFBundleIdentifier")
@@ -282,7 +293,7 @@ fn read_plist_metadata(
                 .to_string()
         });
 
-    (bundle_id, version, executable)
+    (name, bundle_id, version, executable)
 }
 
 #[cfg(target_os = "macos")]
