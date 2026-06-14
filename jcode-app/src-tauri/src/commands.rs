@@ -12,7 +12,17 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Mutex;
 
+use crate::error::TauriError;
 use crate::launcher::AppIndex;
+use crate::server_client::ServerClient;
+pub mod session;
+pub mod memory;
+pub mod provider;
+pub mod swarm;
+pub mod system;
+pub mod tools;
+pub mod launcher;
+
 
 /// Shared cache of currently-running macOS app bundle IDs. Kept in a
 /// plain `std::sync::Mutex` because it's only ever written from a
@@ -187,7 +197,7 @@ impl AppState {
         }
     }
 
-    pub async fn get_provider(&self) -> Result<Arc<MultiProvider>, String> {
+    pub async fn get_provider(&self) -> Result<Arc<MultiProvider>, TauriError> {
         {
             let guard = self.provider.read().await;
             if let Some(ref p) = *guard {
@@ -210,7 +220,7 @@ impl AppState {
     }
 }
 
-pub async fn create_provider() -> Result<Arc<MultiProvider>, String> {
+pub async fn create_provider() -> Result<Arc<MultiProvider>, TauriError> {
     let provider = MultiProvider::new();
     Ok(Arc::new(provider))
 }
@@ -218,7 +228,7 @@ pub async fn create_provider() -> Result<Arc<MultiProvider>, String> {
 pub async fn create_agent(
     provider: Arc<dyn Provider>,
     working_dir: Option<&str>,
-) -> Result<Agent, String> {
+) -> Result<Agent, TauriError> {
     let registry = Registry::new(provider.clone()).await;
     registry
         .register_mcp_tools(None, None, Some("tauri-desktop".to_string()))
@@ -234,7 +244,7 @@ pub async fn create_agent_with_session(
     provider: Arc<dyn Provider>,
     session: Session,
     working_dir: Option<&str>,
-) -> Result<Agent, String> {
+) -> Result<Agent, TauriError> {
     let registry = Registry::new(provider.clone()).await;
     registry
         .register_mcp_tools(None, None, Some(session.id.clone()))
@@ -259,3 +269,9 @@ pub fn setup_stdin_channel(
     agent.set_stdin_request_tx(stdin_tx.clone());
     (stdin_tx, stdin_rx)
 }
+/// Get the shared server client from app state, if initialized.
+pub fn get_server_client(state: &tauri::State<'_, AppState>) -> Result<Arc<ServerClient>, String> {
+    let guard = state.server_client.lock().map_err(|e| e.to_string())?;
+    guard.clone().ok_or_else(|| "Server client not initialized".to_string())
+}
+
