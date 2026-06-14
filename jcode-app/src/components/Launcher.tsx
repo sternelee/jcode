@@ -34,7 +34,7 @@ type Section = {
 	items: LauncherItem[];
 };
 
-/** Build ordered sections. Always ① Running ② Applications ③ Pages */
+/** Build ordered sections. Recent/Pages first, Applications last. */
 function buildSections(items: LauncherItem[]): Section[] {
 	const running: LauncherItem[] = [];
 	const applications: LauncherItem[] = [];
@@ -73,10 +73,10 @@ function buildSections(items: LauncherItem[]): Section[] {
 
 	const out: Section[] = [];
 	if (running.length) out.push({ label: "running", heading: "Running", items: running });
-	out.push({ label: "applications", heading: "Applications", items: applications });
 	if (recent.length) out.push({ label: "recent", heading: "Recent", items: recent });
-	if (sessions.length) out.push({ label: "sessions", heading: "Sessions", items: sessions });
 	if (builtin.length) out.push({ label: "builtin", heading: "Pages", items: builtin });
+	if (sessions.length) out.push({ label: "sessions", heading: "Sessions", items: sessions });
+	if (applications.length) out.push({ label: "applications", heading: "Applications", items: applications });
 
 	return out;
 }
