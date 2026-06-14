@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { BookOpen, Trash2 } from "lucide-react";
@@ -28,30 +28,43 @@ export function MemorySection({
 	);
 	const [clearTestStatus, setClearTestStatus] = useState<string | null>(null);
 
-	useEffect(() => {
-		void (async () => {
-			try {
-				const stats = await invoke<MemoryStats>("get_memory_stats");
-				setMemoryStats(stats);
-			} catch {
-				// ignore
-			}
-		})();
-	}, []);
+	const loadMemoryData = useCallback(async () => {
+		try {
+			const stats = await invoke<MemoryStats>("get_memory_stats");
+			setMemoryStats(stats);
+		} catch {
+			// ignore
+		}
+		try {
+			const result = await invoke<{ memories: MemoryEntry[] }>("get_memory_list", { scope: memoryScope });
+			setMemoryEntries(result.memories.slice(0, 20));
+		} catch {
+			// ignore
+		}
+	}, [memoryScope]);
 
 	useEffect(() => {
-		void (async () => {
+		let fetching = false;
+		const load = async () => {
+			if (fetching) return;
+			fetching = true;
 			try {
-				const result = await invoke<{ memories: MemoryEntry[] }>(
-					"get_memory_list",
-					{ scope: memoryScope },
-				);
-				setMemoryEntries(result.memories.slice(0, 20));
-			} catch {
-				// ignore
+				await loadMemoryData();
+			} finally {
+				fetching = false;
 			}
-		})();
-	}, [memoryScope]);
+		};
+		void load();
+		const id = window.setInterval(load, 60000);
+		return () => {
+			window.clearInterval(id);
+		};
+	}, [loadMemoryData]);
+
+	useEffect(() => {
+		// Immediately refresh when scope changes.
+		void loadMemoryData();
+	}, [memoryScope, loadMemoryData]);
 
 	return (
 		<section className="space-y-2">
@@ -146,10 +159,7 @@ export function MemorySection({
 									? "Test memory storage is already empty."
 									: `Cleared ${result.count} test memory file${result.count === 1 ? "" : "s"}.`;
 							setClearTestStatus(message);
-							const stats = await invoke<MemoryStats>("get_memory_stats");
-							setMemoryStats(stats);
-							const list = await invoke<{ memories: MemoryEntry[] }>("get_memory_list", { scope: memoryScope });
-							setMemoryEntries(list.memories.slice(0, 20));
+							await loadMemoryData();
 							window.setTimeout(() => setClearTestStatus(null), 4000);
 						} catch {
 							setClearTestStatus("Failed to clear test memory storage.");
