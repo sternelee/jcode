@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "JCode App",
+  "productName": "JFlow",
   "version": "0.1.0",
-  "identifier": "ai.jcode.app",
+  "identifier": "ai.jflow.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "workbench",
-        "title": "JCode",
+        "title": "JFlow",
         "width": 1200,
         "height": 800,
         "minWidth": 400,
@@ -22,13 +22,13 @@
         "resizable": true,
         "visible": false,
         "acceptFirstMouse": true,
-        "tabbingIdentifier": "JCode",
+        "tabbingIdentifier": "JFlow",
         "decorations": false,
         "transparent": true
       },
       {
         "label": "launcher",
-        "title": "JCode Launcher",
+        "title": "JFlow Launcher",
         "width": 720,
         "height": 420,
         "resizable": false,
@@ -44,7 +44,7 @@
       },
       {
         "label": "pages",
-        "title": "JCode Settings",
+        "title": "JFlow Settings",
         "width": 960,
         "height": 680,
         "minWidth": 700,
@@ -52,7 +52,7 @@
         "resizable": true,
         "visible": false,
         "acceptFirstMouse": true,
-        "tabbingIdentifier": "JCode",
+        "tabbingIdentifier": "JFlow",
         "decorations": false,
         "transparent": true
       }

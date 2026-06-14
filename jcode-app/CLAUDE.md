@@ -1,4 +1,4 @@
-# JCode Desktop App (Tauri v2)
+# JFlow Desktop App (Tauri v2)
 
 ## Overview
 

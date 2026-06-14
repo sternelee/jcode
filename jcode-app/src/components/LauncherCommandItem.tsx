@@ -344,7 +344,7 @@ function Body({
 					</div>
 					<div className="min-w-0 flex-1">
 						<div className="text-[13px] font-medium truncate text-foreground">
-							{item.query ? `Ask: ${item.query}` : "Ask JCode…"}
+							{item.query ? `Ask: ${item.query}` : "Ask JFlow…"}
 						</div>
 						<div className="text-[11px] text-muted-foreground truncate">
 							{item.query

@@ -1,4 +1,4 @@
-# JCode Desktop App - TODO / Feature Gap Analysis
+# JFlow Desktop App - TODO / Feature Gap Analysis
 
 > 对比 jcode CLI/TUI 完整功能后，识别出的待实现功能清单。
 >

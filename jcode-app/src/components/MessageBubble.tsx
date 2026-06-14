@@ -536,7 +536,7 @@ export function MessageBubble({
 								<div className="flex flex-row items-center justify-between mb-1">
 									<div className="flex items-center gap-2">
 										<span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-											{message.roleName || "JCode"}
+													{message.roleName || "JFlow"}
 										</span>
 										{message.timestamp && (
 											<span className="text-[10px] text-muted-foreground/60">

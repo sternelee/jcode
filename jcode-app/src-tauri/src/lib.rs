@@ -3903,7 +3903,7 @@ pub fn run() {
                 let quit_item = MenuItem::with_id(
                     app,
                     "quit",
-                    "Quit JCode",
+                    "Quit JFlow",
                     true,
                     None::<&str>,
                 )?;
@@ -3947,10 +3947,10 @@ pub fn run() {
                 };
 
                 let app_handle_for_menu = app.handle().clone();
-                let _tray = TrayIconBuilder::with_id("jcode-tray")
+                let _tray = TrayIconBuilder::with_id("jflow-tray")
                     .icon(tray_icon)
                     .icon_as_template(false)
-                    .tooltip("JCode")
+                    .tooltip("JFlow")
                     .menu(&menu)
                     .show_menu_on_left_click(false)
                     .on_menu_event(move |app, event| match event.id().as_ref() {

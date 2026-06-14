@@ -107,7 +107,7 @@ function PagesTitleBar() {
 			</div>
 			{/* Centered window title, non-interactive. */}
 			<div className="pointer-events-none absolute inset-0 z-[5] flex h-7 items-center justify-center text-[12px] font-medium text-muted-foreground/80">
-				JCode Settings
+        JFlow Settings
 			</div>
 		</div>
 	);

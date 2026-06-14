@@ -23,7 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { AppInfo, LauncherItem } from "@/lib/launcherTypes";
 
-const AGENT_HINT = "Type 'ask ' followed by a question to ask JCode.";
+const AGENT_HINT = "Type 'ask ' followed by a question to ask JFlow.";
 const AGENT_PREFIX = "ask ";
 
 type SectionLabel = "running" | "applications" | "recent" | "sessions" | "builtin";
@@ -243,7 +243,7 @@ export function Launcher() {
 		void applications.refresh();
 	};
 
-	// In agent mode we want the single "Ask JCode" affordance rendered as its
+	// In agent mode we want the single "Ask JFlow" affordance rendered as its
 	// own group, not mixed with the rest of the palette.
 	if (isAgentMode) {
 		const item = items[0];
@@ -260,7 +260,7 @@ export function Launcher() {
 						autoFocus
 						value={query}
 						onChange={setQuery}
-						placeholder="Ask JCode anything…"
+						placeholder="Ask JFlow anything…"
 						mode="agent"
 						onClear={handleClearAgent}
 						onStripAgent={handleStripAgent}
@@ -271,7 +271,7 @@ export function Launcher() {
 								Press Enter to send
 							</div>
 						</CommandEmpty>
-						<CommandGroup heading="Ask JCode">
+					<CommandGroup heading="Ask JFlow">
 							{item && (
 								<LauncherCommandItem
 									item={item}
@@ -485,7 +485,7 @@ function LauncherFooter({
 				{mode === "agent" ? (
 					<span className="flex items-center gap-1.5">
 						<Sparkles className="size-3" />
-						Ask JCode
+					Ask JFlow
 					</span>
 				) : applications.loading ? (
 					<span className="flex items-center gap-1.5">

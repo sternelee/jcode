@@ -63,7 +63,7 @@ export function LeftSidebar({
 					<span className="text-background text-[12px] font-semibold">J</span>
 				</div>
 				<span className="text-[14px] font-semibold text-sidebar-foreground tracking-tight">
-					JCode
+          JFlow
 				</span>
 				{onOpenLauncher && (
 					<button

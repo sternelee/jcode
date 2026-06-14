@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**JCode App** is the Tauri v2 desktop client for the JCode AI coding agent. It wraps the Rust `jcode` agent/server core in a React 19 / TypeScript frontend. The app is currently evolving from a traditional multi-pane workbench into a **Raycast-style launcher + expandable workbench** model.
+**JFlow** is the Tauri v2 desktop client for the JFlow AI coding agent. It wraps the Rust `jcode` agent/server core in a React 19 / TypeScript frontend. The app is currently evolving from a traditional multi-pane workbench into a **Raycast-style launcher + expandable workbench** model.
 
 > **Not the native desktop experiment.** The shipping desktop app lives in `jcode-app/` (Tauri + webview). The separate `crates/jcode-desktop/` wgpu/winit experiment in the parent repo is a long-term research project.
 
