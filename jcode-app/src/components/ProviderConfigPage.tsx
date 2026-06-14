@@ -130,11 +130,12 @@ export function ProviderConfigPage({
 	const [providerDoctorBusy, setProviderDoctorBusy] = useState<string | null>(
 		null,
 	);
-	const [connectionTest, setConnectionTest] =
-		useState<ProviderConnectionTest | null>(null);
-	const [connectionTestBusy, setConnectionTestBusy] = useState<string | null>(
-		null,
-	);
+	const [connectionTests, setConnectionTests] = useState<
+		Record<string, ProviderConnectionTest>
+	>({});
+	const [connectionTestBusy, setConnectionTestBusy] = useState<
+		Record<string, boolean>
+	>({});
 
 	const refresh = useCallback(async () => {
 		try {
@@ -165,11 +166,14 @@ export function ProviderConfigPage({
 		setUsageInfo(info);
 		setUsageLoading(false);
 	}, [onGetUsageInfo]);
-
 	useEffect(() => {
 		void refresh();
 		void loadUsage();
 		void loadExternalAuth();
+		const usageInterval = setInterval(() => {
+			void loadUsage();
+		}, 60_000);
+		return () => clearInterval(usageInterval);
 	}, [refresh, loadUsage]);
 
 	const loadExternalAuth = useCallback(async () => {
@@ -214,8 +218,7 @@ export function ProviderConfigPage({
 	);
 
 	const testConnection = useCallback(async (providerId: string) => {
-		setConnectionTestBusy(providerId);
-		setConnectionTest(null);
+		setConnectionTestBusy((prev) => ({ ...prev, [providerId]: true }));
 		try {
 			const result = await invoke<ProviderConnectionTest>(
 				"test_provider_connection",
@@ -223,12 +226,20 @@ export function ProviderConfigPage({
 					providerId,
 				},
 			);
-			setConnectionTest(result);
+			setConnectionTests((prev) => ({ ...prev, [providerId]: result }));
 		} catch (e) {
 			setAuthMessage({ text: String(e), type: "error" });
 		} finally {
-			setConnectionTestBusy(null);
+			setConnectionTestBusy((prev) => ({ ...prev, [providerId]: false }));
 		}
+	}, []);
+
+	const dismissConnectionTest = useCallback((providerId: string) => {
+		setConnectionTests((prev) => {
+			const next = { ...prev };
+			delete next[providerId];
+			return next;
+		});
 	}, []);
 
 	const runProviderDoctor = useCallback(
@@ -776,9 +787,9 @@ export function ProviderConfigPage({
 												size="sm"
 												className="text-[10px] h-6 gap-1"
 												onClick={() => testConnection(p.provider_key)}
-												disabled={connectionTestBusy !== null}
+												disabled={connectionTestBusy[p.provider_key]}
 											>
-												{connectionTestBusy === p.provider_key ? (
+												{connectionTestBusy[p.provider_key] ? (
 													<Loader2 className="w-3 h-3 animate-spin" />
 												) : (
 													<Wifi className="w-3 h-3" />
@@ -865,38 +876,40 @@ export function ProviderConfigPage({
 					)}
 
 					{/* Connection Test Results */}
-					{connectionTest && (
-						<div className="rounded-xl border border-border bg-card overflow-hidden">
+					{Object.entries(connectionTests).map(([providerId, test]) => (
+						<div
+							key={providerId}
+							className="rounded-xl border border-border bg-card overflow-hidden"
+						>
 							<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
 								<div className="flex items-center gap-2">
 									<Wifi className="w-4 h-4 text-emerald-500" />
 									<span className="text-[14px] font-semibold text-foreground">
-										Connection Test: {connectionTest.provider_id}
+										Connection Test: {providerId}
 									</span>
 									<Badge
-										variant={connectionTest.success ? "default" : "destructive"}
+										variant={test.success ? "default" : "destructive"}
 										className="text-[9px]"
 									>
-										{connectionTest.success ? "OK" : "FAILED"}
+										{test.success ? "OK" : "FAILED"}
 									</Badge>
 								</div>
 								<Button
 									variant="ghost"
 									size="sm"
 									className="text-[11px] h-7"
-									onClick={() => setConnectionTest(null)}
+									onClick={() => dismissConnectionTest(providerId)}
 								>
 									Dismiss
 								</Button>
 							</div>
 							<div className="p-4 space-y-2">
 								<div className="text-[12px] text-muted-foreground">
-									{connectionTest.model_count} models available ·{" "}
-									{connectionTest.elapsed_ms}ms
+									{test.model_count} models available · {test.elapsed_ms}ms
 								</div>
-								{connectionTest.models.length > 0 && (
+								{test.models.length > 0 && (
 									<div className="flex flex-wrap gap-1.5">
-										{connectionTest.models.map((model) => (
+										{test.models.map((model) => (
 											<Badge
 												key={model}
 												variant="secondary"
@@ -905,18 +918,16 @@ export function ProviderConfigPage({
 												{model}
 											</Badge>
 										))}
-										{connectionTest.model_count > 10 && (
+										{test.model_count > 10 && (
 											<Badge variant="outline" className="text-[10px]">
-												+{connectionTest.model_count - 10} more
+												+{test.model_count - 10} more
 											</Badge>
 										)}
 									</div>
 								)}
 							</div>
 						</div>
-					)}
-
-					{/* Available */}
+					))}
 					<div className="rounded-xl border border-border bg-card overflow-hidden">
 						<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
 							<div className="flex items-center gap-2">

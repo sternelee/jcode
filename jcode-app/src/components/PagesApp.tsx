@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,8 @@ const PAGE_TABS: PageTab[] = [
  * `drag_window()` command.
  */
 function PagesTitleBar() {
-	const handleDragStart = useCallback(() => {
+	const handleDragStart = useCallback((e: PointerEvent<HTMLDivElement>) => {
+		if (e.button !== 0) return;
 		void invoke("drag_window");
 	}, []);
 
@@ -63,6 +64,7 @@ function PagesTitleBar() {
 			<div
 				className="absolute inset-0 z-0"
 				onPointerDown={handleDragStart}
+				onDoubleClick={handleMaximize}
 			/>
 			{/* Buttons sit above the drag layer so clicks don't start a drag. */}
 			<div

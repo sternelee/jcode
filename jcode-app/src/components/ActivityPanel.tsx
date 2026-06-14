@@ -173,6 +173,18 @@ export function ActivityPanel({
 	const [permissionRequests, setPermissionRequests] = useState<
 		import("@/types").PermissionRequest[] | null
 	>(null);
+	useEffect(() => {
+		invoke<UsageInfo>("get_usage_info")
+			.then(setUsageInfo)
+			.catch(() => undefined);
+	}, []);
+
+	useEffect(() => {
+		if (!getPermissionRequests) return;
+		getPermissionRequests()
+			.then(setPermissionRequests)
+			.catch(() => undefined);
+	}, [getPermissionRequests]);
 
 
 	const [transcriptText, setTranscriptText] = useState("");

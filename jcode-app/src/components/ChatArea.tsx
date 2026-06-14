@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import type { ChatMessage, SessionInfo } from "@/types";
-import { MessageBubble } from "./MessageBubble";
+import { MessageBubble, HighlightedText } from "./MessageBubble";
 import { AgentAvatar } from "./AgentAvatar";
 import {
   Search,
@@ -49,9 +49,10 @@ interface ChatAreaProps {
   connected?: boolean;
   currentModel?: string | null;
   totalTokens?: [number, number] | null;
+  providerName?: string | null;
   currentProfileId?: string | null;
-  reasoningEffort?: string | null;
   memoryEnabled?: boolean;
+  reasoningEffort?: string | null;
   availableModels?: string[];
   onSetModel?: (model: string, profileId?: string) => void;
   onSetAgentModel?: (
@@ -135,9 +136,10 @@ export function ChatArea({
   connected = true,
   currentModel = null,
   totalTokens = null,
+  providerName = null,
   currentProfileId = null,
+  memoryEnabled = false,
   reasoningEffort = null,
-  memoryEnabled = true,
   availableModels = [],
   onSetModel,
   onSetAgentModel,
@@ -359,6 +361,16 @@ export function ChatArea({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
+
+  // Reset soft-interrupt toggle when the agent finishes responding so the
+  // next message is sent normally rather than as another interrupt.
+  const wasProcessingRef = useRef(isProcessing);
+  useEffect(() => {
+    if (wasProcessingRef.current && !isProcessing) {
+      setSoftInterruptMode(false);
+    }
+    wasProcessingRef.current = isProcessing;
+  }, [isProcessing]);
 
   // ── Input handlers ────────────────────────────────────────────────────
   const handleSend = () => {
@@ -874,7 +886,7 @@ export function ChatArea({
                             "ring-1 ring-foreground/10",
                           )}
                         >
-                          {msg.content}
+                          <HighlightedText text={msg.content} query={searchText} isCurrent={isCurrentMatch} />
                         </div>
                         <div className="text-[11px] text-muted-foreground/60 text-right mt-0.5 px-1 opacity-0 group-hover/msg:opacity-100 transition-opacity">
                           {relativeTime(msg.timestamp)}
@@ -891,7 +903,7 @@ export function ChatArea({
                     key={msg.id}
                     className="flex justify-center message-enter"
                   >
-                    <MessageBubble message={msg} isStreaming={false} />
+                    <MessageBubble message={msg} isStreaming={false} searchText={searchText} isCurrentMatch={isCurrentMatch} />
                   </div>
                 );
               }
@@ -937,6 +949,8 @@ export function ChatArea({
                           message={msg}
                           isStreaming={msg.isStreaming}
                           hideHeader
+                          searchText={searchText}
+                          isCurrentMatch={isCurrentMatch}
                           onRegenerate={currentSessionId ? () => onRegenerateMessage?.(idx) : undefined}
                           onEdit={currentSessionId ? (newContent) => onEditMessage?.(idx, newContent) : undefined}
                           onQuote={(content, role) => onQuoteMessage?.(content, role)}
@@ -975,6 +989,8 @@ export function ChatArea({
                       message={msg}
                       isStreaming={msg.isStreaming}
                       hideHeader
+                      searchText={searchText}
+                      isCurrentMatch={isCurrentMatch}
                       onRegenerate={() => onRegenerateMessage?.(idx)}
                       onEdit={(newContent) => onEditMessage?.(idx, newContent)}
                       onQuote={(content, role) => onQuoteMessage?.(content, role)}
@@ -1231,8 +1247,8 @@ export function ChatArea({
 										<Circle className="w-2 h-2 fill-current opacity-50" />
 										{currentModel ? (
 											<>
-												{currentProfileId && (
-													<span className="text-muted-foreground/40">{currentProfileId}/</span>
+												{providerName && (
+													<span className="text-muted-foreground/40">{providerName}/</span>
 												)}
 												<span>{currentModel}</span>
 											</>

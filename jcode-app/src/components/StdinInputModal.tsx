@@ -104,6 +104,13 @@ export function StdinInputModal({ prompt, onSubmit }: StdinInputModalProps) {
 								? "Enter to submit"
 								: "Enter to submit · Shift+Enter for newline"}
 						</div>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => onSubmit(prompt.requestId, "")}
+						>
+							Cancel
+						</Button>
 						<Button type="submit" className="text-sm">
 							Submit
 						</Button>

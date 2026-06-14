@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from "react";
+import { useState, type ComponentType, type ReactNode } from "react";
 import type { AttachedImage, ChatMessage } from "@/types";
 import {
 	Message,
@@ -107,6 +107,75 @@ function formatTimestamp(ts?: number): string {
 	});
 }
 
+export function HighlightedText({
+	text,
+	query,
+	isCurrent,
+}: {
+	text: string;
+	query: string;
+	isCurrent?: boolean;
+}) {
+	if (!query.trim()) return <>{text}</>;
+	const q = query.toLowerCase();
+	const nodes: ReactNode[] = [];
+	let i = 0;
+	let key = 0;
+	while (i < text.length) {
+		const idx = text.toLowerCase().indexOf(q, i);
+		if (idx === -1) {
+			nodes.push(<span key={key++}>{text.slice(i)}</span>);
+			break;
+		}
+		if (idx > i) {
+			nodes.push(<span key={key++}>{text.slice(i, idx)}</span>);
+		}
+		nodes.push(
+			<mark
+				key={key++}
+				className={cn(
+					"rounded px-0.5",
+					isCurrent
+						? "bg-amber-400/60 text-amber-950 dark:bg-amber-500/40 dark:text-amber-100"
+						: "bg-yellow-200/60 text-yellow-950 dark:bg-yellow-500/30 dark:text-yellow-100",
+				)}
+			>
+				{text.slice(idx, idx + query.length)}
+			</mark>,
+		);
+		i = idx + query.length;
+	}
+	return <>{nodes}</>;
+}
+
+function MaybeHighlightedResponse({
+	content,
+	searchText,
+	isCurrentMatch,
+	isStreaming,
+}: {
+	content: string;
+	searchText?: string;
+	isCurrentMatch?: boolean;
+	isStreaming?: boolean;
+}) {
+	const hasSearch = Boolean(searchText?.trim());
+	return (
+		<div className="relative">
+			{hasSearch ? (
+				<div className="whitespace-pre-wrap break-words text-foreground">
+					<HighlightedText text={content} query={searchText || ""} isCurrent={isCurrentMatch} />
+				</div>
+			) : (
+				<MessageResponse>{content}</MessageResponse>
+			)}
+			{isStreaming && (
+				<span className="text-primary animate-blink ml-0.5">▌</span>
+			)}
+		</div>
+	);
+}
+
 // ── System message types ─────────────────────────────────────────────────
 type SystemKind =
 	| "history"
@@ -209,6 +278,8 @@ interface MessageBubbleProps {
 	isStreaming?: boolean;
 	isHighlighted?: boolean;
 	hideHeader?: boolean;
+	searchText?: string;
+	isCurrentMatch?: boolean;
 	onRegenerate?: () => void;
 	onEdit?: (newContent: string) => void;
 	onQuote?: (content: string, role: string) => void;
@@ -219,6 +290,8 @@ export function MessageBubble({
 	isStreaming,
 	isHighlighted,
 	hideHeader = false,
+	searchText,
+	isCurrentMatch,
 	onRegenerate,
 	onEdit,
 	onQuote,
@@ -269,7 +342,7 @@ export function MessageBubble({
 						))}
 					</div>
 					<div className="text-muted-foreground whitespace-pre-wrap break-words leading-relaxed">
-						{body}
+						<HighlightedText text={body} query={searchText || ""} isCurrent={isCurrentMatch} />
 					</div>
 				</div>
 			</div>
@@ -295,12 +368,12 @@ export function MessageBubble({
 					</div>
 				)}
 				{message.content && (
-					<div className="relative">
-						<MessageResponse>{message.content}</MessageResponse>
-						{isStreaming && (
-							<span className="text-primary animate-blink ml-0.5">▌</span>
-						)}
-					</div>
+					<MaybeHighlightedResponse
+						content={message.content}
+						searchText={searchText}
+						isCurrentMatch={isCurrentMatch}
+						isStreaming={isStreaming}
+					/>
 				)}
 				{message.toolExecutions.length > 0 && (
 					<div className="mt-2 space-y-2">
@@ -388,12 +461,12 @@ export function MessageBubble({
 						</div>
 					)}
 					{message.content && (
-						<div className="relative">
-							<MessageResponse>{message.content}</MessageResponse>
-							{isStreaming && (
-								<span className="text-primary animate-blink ml-0.5">▌</span>
-							)}
-						</div>
+						<MaybeHighlightedResponse
+							content={message.content}
+							searchText={searchText}
+							isCurrentMatch={isCurrentMatch}
+							isStreaming={isStreaming}
+						/>
 					)}
 					{message.toolExecutions.length > 0 && (
 						<div className="mt-3 space-y-2">
@@ -493,10 +566,15 @@ export function MessageBubble({
 											<X className="w-3 h-3" />
 											Cancel
 										</button>
+										</div>
 									</div>
-								</div>
 							) : (
-								<MessageResponse>{message.content}</MessageResponse>
+								<MaybeHighlightedResponse
+									content={message.content}
+									searchText={searchText}
+									isCurrentMatch={isCurrentMatch}
+									isStreaming={isStreaming}
+								/>
 							)}
 							{message.timestamp && !isEditing && (
 								<div className="text-[10px] text-muted-foreground/50 mt-0.5">
@@ -569,12 +647,12 @@ export function MessageBubble({
 								</div>
 							)}
 							{message.content && (
-								<>
-									<MessageResponse>{message.content}</MessageResponse>
-									{isStreaming && (
-										<span className="text-primary animate-blink ml-0.5">▌</span>
-									)}
-								</>
+								<MaybeHighlightedResponse
+									content={message.content}
+									searchText={searchText}
+									isCurrentMatch={isCurrentMatch}
+									isStreaming={isStreaming}
+								/>
 							)}
 							{message.toolExecutions.length > 0 && (
 								<div className="mt-3 space-y-2">

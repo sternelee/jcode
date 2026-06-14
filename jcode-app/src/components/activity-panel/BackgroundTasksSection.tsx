@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Clock3 } from "lucide-react";
@@ -16,6 +16,20 @@ export function BackgroundTasksSection({
 	const [backgroundTasks, setBackgroundTasks] = useState<
 		BackgroundTask[] | null
 	>(null);
+	useEffect(() => {
+		if (!listBackgroundTasks) return;
+		let cancelled = false;
+		listBackgroundTasks()
+			.then((tasks) => {
+				if (!cancelled) setBackgroundTasks(tasks);
+			})
+			.catch(() => {
+				// ignore
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [listBackgroundTasks]);
 
 	return (
 		<section className="space-y-2">

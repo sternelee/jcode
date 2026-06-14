@@ -18,7 +18,7 @@ import { SkillsPage } from "@/components/SkillsPage";
 import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
 import { RightSidebar } from "@/components/RightSidebar";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
-import { parseSlashCommand } from "@/components/SlashCommands";
+import { parseSlashCommand, profileIdFromDisplayName, profileIdFromRoute } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
 import type { SessionInfo, PermissionRequest } from "@/types";
 import type { BuiltinPage } from "@/lib/launcherTypes";
@@ -778,6 +778,27 @@ export default function App() {
 		[selectedConvId, state.sessions],
 	);
 
+	const currentProfileId = useMemo(() => {
+		if (!selectedConvId) return null;
+		const data = state.sessionData[selectedConvId];
+		const model = data?.providerModel;
+		const routes = data?.availableModelRoutes ?? [];
+		if (model && routes.length > 0) {
+			const route = routes.find((r) => r.model === model);
+			if (route) return profileIdFromRoute(route);
+		}
+		const displayName = data?.providerName;
+		if (displayName) {
+			const fromDisplay = profileIdFromDisplayName(displayName);
+			if (fromDisplay) return fromDisplay;
+		}
+		return null;
+	}, [selectedConvId, state.sessionData]);
+
+	const selectedProviderName = selectedConvId
+		? (state.sessionData[selectedConvId]?.providerName ?? null)
+		: null;
+
 	const channelName = selectedConvId?.startsWith("workspace:")
 		? "Everyone"
 		: selectedSession?.roleName || selectedSession?.title || "Conversation";
@@ -937,8 +958,13 @@ export default function App() {
 							onConvene={() => {
 								void handleSendMessage("/convene");
 							}}
-							currentModel={state.providerModel}
-							currentProfileId={state.providerName}
+						currentModel={
+							selectedConvId
+								? (state.sessionData[selectedConvId]?.providerModel ?? state.providerModel)
+								: state.providerModel
+						}
+						providerName={selectedProviderName}
+						currentProfileId={currentProfileId}
 							reasoningEffort={state.reasoningEffort}
 							memoryEnabled={state.memoryEnabled}
 							availableModels={state.availableModels}
@@ -1002,9 +1028,13 @@ export default function App() {
 								onGetMemoryGraph={getMemoryGraph}
 								onGetWorkspaceMemoryPreferences={getWorkspaceMemoryPreferences}
 								onSetWorkspaceMemoryPreference={setWorkspaceMemoryPreference}
-								availableModels={state.availableModels}
-								currentModel={state.providerModel || undefined}
-								currentProfileId={state.providerName || undefined}
+							availableModels={state.availableModels}
+							currentModel={
+								selectedConvId
+									? (state.sessionData[selectedConvId]?.providerModel || state.providerModel || undefined)
+									: state.providerModel || undefined
+							}
+							currentProfileId={currentProfileId || undefined}
 								onSetModel={(m, pid) =>
 									void setModel(m, pid, state.sessionId || undefined)
 								}

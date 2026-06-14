@@ -227,8 +227,7 @@ export function SlashCommandPalette({
 
 // ── Provider-profile helpers (mirror backend grouping logic) ─────────────
 
-/** Map a provider display name to its auth/profile ID. Mirrors backend direct_config_provider_id. */
-function profileIdFromDisplayName(displayName: string): string | null {
+export function profileIdFromDisplayName(displayName: string): string | null {
 	const normalized = displayName.trim().toLowerCase();
 	switch (normalized) {
 		case "anthropic":
@@ -256,8 +255,7 @@ function profileIdFromDisplayName(displayName: string): string | null {
 	}
 }
 
-/** Extract the profile ID from a ModelRoute. Must align with backend auth_provider_id. */
-function profileIdFromRoute(route: ModelRoute): string {
+export function profileIdFromRoute(route: ModelRoute): string {
 	if (route.api_method?.startsWith("openai-compatible:")) {
 		const suffix = route.api_method.slice("openai-compatible:".length).trim();
 		if (suffix) return suffix;

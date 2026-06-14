@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Minus, Square, X } from "lucide-react";
@@ -20,7 +20,8 @@ export function TitleBar() {
 		void win.isMaximized().then(setMaximized).catch(() => undefined);
 	}, []);
 
-	const handleDragStart = useCallback(() => {
+	const handleDragStart = useCallback((e: PointerEvent<HTMLDivElement>) => {
+		if (e.button !== 0) return;
 		void invoke("drag_window");
 	}, []);
 
@@ -48,6 +49,7 @@ export function TitleBar() {
 			<div
 				className="absolute inset-0 z-0"
 				onPointerDown={handleDragStart}
+				onDoubleClick={handleMaximize}
 			/>
 			{/* Buttons sit above the drag layer so clicks don't start a drag. */}
 			<div

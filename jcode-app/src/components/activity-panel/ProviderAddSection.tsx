@@ -7,8 +7,8 @@ interface ProviderAddSectionProps {
 		name: string;
 		base_url: string;
 		model: string;
-		api_key: string;
-		auth: string;
+		api_key?: string;
+		auth?: string;
 	}) => Promise<ProviderSetupReport | null>;
 }
 
