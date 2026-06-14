@@ -167,7 +167,7 @@ body,
 }
 
 body {
-	background: var(--bg);
+	background: transparent;
 	color: var(--fg);
 	font-family:
 		-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable",
@@ -177,18 +177,15 @@ body {
 	-moz-osx-font-smoothing: grayscale;
 }
 
-/* Both windows (`workbench` and `launcher`) run with `transparent: true`
-   and `decorations: false` so the OS chrome doesn't break our rounded
-   corners. Rounding `body` clips the entire app into a rounded
-   rectangle; `overflow: hidden` ensures child elements don't poke
-   through the corners. The inset box-shadow outline guarantees the
-   edge is visible regardless of the user's desktop wallpaper — without
-   it, the rounded corners can vanish on a background that happens to
-   be the same color as `bg-background`.
+/* The workbench and launcher windows run with `transparent: true` and
+   `decorations: false`. We keep `body` itself transparent so the OS
+   desktop shows through the rounded corners; each top-level component
+   (App, Launcher, PagesApp) paints its own `bg-background` surface.
+   Rounding `body` clips the whole webview to the rounded rectangle, and
+   `overflow: hidden` keeps child content from poking through the corners.
+   The inset box-shadow remains as a subtle inner edge so the boundary is
+   visible against wallpapers that match the app background. */
 
-   We use `inset` because a non-inset box-shadow would extend outside
-   the webview bounds and be clipped by the OS; `inset` keeps the
-   outline inside the body so it is always visible. */
 body,
 #root {
 	border-radius: 16px;

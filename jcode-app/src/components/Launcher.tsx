@@ -249,7 +249,7 @@ export function Launcher() {
 		const item = items[0];
 		return (
 			<div
-				className="h-screen w-screen flex flex-col text-foreground p-2"
+				className="h-screen w-screen flex flex-col text-foreground bg-background p-2"
 				onKeyDown={handleKeyDown}
 			>
 				<Command
@@ -297,7 +297,7 @@ export function Launcher() {
 
 	return (
 		<div
-			className="h-screen w-screen flex flex-col text-foreground p-2"
+			className="h-screen w-screen flex flex-col text-foreground bg-background p-2"
 			onKeyDown={handleKeyDown}
 		>
 			<Command
