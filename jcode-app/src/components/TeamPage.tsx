@@ -1,7 +1,8 @@
 import { useMemo, useState, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import type { SessionInfo } from "@/types";
-import { Users, LayoutList, GitPullRequest, Settings2 } from "lucide-react";
+import { Users, LayoutList, GitPullRequest, Settings2, CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react";
 import { AgentAvatar } from "./AgentAvatar";
 import type { RolePreset } from "@/types";
 import { DEFAULT_ROLE_PRESETS, setRolePresetOverride, clearRolePresetOverride, getRolePresetWithOverrides, getCustomRolePresets, addCustomRolePreset, removeCustomRolePreset, updateCustomRolePreset } from "@/rolePresets";
@@ -25,7 +26,7 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 	);
 
 	const agents = useMemo(
-		() => swarmSessions.filter((s) => s.roleName),
+		() => swarmSessions.filter((s) => s.swarmRole === "agent"),
 		[swarmSessions],
 	);
 
@@ -56,6 +57,10 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 	]);
 	const [modelPickerOpen, setModelPickerOpen] = useState(false);
 	const [editingPreset, setEditingPreset] = useState<string | null>(null);
+	const [proposalAction, setProposalAction] = useState<
+		{ key: string; kind: "approving" | "rejecting" } | null
+	>(null);
+	const [proposalError, setProposalError] = useState<string | null>(null);
 
 	const refreshPresets = useCallback(() => {
 		setPresets([
@@ -63,6 +68,39 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 			...getCustomRolePresets(),
 		]);
 	}, []);
+
+	const handleProposalAction = useCallback(
+		async (proposal: SessionInfo["swarmProposal"], action: "approve" | "reject") => {
+			if (!proposal) return;
+			const coordinator = coordinators.find((c) => c.swarmId === proposal.swarmId);
+			if (!coordinator) {
+				setProposalError("No coordinator found for this swarm.");
+				return;
+			}
+			setProposalAction({ key: proposal.proposalKey, kind: action === "approve" ? "approving" : "rejecting" });
+			setProposalError(null);
+			try {
+				if (action === "approve") {
+					await invoke("comm_approve_plan", {
+						session_id: coordinator.sessionId,
+						proposer_session: proposal.proposerSession,
+					});
+				} else {
+					await invoke("comm_reject_plan", {
+						session_id: coordinator.sessionId,
+						proposer_session: proposal.proposerSession,
+						reason: "Rejected from Team page",
+					});
+				}
+			} catch (e) {
+				const message = e instanceof Error ? e.message : String(e);
+				setProposalError(message);
+			} finally {
+				setProposalAction(null);
+			}
+		},
+		[coordinators],
+	);
 
 	const handleOpenModelPicker = useCallback((presetName: string) => {
 		setEditingPreset(presetName);
@@ -229,6 +267,35 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 						</div>
 					)}
 
+					{/* Coordinators */}
+					{coordinators.length > 0 && (
+						<div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
+							<div className="text-[13px] font-semibold text-foreground flex items-center gap-2">
+								<Users className="w-4 h-4 text-primary" />
+								Active Coordinators
+							</div>
+							<div className="space-y-2">
+								{coordinators.map((c) => (
+									<div
+										key={c.sessionId}
+										className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-muted/30 border border-border"
+									>
+										<AgentAvatar name={c.roleName || "Coordinator"} size="sm" />
+										<div className="flex-1 min-w-0">
+											<div className="text-[13px] font-medium text-foreground truncate">
+												{c.roleName || "Coordinator"}
+											</div>
+											<div className="text-[11px] text-muted-foreground truncate">
+												{c.model || "default"}
+											</div>
+										</div>
+										<span className="text-[11px] text-emerald-500 shrink-0">Active</span>
+									</div>
+								))}
+							</div>
+						</div>
+					)}
+
 					{/* Plans */}
 					{plans.map((plan) => (
 						<div
@@ -244,7 +311,7 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 									{plan.itemCount} items
 								</span>
 							</div>
-								<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+							<div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
 								<MiniStat
 									label="Ready"
 									value={plan.readyCount}
@@ -260,6 +327,11 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 									value={plan.blockedCount}
 									color="text-amber-500"
 								/>
+								<MiniStat
+									label="Done"
+									value={plan.completedCount}
+									color="text-emerald-500/80"
+								/>
 							</div>
 							{plan.reason && (
 								<p className="text-[12px] text-muted-foreground">
@@ -270,26 +342,66 @@ export function TeamPage({ sessions, availableModels = [] }: TeamPageProps) {
 					))}
 
 					{/* Proposals */}
-					{proposals.map((proposal) => (
-						<div
-							key={proposal.swarmId}
-							className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3"
-						>
-							<div className="flex items-center gap-2">
-								<GitPullRequest className="w-4 h-4 text-primary" />
-								<span className="text-[13px] font-semibold text-foreground">
-									Proposal
-								</span>
-							</div>
-							<p className="text-[13px] text-foreground leading-relaxed">
-								{proposal.summary}
-							</p>
-							<div className="flex items-center gap-4 text-[11px] text-muted-foreground">
-								<span>{proposal.itemCount} items</span>
-								<span>By {proposal.proposerName || "Unknown"}</span>
-							</div>
+					{proposalError && (
+						<div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-[12px] text-destructive flex items-start gap-2">
+							<AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+							{proposalError}
 						</div>
-					))}
+					)}
+					{proposals.map((proposal) => {
+						const isActing =
+							proposalAction?.key === proposal.proposalKey;
+						return (
+							<div
+								key={proposal.swarmId}
+								className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3"
+							>
+								<div className="flex items-center gap-2">
+									<GitPullRequest className="w-4 h-4 text-primary" />
+									<span className="text-[13px] font-semibold text-foreground">
+										Proposal
+									</span>
+								</div>
+								<p className="text-[13px] text-foreground leading-relaxed">
+									{proposal.summary}
+								</p>
+								<div className="flex items-center justify-between gap-3">
+									<div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+										<span>{proposal.itemCount} items</span>
+										<span>By {proposal.proposerName || "Unknown"}</span>
+									</div>
+									<div className="flex items-center gap-2">
+										<button
+											type="button"
+											disabled={isActing}
+											onClick={() => handleProposalAction(proposal, "approve")}
+											className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors"
+										>
+											{isActing && proposalAction?.kind === "approving" ? (
+												<Loader2 className="w-3 h-3 animate-spin" />
+											) : (
+												<CheckCircle2 className="w-3 h-3" />
+											)}
+											Approve
+										</button>
+										<button
+											type="button"
+											disabled={isActing}
+											onClick={() => handleProposalAction(proposal, "reject")}
+											className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 disabled:opacity-50 transition-colors"
+										>
+											{isActing && proposalAction?.kind === "rejecting" ? (
+												<Loader2 className="w-3 h-3 animate-spin" />
+											) : (
+												<XCircle className="w-3 h-3" />
+											)}
+											Reject
+										</button>
+									</div>
+								</div>
+							</div>
+						);
+					})}
 
 					{/* Preset Roles */}
 					<div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">

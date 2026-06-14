@@ -8,7 +8,6 @@ import {
 	Server,
 	Settings,
 	Square,
-	Users,
 	Wrench,
 	X,
 } from "lucide-react";
@@ -17,10 +16,10 @@ import { SettingsPage } from "./SettingsPage";
 import { ProviderConfigPage } from "./ProviderConfigPage";
 import { McpPage } from "./McpPage";
 import { SkillsPage } from "./SkillsPage";
-import { TeamPage } from "./TeamPage";
 
 /** Top-level page IDs shown as tabs in the pages window. */
-type PageId = "settings" | "providers" | "mcp" | "skills" | "team";
+type PageId = "settings" | "providers" | "mcp" | "skills";
+
 
 interface PageTab {
 	id: PageId;
@@ -33,7 +32,6 @@ const PAGE_TABS: PageTab[] = [
 	{ id: "providers", label: "Providers", icon: Globe },
 	{ id: "mcp", label: "MCP", icon: Server },
 	{ id: "skills", label: "Skills", icon: Wrench },
-	{ id: "team", label: "Swarm", icon: Users },
 ];
 
 /**
@@ -184,14 +182,9 @@ export function PagesApp() {
 						onThemeChange={setTheme}
 					/>
 				)}
-				{activePage === "providers" && (
-					<ProviderConfigPage
-						onAuthStatusChange={() => {}}
-					/>
-				)}
+				{activePage === "providers" && <ProviderConfigPage />}
 				{activePage === "mcp" && <McpPage />}
 				{activePage === "skills" && <SkillsPage />}
-				{activePage === "team" && <TeamPage sessions={[]} />}
 			</div>
 		</div>
 	);
