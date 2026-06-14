@@ -395,7 +395,7 @@ export function useJcodeSession() {
 			const sessions = data.map((d) => ({
 				sessionId: d.id,
 				title: d.title || makeTitle(d.id),
-				isActive: d.id === state.sessionId,
+				isActive: d.id === stateRef.current.sessionId,
 				subtitle: d.subtitle,
 				detail: d.detail,
 				previewLines: d.preview_lines,
@@ -480,7 +480,7 @@ export function useJcodeSession() {
 		} catch (e) {
 			dispatch({ type: "SET_ERROR", message: String(e) });
 		}
-	}, [state.sessionId]);
+	}, []);
 
 	const loadWorkspaceThreadHistory = useCallback(
 		async (workingDir: string | null) => {
@@ -699,13 +699,6 @@ export function useJcodeSession() {
 				mode,
 				initialMessages,
 			});
-		},
-		[],
-	);
-
-	const addWorkspaceMessage = useCallback(
-		(_workspaceId: string, _message: ChatMessage) => {
-			// 已废弃：消息通过 processEvent 镜像到虚拟 session
 		},
 		[],
 	);
@@ -1098,7 +1091,6 @@ export function useJcodeSession() {
 		toggleWorkspace,
 		setWorkspaceMode,
 		loadWorkspaceThreadHistory,
-		addWorkspaceMessage,
 		clearWorkspaceMessages,
 		exportMemories,
 		importMemories,

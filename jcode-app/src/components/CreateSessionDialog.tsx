@@ -17,6 +17,10 @@ interface CreateSessionDialogProps {
 	availableModels?: string[];
 	/** Initial mode when opening the dialog */
 	initMode?: "normal" | "swarm" | "addMember";
+	/** When true, the swarm/"Agent Team" option is hidden and the dialog
+	 * is locked to single-agent mode. Use this for chat (default-workspace)
+	 * sessions where multi-agent swarms are not appropriate. */
+	disableSwarm?: boolean;
 	/** Pre-seeded list of swarm members to display in the dialog. When
 	 * `initMode === "addMember"`, the dialog operates in "add to existing
 	 * swarm" mode and shows the existing team as read-only chips. */
@@ -63,6 +67,7 @@ export function CreateSessionDialog({
 	availableModels = [],
 	initMode = "swarm",
 	existingSwarmMembers = [],
+	disableSwarm = false,
 	onCreateNormal,
 	onCreateSwarm,
 	onAddSwarmMember,
@@ -71,6 +76,8 @@ export function CreateSessionDialog({
 	swarmMembers = [],
 }: CreateSessionDialogProps) {
 	const [mode, setMode] = useState<"normal" | "swarm" | "addMember">(initMode);
+	const effectiveMode: "normal" | "swarm" | "addMember" =
+		disableSwarm && mode !== "addMember" ? "normal" : mode;
 	const [selectedWorkspace, setSelectedWorkspace] = useState<string>(
 		currentWorkingDir || workspaces[0] || "",
 	);
@@ -242,7 +249,7 @@ export function CreateSessionDialog({
 
 					<div className="px-6 py-4 space-y-5">
 							{/* Mode selector */}
-							{mode !== "addMember" && (
+							{mode !== "addMember" && !disableSwarm && (
 								<div className="flex rounded-xl bg-muted/50 p-1">
 									<button
 										type="button"
@@ -367,7 +374,7 @@ export function CreateSessionDialog({
 							</div>
 						</div>
 
-							{mode === "normal" && (
+							{effectiveMode === "normal" && (
 								/* ── Normal mode: pick model ── */
 								<div>
 								<label className="block text-[12px] font-semibold text-foreground mb-1.5">
@@ -400,7 +407,7 @@ export function CreateSessionDialog({
 								</div>
 							)}
 
-							{mode === "swarm" && (
+							{effectiveMode === "swarm" && (
 								/* ── Swarm mode: default model + add roles ── */
 								<>
 								<div>
@@ -543,7 +550,7 @@ export function CreateSessionDialog({
 								</>
 							)}
 
-						{mode === "addMember" && (
+						{effectiveMode === "addMember" && (
 							/* ── Add-member mode: list existing team, then add one new role ── */
 							<div className="space-y-3">
 								{existingSwarmMembers.length > 0 && (
@@ -625,23 +632,23 @@ export function CreateSessionDialog({
 						<button
 							type="button"
 							onClick={
-								mode === "normal"
+								effectiveMode === "normal"
 									? handleStartNormal
-									: mode === "addMember"
+									: effectiveMode === "addMember"
 										? handleCommitAddMember
 										: handleStartSwarm
 							}
-							disabled={mode === "addMember" && (addMemberBusy || !newRoleName.trim())}
+							disabled={effectiveMode === "addMember" && (addMemberBusy || !newRoleName.trim())}
 							className={cn(
 								"px-5 py-2 rounded-xl text-[13px] font-medium transition-all",
-								mode === "addMember" && (addMemberBusy || !newRoleName.trim())
+								effectiveMode === "addMember" && (addMemberBusy || !newRoleName.trim())
 									? "bg-muted/50 text-muted-foreground cursor-not-allowed"
 									: "bg-primary text-primary-foreground hover:bg-primary/90",
 							)}
 						>
-							{mode === "normal"
+							{effectiveMode === "normal"
 								? "Start Session"
-								: mode === "addMember"
+								: effectiveMode === "addMember"
 									? addMemberBusy
 										? "Adding..."
 										: "Add Member"

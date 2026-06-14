@@ -2,6 +2,10 @@ import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { SessionInfo, PerSessionData } from "@/types";
 import { AgentAvatar, AgentAvatarStack } from "./AgentAvatar";
+import {
+	workspaceIdFromDir,
+	workspaceLabel,
+} from "@/lib/workspaces";
 
 export interface SessionPreview {
 	text: string;
@@ -47,17 +51,6 @@ interface ConversationsListProps {
 	onToggleSwarmMode?: (workspaceId: string) => void;
 	compact?: boolean;
 	onToggleCompact?: () => void;
-}
-
-const DEFAULT_WORKSPACE_ID = "default";
-
-function workspaceIdFromDir(workingDir?: string | null): string {
-	return workingDir || DEFAULT_WORKSPACE_ID;
-}
-
-function workspaceLabel(workspaceId: string): string {
-	if (workspaceId === DEFAULT_WORKSPACE_ID) return "Default";
-	return workspaceId.split("/").pop() || workspaceId;
 }
 
 function formatPreviewTime(ts?: number): string {

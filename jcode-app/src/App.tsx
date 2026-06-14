@@ -22,24 +22,15 @@ import { parseSlashCommand, profileIdFromDisplayName, profileIdFromRoute } from 
 import { useTheme } from "@/hooks/useTheme";
 import type { SessionInfo, PermissionRequest } from "@/types";
 import type { BuiltinPage } from "@/lib/launcherTypes";
+import {
+	DEFAULT_WORKSPACE_ID,
+	workspaceIdFromDir,
+	workingDirFromWorkspaceId,
+	workspaceLabel,
+} from "@/lib/workspaces";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useState, useEffect, useRef, useMemo } from "react";
-
-const DEFAULT_WORKSPACE_ID = "default";
-
-function workspaceIdFromDir(workingDir?: string | null): string {
-	return workingDir || DEFAULT_WORKSPACE_ID;
-}
-
-function workingDirFromWorkspaceId(workspaceId: string): string | null {
-	return workspaceId === DEFAULT_WORKSPACE_ID ? null : workspaceId;
-}
-
-function workspaceLabel(workspaceId: string): string {
-	if (workspaceId === DEFAULT_WORKSPACE_ID) return "Default";
-	return workspaceId.split("/").pop() || workspaceId;
-}
 
 export default function App() {
 	const {
@@ -110,6 +101,8 @@ export default function App() {
 	>([]);
 	const [helpOpen, setHelpOpen] = useState(false);
 	const [sidePanelOpen, setSidePanelOpen] = useState(true);
+	const [leftCollapsed, setLeftCollapsed] = useState(false);
+	const [sidebarView, setSidebarView] = useState<"work" | "chat">("work");
 	const [onboardingComplete, setOnboardingComplete] = useState(() => {
 		// Check if user has completed onboarding before
 		return localStorage.getItem("jcode-onboarding-complete") === "true";
@@ -906,8 +899,23 @@ export default function App() {
 						setCreateDialogInitMode("normal");
 						setCreateDialogOpen(true);
 					}}
+					onNewTaskInWorkspace={(workingDir) => {
+						setWorkingDir(workingDir);
+						setCreateDialogInitMode("normal");
+						setCreateDialogOpen(true);
+					}}
+					onSelectWorkspace={(workspaceId) => {
+						const dir = workingDirFromWorkspaceId(workspaceId);
+						setActiveWorkspace(workspaceId);
+						setWorkingDir(dir);
+					}}
 					sessions={state.sessions}
 					activeSessionId={state.sessionId}
+					activeWorkspaceId={state.activeWorkspaceId}
+					viewMode={sidebarView}
+					onChangeViewMode={setSidebarView}
+					collapsed={leftCollapsed}
+					onToggleCollapse={() => setLeftCollapsed((c) => !c)}
 					onSelectSession={(s) => {
 						const wsid = workspaceIdFromDir(s.workingDir);
 						setActiveWorkspace(wsid);
@@ -1074,6 +1082,7 @@ export default function App() {
 				workspaces={workspaces}
 				currentWorkingDir={state.workingDir}
 				availableModels={state.availableModels}
+				disableSwarm={sidebarView === "chat"}
 				onCreateNormal={handleCreateNormal}
 				onCreateSwarm={handleCreateSwarm}
 				onAddSwarmMember={handleAddSwarmMember}
