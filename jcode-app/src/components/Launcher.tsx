@@ -26,24 +26,26 @@ import type { AppInfo, LauncherItem } from "@/lib/launcherTypes";
 const AGENT_HINT = "Type 'ask ' followed by a question to ask JCode.";
 const AGENT_PREFIX = "ask ";
 
-function groupItems(items: LauncherItem[]) {
-	const groups: Record<
-		"running" | "recent" | "applications" | "sessions" | "builtin",
-		LauncherItem[]
-	> = {
-		running: [],
-		recent: [],
-		applications: [],
-		sessions: [],
-		builtin: [],
-	};
+type SectionLabel = "running" | "applications" | "recent" | "sessions" | "builtin";
+
+type Section = {
+	label: SectionLabel;
+	heading: string;
+	items: LauncherItem[];
+};
+
+/** Build ordered sections. Always ① Running ② Applications ③ Pages */
+function buildSections(items: LauncherItem[]): Section[] {
+	const running: LauncherItem[] = [];
+	const applications: LauncherItem[] = [];
+	const recent: LauncherItem[] = [];
+	const sessions: LauncherItem[] = [];
+	const builtin: LauncherItem[] = [];
+
 	for (const item of items) {
 		if (item.kind === "agent") continue;
-		// Items emitted by the "running" stage are tagged with id prefix
-		// `running:`. Keep them out of the Applications list so they only
-		// appear in their own "Running" group.
 		if (item.kind === "application" && item.id.startsWith("running:")) {
-			groups.running.push(item);
+			running.push(item);
 			continue;
 		}
 		if (
@@ -53,22 +55,30 @@ function groupItems(items: LauncherItem[]) {
 				item.kind === "session" ||
 				item.kind === "builtin")
 		) {
-			groups.recent.push(item);
+			recent.push(item);
 			continue;
 		}
 		switch (item.kind) {
 			case "application":
-				groups.applications.push(item);
+				applications.push(item);
 				break;
 			case "session":
-				groups.sessions.push(item);
+				sessions.push(item);
 				break;
 			case "builtin":
-				groups.builtin.push(item);
+				builtin.push(item);
 				break;
 		}
 	}
-	return groups;
+
+	const out: Section[] = [];
+	if (running.length) out.push({ label: "running", heading: "Running", items: running });
+	out.push({ label: "applications", heading: "Applications", items: applications });
+	if (recent.length) out.push({ label: "recent", heading: "Recent", items: recent });
+	if (sessions.length) out.push({ label: "sessions", heading: "Sessions", items: sessions });
+	if (builtin.length) out.push({ label: "builtin", heading: "Pages", items: builtin });
+
+	return out;
 }
 
 export function Launcher() {
@@ -179,7 +189,10 @@ export function Launcher() {
 		return () => document.removeEventListener("keydown", handler);
 	}, [items, selectItem]);
 
-	const grouped = useMemo(() => groupItems(items), [items]);
+	const sections = useMemo(
+		() => buildSections(items),
+		[items],
+	);
 	const hasResults = items.length > 0;
 	const itemIndexById = useMemo(() => {
 		const map = new Map<string, number>();
@@ -333,79 +346,27 @@ export function Launcher() {
 						</CommandEmpty>
 					)}
 
-					{grouped.running.length > 0 && (
-						<CommandGroup heading="Running">
-							{grouped.running.map((item) => (
+					{sections.map((section) => (
+						<CommandGroup key={section.label} heading={section.heading}>
+							{section.items.map((item) => (
 								<LauncherCommandItem
 									key={item.id}
 									item={item}
 									active={activeId === getValue(item)}
 									onSelect={handleSelect}
 									highlight={query}
-									onStopApp={handleStopApp}
+									onStopApp={
+										section.label === "running" ||
+										section.label === "applications" ||
+										section.label === "recent"
+											? handleStopApp
+											: undefined
+									}
 									index={itemIndexById.get(item.id)}
 								/>
 							))}
 						</CommandGroup>
-					)}
-					{grouped.applications.length > 0 && (
-						<CommandGroup heading="Applications">
-							{grouped.applications.map((item) => (
-								<LauncherCommandItem
-									key={item.id}
-									item={item}
-									active={activeId === getValue(item)}
-									onSelect={handleSelect}
-									highlight={query}
-									onStopApp={handleStopApp}
-									index={itemIndexById.get(item.id)}
-								/>
-							))}
-						</CommandGroup>
-					)}
-					{grouped.recent.length > 0 && (
-						<CommandGroup heading="Recent">
-							{grouped.recent.map((item) => (
-								<LauncherCommandItem
-									key={item.id}
-									item={item}
-									active={activeId === getValue(item)}
-									onSelect={handleSelect}
-									highlight={query}
-									onStopApp={handleStopApp}
-									index={itemIndexById.get(item.id)}
-								/>
-							))}
-						</CommandGroup>
-					)}
-					{grouped.sessions.length > 0 && (
-						<CommandGroup heading="Recent Sessions">
-							{grouped.sessions.map((item) => (
-								<LauncherCommandItem
-									key={item.id}
-									item={item}
-									active={activeId === getValue(item)}
-									onSelect={handleSelect}
-									highlight={query}
-									index={itemIndexById.get(item.id)}
-								/>
-							))}
-						</CommandGroup>
-					)}
-					{grouped.builtin.length > 0 && (
-						<CommandGroup heading="Pages">
-							{grouped.builtin.map((item) => (
-								<LauncherCommandItem
-									key={item.id}
-									item={item}
-									active={activeId === getValue(item)}
-									onSelect={handleSelect}
-									highlight={query}
-									index={itemIndexById.get(item.id)}
-								/>
-							))}
-						</CommandGroup>
-					)}
+					))}
 				</CommandList>
 				<LauncherFooter
 					applications={applications}
