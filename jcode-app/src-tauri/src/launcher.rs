@@ -79,12 +79,11 @@ impl AppIndex {
     pub fn search(&self, query: &str) -> Vec<AppInfo> {
         let lower = query.to_lowercase();
         if lower.is_empty() {
-            return self.apps.iter().take(200).cloned().collect();
+            return self.apps.clone();
         }
         self.apps
             .iter()
             .filter(|a| app_matches(a, &lower))
-            .take(200)
             .cloned()
             .collect()
     }
