@@ -147,66 +147,22 @@ pub fn run() {
             }
             if let Some(window) = app.get_webview_window("workbench") {
                 let window_clone = window.clone();
-                let app_handle = app.handle().clone();
                 let _ = window.on_window_event(move |event| {
-                    match event {
-                        tauri::WindowEvent::CloseRequested { api, .. } => {
-                            api.prevent_close();
-                            let _ = window_clone.hide();
-                        }
-                        // When the user clicks the Dock icon to restore a
-                        // minimized window, the system restores it and fires
-                        // Focused(true). Wait for the unminimize animation
-                        // to finish, then hide the Dock only if the window
-                        // is actually visible (not minimized).
-                        tauri::WindowEvent::Focused(true) => {
-                            let w = window_clone.clone();
-                            let ah = app_handle.clone();
-                            tauri::async_runtime::spawn(async move {
-                                tokio::time::sleep(
-                                    std::time::Duration::from_millis(800),
-                                )
-                                .await;
-                                if w.is_visible().unwrap_or(false)
-                                    && !w.is_minimized().unwrap_or(true)
-                                {
-                                    hide_dock_if_all_visible(&ah);
-                                }
-                            });
-                        }
-                        _ => {}
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = window_clone.hide();
                     }
                 });
             }
             if let Some(window) = app.get_webview_window("pages") {
                 let window_clone = window.clone();
-                let app_handle = app.handle().clone();
                 let _ = window.on_window_event(move |event| {
-                    match event {
-                        tauri::WindowEvent::CloseRequested { api, .. } => {
-                            api.prevent_close();
-                            let _ = window_clone.hide();
-                        }
-                        tauri::WindowEvent::Focused(true) => {
-                            let w = window_clone.clone();
-                            let ah = app_handle.clone();
-                            tauri::async_runtime::spawn(async move {
-                                tokio::time::sleep(
-                                    std::time::Duration::from_millis(800),
-                                )
-                                .await;
-                                if w.is_visible().unwrap_or(false)
-                                    && !w.is_minimized().unwrap_or(true)
-                                {
-                                    hide_dock_if_all_visible(&ah);
-                                }
-                            });
-                        }
-                        _ => {}
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = window_clone.hide();
                     }
                 });
             }
-
             // Build the system tray icon and menu. The tray gives the user
             // a way to bring the launcher / workbench back into view after
             // both windows are hidden, and a proper Quit action so the

@@ -124,6 +124,7 @@ pub async fn hide_workbench(app_handle: AppHandle) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("workbench") {
         let _ = window.hide();
     }
+    crate::hide_dock_if_all_visible(&app_handle);
     Ok(())
 }
 #[tauri::command]
@@ -154,6 +155,7 @@ pub async fn hide_pages_window(app_handle: AppHandle) -> Result<(), TauriError> 
     if let Some(window) = app_handle.get_webview_window("pages") {
         window.hide().map_err(|e| TauriError::from(e.to_string()))?;
     }
+    crate::hide_dock_if_all_visible(&app_handle);
     Ok(())
 }
 #[tauri::command]
