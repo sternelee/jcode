@@ -52,7 +52,9 @@
         "resizable": true,
         "visible": false,
         "acceptFirstMouse": true,
-        "tabbingIdentifier": "JCode"
+        "tabbingIdentifier": "JCode",
+        "decorations": false,
+        "transparent": true
       }
     ],
     "security": {

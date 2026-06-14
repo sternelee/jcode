@@ -401,10 +401,24 @@ export function useLauncher() {
 				}
 
 				if (item.kind === "builtin") {
-					// Open the dedicated pages window instead of expanding
-					// into the workbench. The pages window has its own clean
-					// tab layout (Settings / Providers / MCP / Skills / Team)
-					// and is never mixed with the agent workspace chrome.
+					// "Open Chat" should bring the workbench to the front and
+					// focus the chat tab, not open the pages window.
+					if (item.page === "chat") {
+						await invoke("expand_to_workbench", {
+							payload: { kind: "chat" },
+						});
+						const builtinId = `builtin:${item.page}`;
+						recordRecent({
+							kind: "builtin",
+							id: builtinId,
+							page: item.page,
+							title: item.title,
+						});
+						recordUsage(builtinId);
+						return;
+					}
+
+					// Other builtins open the dedicated pages window.
 					await invoke("open_pages_window", { page: item.page });
 					const builtinId = `builtin:${item.page}`;
 					recordRecent({

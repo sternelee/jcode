@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate objc;
 pub mod commands;
 mod server_client;
 mod launcher;
@@ -3691,6 +3693,14 @@ async fn expand_to_workbench(
 /// with the given initial page selected. The pages window has its own layout
 /// independent of the workbench.
 #[tauri::command]
+async fn hide_pages_window(app_handle: AppHandle) -> Result<(), String> {
+    if let Some(window) = app_handle.get_webview_window("pages") {
+        window.hide().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 async fn open_pages_window(
     app_handle: AppHandle,
     page: String,
@@ -3701,6 +3711,55 @@ async fn open_pages_window(
         let _ = app_handle.emit("pages:navigate", page);
     }
     Ok(())
+}
+
+#[tauri::command]
+async fn drag_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn minimize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+#[tauri::command]
+async fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        // NSWindow UI operations (including -zoom:) must run on the main
+        // thread. Tauri async commands run on the tokio thread pool, so we
+        // dispatch to the main thread via run_on_main_thread and wait for it
+        // to complete with a oneshot channel.
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+        window
+            .clone()
+            .run_on_main_thread(move || {
+                let result = (|| {
+                    let ns_window_ptr = window.ns_window().map_err(|e| e.to_string())?;
+                    if ns_window_ptr.is_null() {
+                        return Err("native NSWindow is null".to_string());
+                    }
+                    unsafe {
+                        use objc::runtime::Object;
+                        let ns_window = ns_window_ptr as *mut Object;
+                        let _: () = msg_send![ns_window, zoom: ns_window];
+                    }
+                    Ok(())
+                })();
+                let _ = tx.send(result);
+            })
+            .map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let maximized = window.is_maximized().map_err(|e| e.to_string())?;
+        if maximized {
+            window.unmaximize().map_err(|e| e.to_string())
+        } else {
+            window.maximize().map_err(|e| e.to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -3805,6 +3864,17 @@ pub fn run() {
                         // primary surface and we want it to stay alive in the
                         // background so a subsequent Cmd+K can revive the
                         // launcher without losing state.
+                        api.prevent_close();
+                        let _ = window_clone.hide();
+                    }
+                });
+            }
+            if let Some(window) = app.get_webview_window("pages") {
+                let window_clone = window.clone();
+                let _ = window.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        // The pages window is undecorated; intercept its
+                        // close button so it hides instead of being destroyed.
                         api.prevent_close();
                         let _ = window_clone.hide();
                     }
@@ -4020,10 +4090,14 @@ pub fn run() {
             launch_application,
             quit_application,
             open_pages_window,
+            hide_pages_window,
+            drag_window,
             show_launcher,
             hide_launcher,
             show_workbench,
             hide_workbench,
+            minimize_window,
+            toggle_maximize_window,
             expand_to_workbench,
         ])
         .run(tauri::generate_context!())

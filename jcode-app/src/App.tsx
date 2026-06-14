@@ -818,6 +818,11 @@ export default function App() {
 				},
 			),
 		);
+		unlisteners.push(
+			listen<{ kind?: string }>("launcher:open-chat", () => {
+				setActiveNavTab("chat");
+			}),
+		);
 
 		unlisteners.push(
 			listen<{ kind?: string; query?: string }>(
