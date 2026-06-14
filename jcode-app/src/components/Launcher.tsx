@@ -348,9 +348,9 @@ export function Launcher() {
 							))}
 						</CommandGroup>
 					)}
-					{grouped.recent.length > 0 && (
-						<CommandGroup heading="Recent">
-							{grouped.recent.map((item) => (
+					{grouped.applications.length > 0 && (
+						<CommandGroup heading="Applications">
+							{grouped.applications.map((item) => (
 								<LauncherCommandItem
 									key={item.id}
 									item={item}
@@ -363,11 +363,9 @@ export function Launcher() {
 							))}
 						</CommandGroup>
 					)}
-					{grouped.applications.length > 0 && (
-						<CommandGroup
-							heading={grouped.recent.length > 0 ? "Applications" : "Applications"}
-						>
-							{grouped.applications.map((item) => (
+					{grouped.recent.length > 0 && (
+						<CommandGroup heading="Recent">
+							{grouped.recent.map((item) => (
 								<LauncherCommandItem
 									key={item.id}
 									item={item}
