@@ -139,15 +139,24 @@ fn scan_applications() -> Vec<AppInfo> {
     use applications::{AppInfo as _, AppInfoContext};
 
     let mut ctx = AppInfoContext::new(vec![]);
-    // refresh_apps() queries LaunchServices + Spotlight — synchronous,
-    // may take a few seconds on first call.
-    if ctx.refresh_apps().is_err() {
-        return Vec::new();
+
+    match ctx.refresh_apps() {
+        Ok(()) => {
+            eprintln!("[launcher] applications crate refresh ok");
+        }
+        Err(e) => {
+            eprintln!("[launcher] applications crate refresh failed: {e}");
+            return Vec::new();
+        }
     }
 
     let raw = ctx.get_all_apps();
+    eprintln!("[launcher] applications crate found {} apps", raw.len());
+
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut out: Vec<AppInfo> = Vec::with_capacity(raw.len());
+    let mut icon_hits: usize = 0;
+    let mut icon_misses: usize = 0;
 
     for app in raw {
         let bundle_path = bundle_root_from_crate_app(&app);
@@ -165,6 +174,11 @@ fn scan_applications() -> Vec<AppInfo> {
             .map(|p| p.to_string_lossy().to_string());
 
         let icon_base64 = extract_icon_base64(&bundle_path);
+        if icon_base64.is_some() {
+            icon_hits += 1;
+        } else {
+            icon_misses += 1;
+        }
 
         out.push(AppInfo {
             name: app.name,
@@ -178,20 +192,35 @@ fn scan_applications() -> Vec<AppInfo> {
         });
     }
 
+    eprintln!(
+        "[launcher] deduped to {} apps, icons: {} hit / {} miss",
+        out.len(),
+        icon_hits,
+        icon_misses
+    );
     out
 }
 
 /// Derive `.app` bundle root from the `applications` crate's `App`.
-/// `app_path_exe` on macOS is the bundle directory itself (e.g.
-/// `/Applications/Safari.app`), not the inner executable.
+/// The crate sets `app_path_exe` to the binary inside `Contents/MacOS/`
+/// (e.g. `/Applications/Safari.app/Contents/MacOS/Safari`). We need
+/// the `.app` directory itself for plist reading and icon extraction.
 #[cfg(target_os = "macos")]
 fn bundle_root_from_crate_app(app: &applications::App) -> PathBuf {
-    // On macOS the crate sets app_path_exe to the .app directory.
-    if let Some(p) = &app.app_path_exe {
-        return p.clone();
+    // app_desktop_path is the .app directory on macOS.
+    let desktop = &app.app_desktop_path;
+    if desktop.exists() {
+        return desktop.clone();
     }
-    // Fallback: app_desktop_path also points to the .app directory.
-    app.app_desktop_path.clone()
+    // Fallback: derive from app_path_exe by walking up to .app.
+    if let Some(exe) = &app.app_path_exe {
+        let s = exe.to_string_lossy();
+        if let Some(offset) = s.find(".app/") {
+            return PathBuf::from(&s[..offset + 4]);
+        }
+        return exe.clone();
+    }
+    PathBuf::from("/Applications/Unknown.app")
 }
 
 /// Read `Info.plist` for fields the `applications` crate does not
@@ -271,17 +300,16 @@ fn extract_icon_base64(bundle_root: &Path) -> Option<String> {
     let file = BufReader::new(File::open(&icns_path).ok()?);
     let family = IconFamily::read(file).ok()?;
 
-    // Pick the largest available icon.
+    // Pick the largest available icon (cap at 128x128 to keep payload
+    // under ~15KB per app — base64 512x512 PNGs would blow up Tauri IPC).
     let preferred = [
-        IconType::RGBA32_512x512_2x,
-        IconType::RGBA32_512x512,
-        IconType::RGBA32_256x256_2x,
-        IconType::RGBA32_256x256,
-        IconType::RGBA32_128x128_2x,
-        IconType::RGBA32_128x128,
-        IconType::RGBA32_64x64,
-        IconType::RGBA32_32x32,
-        IconType::RGBA32_16x16,
+        IconType::RGBA32_128x128_2x,   // screen 128, actual 256
+        IconType::RGBA32_128x128,      // screen 128, actual 128
+        IconType::RGBA32_64x64,        // screen 64,  actual 64
+        IconType::RGBA32_32x32_2x,     // screen 32,  actual 64
+        IconType::RGBA32_32x32,        // screen 32,  actual 32
+        IconType::RGBA32_16x16_2x,     // screen 16,  actual 32
+        IconType::RGBA32_16x16,        // screen 16,  actual 16
     ];
 
     let best = preferred

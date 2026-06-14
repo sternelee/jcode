@@ -3596,7 +3596,13 @@ async fn search_applications(
         .running_apps
         .lock()
         .map_err(|e| format!("running-apps lock poisoned: {e}"))?;
-    Ok(index.search_with_running(&query, &running))
+    let results = index.search_with_running(&query, &running);
+    eprintln!(
+        "[launcher] search_applications(\"{query}\") -> {} results (index has {} total)",
+        results.len(),
+        index.all().len()
+    );
+    Ok(results)
 }
 
 #[tauri::command]
