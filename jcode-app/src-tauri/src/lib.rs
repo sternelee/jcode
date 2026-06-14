@@ -16,6 +16,40 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 mod utils;
 
+/// Toggle the macOS Dock tile visibility by switching NSApp activation policy.
+///
+/// `true` → regular mode (Dock icon visible, appears in Cmd+Tab).
+/// `false` → accessory mode (no Dock icon, no Cmd+Tab entry).
+pub(crate) fn set_dock_visible(visible: bool) {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        use objc::runtime::Object;
+        use objc::{class, msg_send};
+        let ns_app: *mut Object = msg_send![class!(NSApplication), sharedApplication];
+        // NSApplicationActivationPolicyRegular = 0, Accessory = 1
+        let policy: isize = if visible { 0 } else { 1 };
+        let _: () = msg_send![ns_app, setActivationPolicy: policy];
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = visible;
+}
+
+/// After restoring a workbench/pages window, hide the Dock if neither
+/// is currently minimized.
+pub(crate) fn hide_dock_if_all_visible(app_handle: &tauri::AppHandle) {
+    let wb_min = app_handle
+        .get_webview_window("workbench")
+        .and_then(|w| w.is_minimized().ok())
+        .unwrap_or(false);
+    let pg_min = app_handle
+        .get_webview_window("pages")
+        .and_then(|w| w.is_minimized().ok())
+        .unwrap_or(false);
+    if !wb_min && !pg_min {
+        set_dock_visible(false);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // rustls 0.23 当同时编译了多个 provider（ring + aws-lc-rs）时不能自动选择，
@@ -27,6 +61,10 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(AppState::new())
         .setup(|app| {
+            // Hide the Dock icon by default. Only show when workbench or
+            // pages windows are minimized (so the user can restore them).
+            set_dock_visible(false);
+
             // Register the ServerClient synchronously; lazy-connect on first use.
             let client = Arc::new(ServerClient::new());
             client.set_app_handle(app.handle().clone());
@@ -105,25 +143,51 @@ pub fn run() {
             }
             if let Some(window) = app.get_webview_window("workbench") {
                 let window_clone = window.clone();
+                let app_handle = app.handle().clone();
                 let _ = window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        // Hide rather than close: the workbench is the
-                        // primary surface and we want it to stay alive in the
-                        // background so a subsequent Cmd+K can revive the
-                        // launcher without losing state.
-                        api.prevent_close();
-                        let _ = window_clone.hide();
+                    match event {
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            api.prevent_close();
+                            let _ = window_clone.hide();
+                        }
+                        // When the user clicks the Dock icon to restore a
+                        // minimized workbench, the system restores it and
+                        // fires Focused(true). Check if we should hide the
+                        // Dock now (after a short delay for the animation).
+                        tauri::WindowEvent::Focused(true) => {
+                            let ah = app_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                tokio::time::sleep(
+                                    std::time::Duration::from_millis(600),
+                                )
+                                .await;
+                                hide_dock_if_all_visible(&ah);
+                            });
+                        }
+                        _ => {}
                     }
                 });
             }
             if let Some(window) = app.get_webview_window("pages") {
                 let window_clone = window.clone();
+                let app_handle = app.handle().clone();
                 let _ = window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                        // The pages window is undecorated; intercept its
-                        // close button so it hides instead of being destroyed.
-                        api.prevent_close();
-                        let _ = window_clone.hide();
+                    match event {
+                        tauri::WindowEvent::CloseRequested { api, .. } => {
+                            api.prevent_close();
+                            let _ = window_clone.hide();
+                        }
+                        tauri::WindowEvent::Focused(true) => {
+                            let ah = app_handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                tokio::time::sleep(
+                                    std::time::Duration::from_millis(600),
+                                )
+                                .await;
+                                hide_dock_if_all_visible(&ah);
+                            });
+                        }
+                        _ => {}
                     }
                 });
             }

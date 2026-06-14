@@ -115,6 +115,7 @@ pub async fn show_workbench(app_handle: AppHandle) -> Result<(), TauriError> {
         window.show().map_err(|e| TauriError::from(e.to_string()))?;
         window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
     }
+    crate::hide_dock_if_all_visible(&app_handle);
     Ok(())
 }
 #[tauri::command]
@@ -143,6 +144,7 @@ pub async fn expand_to_workbench(
         };
         let _ = app_handle.emit(&event, value);
     }
+    crate::hide_dock_if_all_visible(&app_handle);
     Ok(())
 }
 #[tauri::command]
@@ -162,6 +164,7 @@ pub async fn open_pages_window(
         window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
         let _ = app_handle.emit("pages:navigate", page);
     }
+    crate::hide_dock_if_all_visible(&app_handle);
     Ok(())
 }
 #[tauri::command]
@@ -170,6 +173,11 @@ pub async fn drag_window(window: tauri::WebviewWindow) -> Result<(), TauriError>
 }
 #[tauri::command]
 pub async fn minimize_window(window: tauri::WebviewWindow) -> Result<(), TauriError> {
+    let label = window.label().to_string();
+    let is_main = label == "workbench" || label == "pages";
+    if is_main {
+        crate::set_dock_visible(true);
+    }
     window.minimize().map_err(|e| TauriError::from(e.to_string()))
 }
 #[tauri::command]
