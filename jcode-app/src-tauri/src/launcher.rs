@@ -136,7 +136,7 @@ fn app_matches(app: &AppInfo, lower: &str) -> bool {
 
 #[cfg(target_os = "macos")]
 fn scan_applications() -> Vec<AppInfo> {
-    use applications::{AppInfo as _, AppInfoContext};
+    use applications::{AppInfo as _, AppTrait, AppInfoContext};
     use applications::common::SearchPath;
 
     // mdfind (Spotlight) may miss apps on external volumes or directories
@@ -169,12 +169,43 @@ fn scan_applications() -> Vec<AppInfo> {
     let raw = ctx.get_all_apps();
     eprintln!("[launcher] applications crate found {} apps", raw.len());
 
+    // Fallback: manually read top-level app directories. mdfind may miss
+    // apps on some systems (Spotlight disabled, sandboxed, etc.).
+    let fallback_paths = manual_app_dirs();
+    let mut all_apps: Vec<applications::App> = raw;
+    let existing: HashSet<PathBuf> = all_apps
+        .iter()
+        .map(|a| a.app_desktop_path.clone())
+        .collect();
+
+    for fb in fallback_paths {
+        // Only process if this is an .app bundle not already in the list.
+        if !fb
+            .extension()
+            .map(|e| e == "app")
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        if existing.contains(&fb) {
+            continue;
+        }
+        if let Ok(app) = applications::App::from_path(&fb) {
+            all_apps.push(app);
+        }
+    }
+
+    eprintln!(
+        "[launcher] after manual fallback: {} apps total",
+        all_apps.len()
+    );
+
     let mut seen: HashSet<PathBuf> = HashSet::new();
-    let mut out: Vec<AppInfo> = Vec::with_capacity(raw.len());
+    let mut out: Vec<AppInfo> = Vec::with_capacity(all_apps.len());
     let mut icon_hits: usize = 0;
     let mut icon_misses: usize = 0;
 
-    for app in raw {
+    for app in all_apps {
         let bundle_path = bundle_root_from_crate_app(&app);
 
         if !seen.insert(bundle_path.clone()) {
@@ -294,6 +325,86 @@ fn read_app_metadata(
         });
 
     (name, bundle_id, version, executable)
+}
+
+/// Walk common app directories manually as a fallback for `mdfind`.
+#[cfg(target_os = "macos")]
+fn manual_app_dirs() -> Vec<PathBuf> {
+    use std::fs;
+
+    let roots: &[&str] = &[
+        "/Applications",
+        "/System/Applications",
+        "/Applications/Utilities",
+    ];
+
+    let mut out = Vec::new();
+    for root in roots {
+        let path = Path::new(root);
+        if !path.exists() {
+            continue;
+        }
+        let entries = match fs::read_dir(path) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.extension().map(|e| e == "app").unwrap_or(false) {
+                out.push(p);
+            }
+        }
+    }
+
+    // Also scan subdirectories of /System/Library/CoreServices
+    let cs = Path::new("/System/Library/CoreServices");
+    if cs.exists() {
+        if let Ok(entries) = fs::read_dir(cs) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                let is_app = p.extension().map(|e| e == "app").unwrap_or(false);
+                if is_app {
+                    out.push(p.clone());
+                }
+                // Some apps are one level deeper, e.g. CoreServices/Applications/
+                if !is_app && p.is_dir() {
+                    let deeper = p.join("Applications");
+                    if deeper.exists() {
+                        if let Ok(sub) = fs::read_dir(&deeper) {
+                            for e in sub.flatten() {
+                                let sp = e.path();
+                                if sp.extension().map(|ex| ex == "app").unwrap_or(false) {
+                                    out.push(sp);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ~/Applications
+    if let Some(home) = dirs::home_dir() {
+        let user_apps = home.join("Applications");
+        if user_apps.exists() {
+            if let Ok(entries) = fs::read_dir(&user_apps) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.extension().map(|e| e == "app").unwrap_or(false) {
+                        out.push(p);
+                    }
+                }
+            }
+        }
+    }
+
+    out
+}
+
+#[cfg(not(target_os = "macos"))]
+fn manual_app_dirs() -> Vec<PathBuf> {
+    Vec::new()
 }
 
 #[cfg(target_os = "macos")]
