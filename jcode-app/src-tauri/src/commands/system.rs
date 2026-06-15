@@ -327,50 +327,57 @@ pub async fn run_dictation() -> Result<serde_json::Value, TauriError> {
         "mode": mode_str,
     }))
 }
+fn should_ignore(name: &str) -> bool {
+    name.starts_with('.')
+        || name == "node_modules"
+        || name == "target"
+        || name == "dist"
+        || name == "build"
+        || name == "__pycache__"
+        || name == "venv"
+        || name == ".venv"
+        || name == "vendor"
+}
+
+async fn collect_files_async(
+    path: std::path::PathBuf,
+    prefix: String,
+    depth: usize,
+    out: &mut Vec<String>,
+) {
+    if depth > 4 {
+        return;
+    }
+    let mut read_dir = match tokio::fs::read_dir(&path).await {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
+    while let Ok(Some(entry)) = read_dir.next_entry().await {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if should_ignore(&name) {
+            continue;
+        }
+        let full = if prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{}/{}", prefix, name)
+        };
+        let Ok(meta) = entry.metadata().await else {
+            continue;
+        };
+        if meta.is_file() {
+            out.push(full);
+        } else if meta.is_dir() {
+            Box::pin(collect_files_async(entry.path(), full, depth + 1, out)).await;
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn list_workspace_files(working_dir: Option<String>) -> Result<Vec<String>, TauriError> {
     let root = working_dir.as_deref().unwrap_or(".");
     let mut files = Vec::new();
-
-    fn should_ignore(name: &str) -> bool {
-        name.starts_with('.')
-            || name == "node_modules"
-            || name == "target"
-            || name == "dist"
-            || name == "build"
-            || name == "__pycache__"
-            || name == "venv"
-            || name == ".venv"
-            || name == "vendor"
-    }
-
-    fn collect_files(path: &std::path::Path, prefix: &str, depth: usize, out: &mut Vec<String>) {
-        if depth > 4 {
-            return;
-        }
-        let Ok(entries) = std::fs::read_dir(path) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if should_ignore(&name) {
-                continue;
-            }
-            let full = if prefix.is_empty() {
-                name.clone()
-            } else {
-                format!("{}/{}", prefix, name)
-            };
-            let Ok(meta) = entry.metadata() else { continue };
-            if meta.is_file() {
-                out.push(full);
-            } else if meta.is_dir() {
-                collect_files(&entry.path(), &full, depth + 1, out);
-            }
-        }
-    }
-
-    collect_files(std::path::Path::new(root), "", 0, &mut files);
+    collect_files_async(std::path::PathBuf::from(root), String::new(), 0, &mut files).await;
     files.sort();
     Ok(files)
 }
