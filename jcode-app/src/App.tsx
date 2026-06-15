@@ -1022,6 +1022,7 @@ export default function App() {
 							onToggle={() => setSidePanelOpen((o) => !o)}
 							mode={sidebarView}
 							workingDir={state.workingDir}
+							theme={effectiveTheme}
 						/>
 					</>
 				) : (
