@@ -1,155 +1,284 @@
-# JFlow Desktop App (Tauri v2)
+# CLAUDE.md
 
-## Overview
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-`jcode-app/` is the Tauri v2 desktop application wrapping the `jcode` Rust library.
-It provides a native macOS/Windows/Linux UI for jcode's AI coding assistant capabilities.
+## Project Overview
 
-## Architecture
+**JFlow** (`jcode-app/`) is the Tauri v2 desktop client wrapping the parent `jcode` Rust AI coding agent. It is evolving from a multi-pane workbench into a **Raycast-style launcher + expandable workbench**.
 
-### Frontend (React 19 + TypeScript + Tailwind v4)
+The parent repo contains a 60+ crate Rust workspace. The shipping desktop app lives in **`jcode-app/`** (Tauri + webview). The separate `crates/jcode-desktop/` wgpu/winit experiment in the parent repo is a long-term research project — **not** the shipping desktop.
 
-```
-src/
-├── App.tsx                          # Root component with tab-based navigation
-├── main.tsx                         # React entry point
-├── App.css                          # Global styles (Tailwind + shadcn/ui)
-├── types.ts                         # TypeScript interfaces for server events & state
-├── hooks/
-│   ├── useJcodeSession.ts           # Main session state management (useReducer)
-│   └── useTheme.ts                  # Light/dark/system theme management
-├── components/
-│   ├── NavBar.tsx                   # App shell sidebar with tab navigation
-│   ├── ConversationsList.tsx        # Workspace & session list
-│   ├── ChatArea.tsx                 # Main chat view with messages + input
-│   ├── ChatView.tsx                 # Chat message rendering
-│   ├── MessageBubble.tsx            # Individual message display
-│   ├── InputArea.tsx                # Message composition area
-│   ├── ModelSelector.tsx            # Model picker
-│   ├── SettingsPage.tsx             # Appearance, version, devices, memory stats
-│   ├── ProviderConfigPage.tsx       # Provider auth & model route management
-│   ├── SlashCommands.tsx            # /command parser
-│   ├── CreateSessionDialog.tsx      # New session dialog (normal/swarm)
-│   ├── SessionSwitcherDialog.tsx    # Cmd+P session switcher
-│   ├── StdinInputModal.tsx          # Interactive stdin prompt modal
-│   ├── AgentAvatar.tsx              # Agent/role avatar display
-│   ├── ActivityPanel.tsx            # Right sidebar: session status, tools, timeline
-│   ├── DiffView.tsx                 # Code diff renderer
-│   ├── ToolCard.tsx                 # Tool execution display
-│   ├── SessionSidebar.tsx           # Session list sidebar
-│   ├── ai-elements/                 # AI chat UI elements (conversation, message, prompt)
-│   └── ui/                          # shadcn/ui primitive components
-├── lib/
-│   ├── utils.ts                     # cn() utility for class merging
-│   ├── messageAdapter.ts            # Server event → desktop event adapter
-│   └── serverEventAdapter.ts        # Raw server event parsing
-└── vite-env.d.ts                   # Vite type declarations
-```
+Parent repo: `~/www/jcode/`. Run Node commands from `jcode-app/`; run Cargo commands from the **parent repo root** so the workspace is honored.
 
-### Backend (Rust + Tauri v2)
+## Three-Window SPA
+
+`src-tauri/tauri.conf.json` declares three windows that all load the same bundled `index.html`; `src/main.tsx` branches on `getCurrentWebviewWindow().label`:
+
+| Window | Label | Size | Decorations | Purpose |
+|--------|-------|------|-------------|---------|
+| Workbench | `workbench` | 1200×800 | none, transparent | Main agent workspace (chat, sessions, tools, settings) |
+| Launcher | `launcher` | 720×420, always-on-top | none, transparent | Raycast-style command palette (apps, sessions, builtin pages, agent queries) |
+| Pages | `pages` | 960×680 | native | Settings / providers / MCP / skills / swarm |
+
+Drag regions are marked explicitly with `data-tauri-drag-region` (e.g., `TitleBar.tsx`).
+
+## Frontend → Backend → Frontend Flow
 
 ```
-src-tauri/
-├── Cargo.toml                      # Rust dependencies (jcode, tauri, plugins)
-├── tauri.conf.json                 # Tauri app configuration
-├── build.rs                        # Tauri build script
-├── capabilities/
-│   ├── default.json                # Core permissions (fs, dialog, shell, notification, etc.)
-│   └── shell-exec.json             # Shell command execution permissions (git)
-├── icons/                          # App icons (32x32, 128x128, icns, ico)
-└── src/
-    ├── main.rs                     # Binary entry point
-    ├── lib.rs                      # Tauri plugin registration + 50+ #[tauri::command] handlers
-    └── commands.rs                 # SessionRuntime + AppState + helper functions
+User input
+  → useJcodeSession action
+  → invoke("<command>", { ... })
+  → src-tauri/src/lib.rs command handler
+  → local SessionRuntime or ServerClient (optional Unix-socket)
+  → agent.run_once_streaming_mpsc(...)
+  → ServerEvent stream
+  → app_handle.emit("server-event", payload)
+  → frontend listen("server-event")
+  → lib/serverEventAdapter.ts → DesktopSemanticEvent
+  → hooks/processEvent.ts → reducer actions
+  → React re-render
 ```
-
-### Key Tauri Backend Commands
-
-| Command                                                                 | Description                                   |
-| ----------------------------------------------------------------------- | --------------------------------------------- |
-| `begin_session`                                                         | Start a new AI session                        |
-| `resume_session`                                                        | Resume an existing session from disk          |
-| `send_message`                                                          | Send a message to the AI (streaming)          |
-| `cancel`                                                                | Cancel the current AI response                |
-| `send_soft_interrupt`                                                   | Soft interrupt with follow-up content         |
-| `set_model`                                                             | Switch model for a session                    |
-| `set_memory_enabled`                                                    | Toggle memory on/off                          |
-| `set_reasoning_effort`                                                  | Set reasoning effort (low/medium/high)        |
-| `compact_context`                                                       | Force context compaction                      |
-| `clear_chat`                                                            | Clear all messages in session                 |
-| `rewind_chat`                                                           | Rewind to a specific message index            |
-| `list_sessions`                                                         | List all persisted sessions                   |
-| `delete_session` / `delete_workspace_sessions`                          | Delete sessions                               |
-| `rename_session`                                                        | Rename a session                              |
-| `get_models`                                                            | Get available model routes + provider catalog |
-| `save_provider_api_key`                                                 | Save provider API keys locally                |
-| `start_provider_auth_flow` / `complete_provider_auth_flow`              | OAuth/device auth flow                        |
-| `get_auth_status` / `run_auth_doctor`                                   | Auth diagnostics                              |
-| `get_memory_list` / `search_memories` / `get_memory_stats`              | Memory management                             |
-| `export_memories` / `import_memories`                                   | Memory import/export                          |
-| `trigger_ambient` / `stop_ambient`                                      | Ambient mode control                          |
-| `get_ambient_status` / `get_ambient_transcripts`                        | Ambient monitoring                            |
-| `generate_pairing_code` / `list_paired_devices` / `revoke_device`       | Mobile device pairing                         |
-| `get_browser_status` / `setup_browser`                                  | Browser tool setup                            |
-| `send_transcript` / `run_dictation`                                     | Voice transcription                           |
-| `get_version_info`                                                      | App version info                              |
-| `get_usage_info`                                                        | Provider usage limits                         |
-| `add_provider_profile`                                                  | Add custom OpenAI-compatible provider         |
-| `get_permission_requests` / `respond_to_permission`                     | Safety system                                 |
-| `list_background_tasks` / `cancel_background_task`                      | Background task management                    |
-| `save_session_state` / `get_last_session_state` / `clear_session_state` | Session persistence                           |
-| `git_status`                                                            | Git status display                            |
 
 ## State Management
 
-Uses React `useReducer` for predictable state management. The state is organized as:
+- **Single reducer**: `src/hooks/sessionReducer.ts` is the single source of truth; `useJcodeSession.ts` provides actions and wires Tauri listeners.
+- **Per-session map**: `sessionData: Record<string, PerSessionData>` preserves state across workspace switches; the active session is denormalized to the top-level `SessionState`.
+- **Virtual workspace threads**: synthetic IDs like `workspace:<dir>` let the frontend show a unified chat for sessions sharing a working directory.
+- **Workspace = workingDir**: `workspaceId` is derived from `workingDir`; `"default"` means no directory.
 
-- **Global state** (`SessionState`): connection status, active session, available models
-- **Per-session state** (`PerSessionData`): messages, processing status, model info, errors
-- **`sessionData`** map: `Record<string, PerSessionData>` — indexed by session ID
+### Backend State (Rust)
 
-### Swarm Mode
+- `AppState` (`src-tauri/src/commands.rs`) holds active runtimes, provider cache, swarm snapshots, pending stdin responses, launcher app index.
+- `SessionRuntime` wraps an `Arc<Mutex<Agent>>` plus cancel/processing/status signals.
+- `ServerClient` (`src-tauri/src/server_client.rs`) is an optional Unix-socket client for server-backed sessions.
+- **Dual session model**: handlers check whether a session is server-managed; local sessions run directly, server-managed sessions are forwarded via `jcode::protocol::Request`.
 
-Sessions in the same working directory form a "workspace". In swarm mode:
+## Event Protocol
 
-- A virtual session `workspace:{id}` aggregates messages from all agent sessions
-- Messages are mirrored from individual sessions to the workspace thread
-- `@AgentName` routing allows directing messages to specific agents
+`src/lib/serverEventAdapter.ts` maps raw `ServerEvent` shapes to `DesktopSemanticEvent`s:
 
-## Events
+- `text_delta` / `text_replace`
+- `tool_start` / `tool_input` / `tool_exec` / `tool_done`
+- Session lifecycle: history load, compaction, rewind, clear
+- Swarm: status, plan summaries, proposals
 
-Server events flow through Tauri's event system (`server-event` channel):
+## Key Directories
 
-1. Backend emits events with `session_id`
-2. Frontend `listen("server-event", ...)` dispatches to the reducer
-3. Swarm mode mirrors events to the workspace virtual session
-
-## Build & Run
-
-```bash
-# From repo root or jcode-app/
-pnpm tauri dev           # Full Tauri dev (Rust + Vite)
-pnpm dev                 # Frontend only (port 1420)
-pnpm build               # Frontend production build
-
-# Rust backend (from repo root)
-cargo check              # Fast checks
-cargo build -p jcode-app # Build Tauri app
+```
+jcode-app/
+├── src/
+│   ├── main.tsx                 # React entry; picks root by window label
+│   ├── App.tsx                  # Workbench root layout
+│   ├── App.css                  # Tailwind v4 theme, tokens, light/dark
+│   ├── types.ts                 # Central TS types
+│   ├── rolePresets.ts           # Preset agent roles
+│   ├── hooks/
+│   │   ├── useJcodeSession.ts   # Session API + Tauri listeners
+│   │   ├── sessionReducer.ts    # Single source of truth for session state
+│   │   ├── processEvent.ts      # Routes events to reducer actions
+│   │   ├── useLauncher.ts       # Launcher query, MRU, selection state
+│   │   ├── useApplications.ts   # macOS app discovery polling
+│   │   └── useTheme.ts          # Theme persistence/sync
+│   ├── lib/
+│   │   ├── serverEventAdapter.ts   # ServerEvent → DesktopSemanticEvent
+│   │   ├── messageAdapter.ts       # ChatMessage → UIMessage
+│   │   ├── launcherTypes.ts        # Launcher item types
+│   │   └── utils.ts                # cn() helper
+│   └── components/
+│       ├── Launcher.tsx             # Command palette window
+│       ├── PagesApp.tsx             # Settings/pages window
+│       ├── LauncherCommandItem.tsx  # Unified launcher row
+│       ├── ChatArea.tsx             # Chat surface
+│       ├── MessageBubble.tsx        # Streaming message render
+│       ├── InputArea.tsx            # Text input + image paste
+│       ├── TitleBar.tsx             # Custom drag region + traffic lights
+│       ├── LeftSidebar.tsx          # Session/workspace sidebar
+│       ├── RightSidebar.tsx         # Activity/metadata panel
+│       ├── SlashCommands.tsx        # Slash command palette
+│       ├── ToolCard.tsx             # Tool execution display
+│       ├── StdinInputModal.tsx      # Interactive stdin prompt
+│       └── ui/                      # shadcn/ui primitives
+├── src-tauri/
+│   ├── src/
+│   │   ├── main.rs             # Entry → jcode_app_lib::run()
+│   │   ├── lib.rs              # Tauri commands, events, sessions (~4k lines)
+│   │   ├── commands.rs         # AppState, SessionRuntime, factories
+│   │   ├── commands/           # Subcommand modules
+│   │   ├── server_client.rs    # Optional jcode server socket client
+│   │   ├── launcher.rs         # macOS app discovery + launch helpers
+│   │   ├── error.rs            # Error types
+│   │   └── utils.rs            # Serialization helpers
+│   ├── Cargo.toml              # Rust deps + workspace link
+│   ├── tauri.conf.json         # Windows, plugins, capabilities, CSP
+│   └── capabilities/default.json
+├── docs/                       # jcode-app-specific design docs and plans
+├── package.json
+├── vite.config.ts
+├── tsconfig.json
+├── components.json             # shadcn/ui base-nova config
+└── pnpm-workspace.yaml
 ```
 
-## Configuration
+## Development Commands
 
-- `tauri.conf.json`: App metadata, window config, security CSP, bundle settings, plugin config
-- `capabilities/default.json`: Tauri v2 permissions (fs, dialog, shell, notification, clipboard, process)
-- `capabilities/shell-exec.json`: Scoped shell command permissions (git)
-- Plugins: clipboard-manager, dialog, fs, notification, process, shell
+### Frontend (from `jcode-app/`)
 
-## Design Decisions
+```bash
+pnpm dev       # Vite dev server on port 1420
+pnpm build     # tsc + vite build
+pnpm tsc       # Type check only
+pnpm preview   # Preview production build
+```
 
-- **Tab-based navigation**: Chat, Network (providers), Media, Tasks, Monitor, Team, Settings
-- **Purple (#7C3AED) primary** with subtle shadows for native-feel
-- **System font stack** (SF Pro, Segoe UI) rather than custom fonts for speed
-- **No custom scrollbars** — native WebKit overlay scrollbars only
-- **`cursor: default`** on everything except inputs — native apps don't change cursor
-- **`user-select: none`** on chrome, text on content — standard native pattern
-- **Side panels** collapse on non-chat tabs for full-width settings pages
+### Full Desktop App (from `jcode-app/`)
+
+```bash
+pnpm tauri dev    # Rust + Vite dev
+pnpm tauri build  # Production Tauri bundle
+```
+
+### Rust (from parent repo root)
+
+```bash
+cargo check -p jcode-app
+cargo build -p jcode-app
+cargo clippy -p jcode-app -- -D warnings
+cargo test -p jcode-app --lib --bins
+```
+
+### Parent Workspace (from `~/www/jcode/`)
+
+```bash
+cargo check --all-targets --all-features
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
+scripts/test_fast.sh
+scripts/test_e2e.sh
+```
+
+`scripts/dev_cargo.sh` is the preferred build wrapper on Linux x86_64 — auto-detects sccache and fast linkers (lld/mold + clang). Set `JCODE_DEV_FEATURE_PROFILE` to `default`, `minimal`, `pdf`, `embeddings`, or `full`.
+
+## Tauri Backend Commands
+
+Commands use `#[tauri::command]` and live in `src-tauri/src/lib.rs`. Snake_case command names in Rust; `#[serde(rename_all = "camelCase")]` for typed request structs.
+
+Major command groups:
+- **Sessions**: `begin_session`, `resume_session`, `send_message`, `cancel`, `send_soft_interrupt`, `clear_chat`, `rewind_chat`, `compact_context`, `set_model`, `set_memory_enabled`, `set_reasoning_effort`
+- **Persistence**: `list_sessions`, `delete_session`, `delete_workspace_sessions`, `rename_session`, `save_session_state`, `get_last_session_state`, `clear_session_state`
+- **Providers**: `get_models`, `save_provider_api_key`, `start_provider_auth_flow` / `complete_provider_auth_flow`, `get_auth_status`, `run_auth_doctor`, `add_provider_profile`
+- **Memory**: `get_memory_list`, `search_memories`, `get_memory_stats`, `export_memories`, `import_memories`
+- **Ambient**: `trigger_ambient`, `stop_ambient`, `get_ambient_status`, `get_ambient_transcripts`
+- **Devices / Mobile**: `generate_pairing_code`, `list_paired_devices`, `revoke_device`
+- **Browser**: `get_browser_status`, `setup_browser`
+- **Voice**: `send_transcript`, `run_dictation`
+- **Safety**: `get_permission_requests`, `respond_to_permission`
+- **Background**: `list_background_tasks`, `cancel_background_task`
+- **Misc**: `get_version_info`, `get_usage_info`, `git_status`
+
+## Code Conventions
+
+### TypeScript
+- **Strict mode** with `noUnusedLocals` and `noUnusedParameters` — unused variables are compile errors.
+- Path alias `@/*` → `./src/*` (Vite + TS `paths`).
+- Explicit component prop interfaces are preferred.
+- `void handler()` is common when promises should not be awaited in JSX handlers.
+
+### React
+- Functional components and hooks only; `React.StrictMode` in `main.tsx`.
+- Single `useReducer` for session state; actions are discriminated unions.
+- Example action shape:
+  ```ts
+  type Action =
+    | { type: "CONNECT" }
+    | { type: "ADD_MESSAGE"; payload: Message }
+    | { type: "APPEND_TEXT"; payload: { sessionId: string; text: string } }
+    | ...
+  ```
+
+### Styling
+- **Tailwind CSS v4** via `@tailwindcss/vite`; no `tailwind.config.js`.
+- Theme tokens are CSS custom properties in `src/App.css` under `@theme inline`.
+- Light/dark themes via `:root` and `.dark` selectors; theme class applied before React hydration (inline script in `index.html`).
+- **shadcn/ui** style `base-nova` on `@base-ui/react`; icons from `lucide-react`.
+- `cn()` = `clsx` + `tailwind-merge` for conditional classes.
+- Transparent/undecorated windows: `body` is transparent and each top-level component paints its own `bg-background` surface; `body`/`#root` clip to rounded corners.
+
+### Streaming Content
+- AI messages rendered with `ai-elements` + `streamdown`.
+- Streamdown plugins for CJK, code blocks, math (KaTeX), mermaid diagrams.
+
+### State & Dependency Injection
+- `AppState` is a Tauri managed state shared across commands.
+- Provider is lazily cached and cleared on config changes.
+- `localStorage` is used for theme and launcher MRU/frequency; theme syncs across windows via `storage` events.
+
+## Tooling Versions
+
+| Tool | Version / Choice |
+|------|-----------------|
+| Package manager | **pnpm** |
+| Frontend bundler | Vite 7 |
+| React | 19 (strict mode) |
+| TypeScript | 5.8 (strict, `noUnusedLocals`, `noUnusedParameters`) |
+| Tailwind | v4 via `@tailwindcss/vite` |
+| UI library | shadcn/ui `base-nova` on `@base-ui/react` |
+| Icons | `lucide-react` |
+| Animations | `motion` |
+| AI rendering | `ai-elements` + `streamdown` |
+| Backend | Tauri v2.11 (Rust 2021) |
+| Rust workspace | Parent `jcode` workspace includes `jcode-app/src-tauri` |
+| Build helper | `scripts/dev_cargo.sh` (sccache, fast linker, adaptive jobs) |
+| No ESLint/Prettier | Quality enforced by TypeScript strict mode via `pnpm build` (`tsc && vite build`) |
+
+## Testing & QA
+
+### Frontend
+- `jcode-app` has **no JS/TS tests or lint/format scripts** currently. Quality is enforced by TypeScript strict mode via `pnpm build`.
+
+### Rust
+- `cargo test -p jcode-app --lib --bins` compiles and reports 0 tests; there are no `#[test]` modules in `src-tauri/src/`.
+- `cargo check -p jcode-app` and `cargo clippy -p jcode-app -- -D warnings` are the local gates.
+
+### CI (parent workspace)
+
+`.github/workflows/ci.yml` runs:
+- `cargo fmt --all -- --check`
+- `cargo check --all-targets --all-features`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- Warning, code-size, test-size, panic, and swallowed-error budgets via `scripts/check_*_budget.*`
+- Linux/macOS/Windows builds and e2e tests
+
+> CI does not currently build or type-check the Tauri front-end; `pnpm build` is not invoked in CI.
+
+### Quality Budgets (from repo root)
+
+```bash
+scripts/check_warning_budget.sh
+python3 scripts/check_code_size_budget.py
+python3 scripts/check_test_size_budget.py
+python3 scripts/check_panic_budget.py
+python3 scripts/check_swallowed_error_budget.py
+python3 scripts/check_dependency_boundaries.py
+```
+
+Most budget scripts scan `src/` and `crates/` but not `jcode-app/src-tauri/`, except for the warning budget which is hit by workspace-wide `cargo check`. Run `--update` flag on budget scripts after intentional cleanup to reset baselines.
+
+## Security Notes
+
+- `tauri.conf.json` sets `csp: null` (disabled). Be cautious adding external resources.
+- The backend has filesystem access (`~/.jcode/sessions/`), process execution, and environment access.
+- macOS private API is enabled; capabilities are scoped in `capabilities/default.json`.
+- API keys and OAuth tokens are managed by the parent `jcode` crate's auth system — never stored in the frontend.
+
+## Important Notes
+
+- Logs: `~/.jcode/logs/jcode-YYYY-MM-DD.log`
+- Server registry: `~/.jcode/servers.json`
+- Install paths (parent crate): `~/.local/bin/jcode` (launcher), `~/.jcode/builds/current/` (self-dev), `~/.jcode/builds/stable/` (release).
+
+## References
+
+- Parent repo `CLAUDE.md` — workspace-wide guidance, build/test/lint gates, architecture overview
+- Parent repo `AGENTS.md` — full repo guidelines
+- `docs/SERVER_ARCHITECTURE.md` — server design and lifecycle
+- `docs/CRATE_OWNERSHIP_BOUNDARIES.md` — crate dependency rules
