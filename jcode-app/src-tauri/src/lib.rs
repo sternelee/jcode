@@ -357,6 +357,8 @@ pub fn run() {
             commands::tools::delete_skill,
             commands::tools::reload_skills,
             commands::system::git_status,
+            commands::system::git_diff,
+            commands::system::git_log,
             commands::launcher::execute_shell_command,
             commands::system::save_session_state,
             commands::system::get_last_session_state,

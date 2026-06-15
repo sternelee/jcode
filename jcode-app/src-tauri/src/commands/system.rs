@@ -395,6 +395,91 @@ pub async fn git_status(working_dir: Option<String>) -> Result<String, TauriErro
         stdout.trim().to_string()
     })
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDiffResult {
+    pub staged: String,
+    pub unstaged: String,
+}
+
+#[tauri::command]
+pub async fn git_diff(working_dir: Option<String>) -> Result<GitDiffResult, TauriError> {
+    let dir = working_dir.as_deref().unwrap_or(".");
+
+    let staged = tokio::process::Command::new("git")
+        .args(["diff", "--cached"])
+        .current_dir(dir)
+        .output()
+        .await
+        .map_err(|e| TauriError::Other(format!("Failed to run git diff --cached: {e}")))?;
+
+    let unstaged = tokio::process::Command::new("git")
+        .arg("diff")
+        .current_dir(dir)
+        .output()
+        .await
+        .map_err(|e| TauriError::Other(format!("Failed to run git diff: {e}")))?;
+
+    Ok(GitDiffResult {
+        staged: String::from_utf8_lossy(&staged.stdout).to_string(),
+        unstaged: String::from_utf8_lossy(&unstaged.stdout).to_string(),
+    })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLogEntry {
+    pub hash: String,
+    pub short_hash: String,
+    pub author: String,
+    pub date: String,
+    pub message: String,
+}
+
+#[tauri::command]
+pub async fn git_log(
+    working_dir: Option<String>,
+    count: Option<usize>,
+) -> Result<Vec<GitLogEntry>, TauriError> {
+    let dir = working_dir.as_deref().unwrap_or(".");
+    let n = count.unwrap_or(20).to_string();
+
+    let output = tokio::process::Command::new("git")
+        .args(["log", &format!("--format=%H%x00%h%x00%an%x00%aI%x00%s"), "-n", &n])
+        .current_dir(dir)
+        .output()
+        .await
+        .map_err(|e| TauriError::Other(format!("Failed to run git log: {e}")))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(TauriError::Other(format!("git log failed: {stderr}")));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let entries: Vec<GitLogEntry> = stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.split('\0').collect();
+            if parts.len() >= 5 {
+                Some(GitLogEntry {
+                    hash: parts[0].to_string(),
+                    short_hash: parts[1].to_string(),
+                    author: parts[2].to_string(),
+                    date: parts[3].to_string(),
+                    message: parts[4..].join("\0"),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(entries)
+}
+
 #[tauri::command]
 pub async fn trigger_ambient() -> Result<(), TauriError> {
     let mut state = jcode::ambient::AmbientState::load().unwrap_or_default();
