@@ -22,6 +22,8 @@ interface RightSidebarProps {
 	mode?: "chat" | "work";
 	/** Working directory for git/file operations. */
 	workingDir?: string | null;
+	/** Theme for @pierre/diffs rendering. */
+	theme?: "light" | "dark";
 }
 
 export function RightSidebar({
@@ -30,6 +32,7 @@ export function RightSidebar({
 	onToggle,
 	mode = "chat",
 	workingDir,
+	theme,
 }: RightSidebarProps) {
 	const [activeTab, setActiveTab] = useState<SidebarTab>("progress");
 
@@ -106,7 +109,7 @@ export function RightSidebar({
 						<ProgressSection items={progressItems} />
 					)}
 					{isWork && activeTab === "git" && (
-						<GitDiffPanel workingDir={workingDir} />
+						<GitDiffPanel workingDir={workingDir} theme={theme} />
 					)}
 					{isWork && activeTab === "files" && (
 						<FileExplorer workingDir={workingDir} />
