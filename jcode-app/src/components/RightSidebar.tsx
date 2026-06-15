@@ -8,11 +8,13 @@ import {
 	PanelRightOpen,
 	GitBranch,
 	FolderTree,
+	Layers,
 } from "lucide-react";
 import { GitDiffPanel } from "./GitDiffPanel";
 import { FileExplorer } from "./FileExplorer";
+import { A2uiSurfaceRenderer } from "./a2ui/A2uiSurfaceRenderer";
 
-type SidebarTab = "progress" | "git" | "files";
+type SidebarTab = "progress" | "git" | "files" | "a2ui";
 
 interface RightSidebarProps {
 	snapshot: SidePanelSnapshot | null;
@@ -24,6 +26,12 @@ interface RightSidebarProps {
 	workingDir?: string | null;
 	/** Theme for @pierre/diffs rendering. */
 	theme?: "light" | "dark";
+	/** Called when user triggers an A2UI action (button click). */
+	onA2uiAction?: (action: {
+		pageId: string;
+		actionId: string;
+		payload?: Record<string, unknown>;
+	}) => void;
 }
 
 export function RightSidebar({
@@ -33,10 +41,15 @@ export function RightSidebar({
 	mode = "chat",
 	workingDir,
 	theme,
+	onA2uiAction,
 }: RightSidebarProps) {
 	const [activeTab, setActiveTab] = useState<SidebarTab>("progress");
 
 	const pages = snapshot?.pages ?? [];
+	const a2uiPages = useMemo(
+		() => pages.filter((p) => p.format === "a2ui"),
+		[pages],
+	);
 	const progressItems = useMemo(() => {
 		if (pages.length === 0) return [];
 		return pages.map((page) => ({
@@ -101,6 +114,15 @@ export function RightSidebar({
 								icon={FolderTree}
 								label="Files"
 							/>
+							{a2uiPages.length > 0 && (
+								<SidebarTabBtn
+									active={activeTab === "a2ui"}
+									onClick={() => setActiveTab("a2ui")}
+									icon={Layers}
+									label="UI"
+									count={a2uiPages.length}
+								/>
+							)}
 						</div>
 					)}
 
@@ -113,6 +135,9 @@ export function RightSidebar({
 					)}
 					{isWork && activeTab === "files" && (
 						<FileExplorer workingDir={workingDir} />
+					)}
+					{isWork && activeTab === "a2ui" && a2uiPages.length > 0 && (
+						<A2uiSection pages={a2uiPages} onAction={onA2uiAction} />
 					)}
 				</div>
 			)}
@@ -216,6 +241,90 @@ function ProgressSection({
 							</div>
 						</div>
 					))
+				)}
+			</div>
+		</div>
+	);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  A2UI section                                                              */
+/* -------------------------------------------------------------------------- */
+
+function A2uiSection({
+	pages,
+	onAction,
+}: {
+	pages: Array<{
+		id: string;
+		title: string;
+		content: string;
+	}>;
+	onAction?: (action: {
+		pageId: string;
+		actionId: string;
+		payload?: Record<string, unknown>;
+	}) => void;
+}) {
+	const [activePageId, setActivePageId] = useState<string | null>(
+		pages[0]?.id ?? null,
+	);
+
+	const activePage = pages.find((p) => p.id === activePageId);
+
+	const messages = useMemo(() => {
+		if (!activePage?.content) return [];
+		try {
+			return JSON.parse(activePage.content) as unknown[];
+		} catch {
+			return [];
+		}
+	}, [activePage?.content]);
+
+	const handleAction = useMemo(() => {
+		if (!onAction || !activePageId) return undefined;
+		return (action: {
+			name: string;
+			surfaceId: string;
+			sourceComponentId: string;
+			context: Record<string, unknown>;
+		}) => {
+			onAction({
+				pageId: activePageId,
+				actionId: action.name,
+				payload: action.context,
+			});
+		};
+	}, [onAction, activePageId]);
+
+	return (
+		<div className="flex-1 flex flex-col overflow-hidden">
+			{pages.length > 1 && (
+				<div className="flex items-center gap-1 px-2 py-1 border-b border-border shrink-0 overflow-x-auto">
+					{pages.map((page) => (
+						<button
+							key={page.id}
+							type="button"
+							onClick={() => setActivePageId(page.id)}
+							className={cn(
+								"px-2 py-0.5 rounded text-[11px] font-medium transition-all shrink-0",
+								activePageId === page.id
+									? "bg-primary/10 text-primary"
+									: "text-muted-foreground/50 hover:text-foreground hover:bg-muted/50",
+							)}
+						>
+							{page.title}
+						</button>
+					))}
+				</div>
+			)}
+			<div className="flex-1 overflow-hidden">
+				{messages.length > 0 ? (
+					<A2uiSurfaceRenderer messages={messages} onAction={handleAction} />
+				) : (
+					<div className="flex items-center justify-center h-full text-muted-foreground/50 text-sm">
+						No surface data
+					</div>
 				)}
 			</div>
 		</div>

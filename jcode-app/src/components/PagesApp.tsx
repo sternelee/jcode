@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
 import {
 	Globe,
+	Layers,
 	Minus,
 	Server,
 	Settings,
@@ -16,9 +17,10 @@ import { SettingsPage } from "./SettingsPage";
 import { ProviderConfigPage } from "./ProviderConfigPage";
 import { McpPage } from "./McpPage";
 import { SkillsPage } from "./SkillsPage";
+import { A2uiTabPage } from "./a2ui/A2uiTabPage";
 
 /** Top-level page IDs shown as tabs in the pages window. */
-type PageId = "settings" | "providers" | "mcp" | "skills";
+type PageId = "settings" | "providers" | "mcp" | "skills" | "a2ui";
 
 
 interface PageTab {
@@ -32,6 +34,7 @@ const PAGE_TABS: PageTab[] = [
 	{ id: "providers", label: "Providers", icon: Globe },
 	{ id: "mcp", label: "MCP", icon: Server },
 	{ id: "skills", label: "Skills", icon: Wrench },
+	{ id: "a2ui", label: "A2UI", icon: Layers },
 ];
 
 /**
@@ -130,13 +133,17 @@ function PagesTitleBar() {
 export function PagesApp() {
 	const { effectiveTheme, setTheme } = useTheme();
 	const [activePage, setActivePage] = useState<PageId>("settings");
+	const [a2uiPageId, setA2uiPageId] = useState<string | undefined>();
 
 	// Listen for navigation events from the backend
 	useEffect(() => {
 		let unlistener: (() => void) | null = null;
 		void listen<string>("pages:navigate", (event) => {
 			const page = event.payload as string;
-			if (PAGE_TABS.some((t) => t.id === page)) {
+			if (page.startsWith("a2ui:")) {
+				setActivePage("a2ui");
+				setA2uiPageId(page.slice(5) || undefined);
+			} else if (PAGE_TABS.some((t) => t.id === page)) {
 				setActivePage(page as PageId);
 			}
 		}).then((fn) => {
@@ -160,7 +167,10 @@ export function PagesApp() {
 							<button
 								key={tab.id}
 								type="button"
-								onClick={() => setActivePage(tab.id)}
+								onClick={() => {
+									setActivePage(tab.id);
+									if (tab.id !== "a2ui") setA2uiPageId(undefined);
+								}}
 								className={cn(
 									"flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-all",
 									isActive
@@ -187,6 +197,7 @@ export function PagesApp() {
 				{activePage === "providers" && <ProviderConfigPage />}
 				{activePage === "mcp" && <McpPage />}
 				{activePage === "skills" && <SkillsPage />}
+				{activePage === "a2ui" && <A2uiTabPage pageId={a2uiPageId} />}
 			</div>
 		</div>
 	);

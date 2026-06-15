@@ -54,12 +54,33 @@ export type LauncherItem =
 			kind: "agent";
 			id: string;
 			query: string;
+	  }
+	| {
+			kind: "a2ui";
+			id: string;
+			pageId: string;
+			title: string;
+			description?: string;
+			recent?: boolean;
 	  };
+
+/** Persisted A2UI page stored at ~/.jcode/a2ui_pages/. */
+export interface SavedA2uiPage {
+	id: string;
+	title: string;
+	description?: string;
+	icon?: string;
+	surfaceMessages: unknown[];
+	createdAtMs: number;
+	updatedAtMs: number;
+	sourceSessionId?: string;
+}
 
 /** Payload sent from the launcher to the workbench on selection. */
 export interface LauncherSelectionPayload {
-	kind: "session" | "builtin" | "agent";
+	kind: "session" | "builtin" | "agent" | "a2ui";
 	sessionId?: string;
 	page?: BuiltinPage;
 	query?: string;
+	pageId?: string;
 }

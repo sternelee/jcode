@@ -382,6 +382,8 @@ pub fn run() {
             commands::launcher::quit_application,
             commands::launcher::open_pages_window,
             commands::launcher::hide_pages_window,
+            commands::launcher::list_a2ui_pages,
+            commands::launcher::delete_a2ui_page,
             commands::launcher::drag_window,
             commands::launcher::show_launcher,
             commands::launcher::hide_launcher,

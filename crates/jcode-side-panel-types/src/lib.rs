@@ -5,12 +5,14 @@ use serde::{Deserialize, Serialize};
 pub enum SidePanelPageFormat {
     #[default]
     Markdown,
+    A2ui,
 }
 
 impl SidePanelPageFormat {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Markdown => "markdown",
+            Self::A2ui => "a2ui",
         }
     }
 }

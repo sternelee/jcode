@@ -1065,6 +1065,23 @@ export function useJcodeSession() {
 		[],
 	);
 
+	const sendA2uiAction = useCallback(
+		async (action: {
+			pageId: string;
+			actionId: string;
+			payload?: Record<string, unknown>;
+		}) => {
+			const content = JSON.stringify({
+				type: "a2ui_action",
+				pageId: action.pageId,
+				actionId: action.actionId,
+				payload: action.payload ?? {},
+			});
+			await performSend(content);
+		},
+		[performSend],
+	);
+
 	return {
 		state,
 		connect,
@@ -1117,6 +1134,7 @@ export function useJcodeSession() {
 		getMemoryStats,
 		getMemoryGraph,
 		getUsageInfo,
+		sendA2uiAction,
 		getVersionInfo,
 		getWorkspaceMemoryPreferences,
 		setWorkspaceMemoryPreference,

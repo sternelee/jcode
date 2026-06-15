@@ -173,6 +173,14 @@ pub async fn open_pages_window(
     Ok(())
 }
 #[tauri::command]
+pub async fn list_a2ui_pages() -> Result<Vec<jcode::a2ui_pages::SavedA2uiPage>, TauriError> {
+    jcode::a2ui_pages::list_pages().map_err(TauriError::from)
+}
+#[tauri::command]
+pub async fn delete_a2ui_page(page_id: String) -> Result<(), TauriError> {
+    jcode::a2ui_pages::delete_page(&page_id).map_err(TauriError::from)
+}
+#[tauri::command]
 pub async fn drag_window(window: tauri::WebviewWindow) -> Result<(), TauriError> {
     window.start_dragging().map_err(|e| TauriError::from(e.to_string()))
 }

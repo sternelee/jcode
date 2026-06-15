@@ -7,6 +7,7 @@ import type {
 	AppInfo,
 	BuiltinPage,
 	LauncherItem,
+	SavedA2uiPage,
 } from "@/lib/launcherTypes";
 import type { SessionInfo } from "@/types";
 
@@ -154,7 +155,8 @@ const RECENT_LIMIT = 5;
 type RecentEntry =
 	| { kind: "application"; id: string; name: string; appPath: string }
 	| { kind: "builtin"; id: string; page: BuiltinPage; title: string }
-	| { kind: "session"; id: string; sessionId: string; title: string };
+	| { kind: "session"; id: string; sessionId: string; title: string }
+	| { kind: "a2ui"; id: string; pageId: string; title: string };
 
 function loadRecent(): RecentEntry[] {
 	try {
@@ -220,6 +222,7 @@ function saveFrequency(map: FrequencyMap) {
 export function useLauncher() {
 	const [query, setQuery] = useState("");
 	const [sessions, setSessions] = useState<SessionInfo[]>([]);
+	const [a2uiPages, setA2uiPages] = useState<SavedA2uiPage[]>([]);
 	const [recent, setRecent] = useState<RecentEntry[]>(() => loadRecent());
 	const [frequency, setFrequency] = useState<FrequencyMap>(() => loadFrequency());
 	const [error, setError] = useState<string | null>(null);
@@ -236,9 +239,19 @@ export function useLauncher() {
 		}
 	}, []);
 
+	const refreshA2uiPages = useCallback(async () => {
+		try {
+			const list = await invoke<SavedA2uiPage[]>("list_a2ui_pages");
+			setA2uiPages(list || []);
+		} catch {
+			// best-effort
+		}
+	}, []);
+
 	useEffect(() => {
 		void refreshSessions();
-	}, [refreshSessions]);
+		void refreshA2uiPages();
+	}, [refreshSessions, refreshA2uiPages]);
 
 	const recordRecent = useCallback((entry: RecentEntry) => {
 		setRecent((prev) => {
@@ -349,6 +362,16 @@ export function useLauncher() {
 						iconName: def.iconName,
 						recent: true,
 					});
+				} else if (entry.kind === "a2ui") {
+					const page = a2uiPages.find((p) => p.id === entry.pageId);
+					if (!page) continue;
+					out.push({
+						kind: "a2ui",
+						id: entry.id,
+						pageId: entry.pageId,
+						title: entry.title,
+						recent: true,
+					});
 				}
 			}
 		}
@@ -426,8 +449,26 @@ export function useLauncher() {
 		}
 		out.push(...builtinItems);
 
+		// A2UI saved pages
+		for (const page of a2uiPages) {
+			if (
+				trimmed &&
+				!page.title.toLowerCase().includes(lower) &&
+				!(page.description ?? "").toLowerCase().includes(lower)
+			) {
+				continue;
+			}
+			out.push({
+				kind: "a2ui",
+				id: `a2ui:${page.id}`,
+				pageId: page.id,
+				title: page.title,
+				description: page.description,
+			});
+		}
+
 		return out;
-	}, [query, applications.apps, sessions, recent, frequency]);
+	}, [query, applications.apps, sessions, a2uiPages, recent, frequency]);
 
 	const selectItem = useCallback(
 		async (item: LauncherItem) => {
@@ -506,6 +547,21 @@ export function useLauncher() {
 					await invoke("expand_to_workbench", {
 						payload: { kind: "agent", query: text },
 					});
+					return;
+				}
+
+				if (item.kind === "a2ui") {
+					await invoke("open_pages_window", {
+						page: `a2ui:${item.pageId}`,
+					});
+					const a2uiId = `a2ui:${item.pageId}`;
+					recordRecent({
+						kind: "a2ui",
+						id: a2uiId,
+						pageId: item.pageId,
+						title: item.title,
+					});
+					recordUsage(a2uiId);
 					return;
 				}
 			} catch (e) {

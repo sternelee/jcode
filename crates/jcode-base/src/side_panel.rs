@@ -56,6 +56,7 @@ pub fn load_markdown_file(
         page_id,
         title,
         &source_path,
+        SidePanelPageFormat::Markdown,
         SidePanelPageSource::LinkedFile,
         now,
         focus,
@@ -123,8 +124,9 @@ pub fn delete_page(session_id: &str, page_id: &str) -> Result<SidePanelSnapshot>
         anyhow::bail!("Side panel page not found: {}", page_id);
     }
 
-    let page_path = session_dir(session_id)?.join(format!("{}.md", page_id));
-    let _ = std::fs::remove_file(page_path);
+    let dir = session_dir(session_id)?;
+    let _ = std::fs::remove_file(dir.join(format!("{}.md", page_id)));
+    let _ = std::fs::remove_file(dir.join(format!("{}.a2ui.json", page_id)));
 
     if state.focused_page_id.as_deref() == Some(page_id) {
         state.focused_page_id = state
@@ -210,6 +212,7 @@ fn write_page(
         page_id,
         title,
         &page_path,
+        SidePanelPageFormat::Markdown,
         SidePanelPageSource::Managed,
         now,
         focus,
@@ -219,11 +222,44 @@ fn write_page(
     hydrate_snapshot(state)
 }
 
+pub fn write_a2ui_page(
+    session_id: &str,
+    page_id: &str,
+    title: Option<&str>,
+    content: &str,
+    focus: bool,
+) -> Result<SidePanelSnapshot> {
+    validate_page_id(page_id)?;
+    // Validate that content is valid JSON
+    serde_json::from_str::<serde_json::Value>(content)
+        .with_context(|| "A2UI content must be valid JSON")?;
+    let dir = session_dir(session_id)?;
+    crate::storage::ensure_dir(&dir)?;
+    let page_path = dir.join(format!("{}.a2ui.json", page_id));
+    std::fs::write(&page_path, content)
+        .with_context(|| format!("failed to write {}", page_path.display()))?;
+    let mut state = load_state(session_id)?;
+    let now = now_ms();
+    upsert_page_record(
+        &mut state,
+        page_id,
+        title,
+        &page_path,
+        SidePanelPageFormat::A2ui,
+        SidePanelPageSource::Managed,
+        now,
+        focus,
+    );
+    save_state(session_id, &state)?;
+    hydrate_snapshot(state)
+}
+
 fn upsert_page_record(
     state: &mut PersistedSidePanelState,
     page_id: &str,
     title: Option<&str>,
     file_path: &Path,
+    format: SidePanelPageFormat,
     source: SidePanelPageSource,
     updated_at_ms: u64,
     focus: bool,
@@ -236,7 +272,7 @@ fn upsert_page_record(
             .unwrap_or(existing.title.as_str())
             .to_string();
         existing.file_path = file_path;
-        existing.format = SidePanelPageFormat::Markdown;
+        existing.format = format;
         existing.source = source;
         existing.updated_at_ms = updated_at_ms;
     } else {
@@ -248,7 +284,7 @@ fn upsert_page_record(
                 .unwrap_or(page_id)
                 .to_string(),
             file_path,
-            format: SidePanelPageFormat::Markdown,
+            format,
             source,
             updated_at_ms,
         });
@@ -364,7 +400,7 @@ fn validate_markdown_source_path(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn now_ms() -> u64 {
+pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|dur| dur.as_millis() as u64)

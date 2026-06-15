@@ -17,6 +17,7 @@
     clippy::useless_conversion
 )]
 
+pub mod a2ui_pages;
 pub mod auth;
 pub mod background;
 pub mod browser;

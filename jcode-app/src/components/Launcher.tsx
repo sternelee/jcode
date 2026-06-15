@@ -26,7 +26,7 @@ import type { AppInfo, LauncherItem } from "@/lib/launcherTypes";
 const AGENT_HINT = "Type 'ask ' followed by a question to ask JFlow.";
 const AGENT_PREFIX = "ask ";
 
-type SectionLabel = "running" | "applications" | "recent" | "sessions" | "builtin";
+type SectionLabel = "running" | "applications" | "recent" | "sessions" | "builtin" | "a2ui";
 
 type Section = {
 	label: SectionLabel;
@@ -41,6 +41,7 @@ function buildSections(items: LauncherItem[]): Section[] {
 	const recent: LauncherItem[] = [];
 	const sessions: LauncherItem[] = [];
 	const builtin: LauncherItem[] = [];
+	const a2ui: LauncherItem[] = [];
 
 	for (const item of items) {
 		if (item.kind === "agent") continue;
@@ -53,7 +54,8 @@ function buildSections(items: LauncherItem[]): Section[] {
 			item.recent &&
 			(item.kind === "application" ||
 				item.kind === "session" ||
-				item.kind === "builtin")
+				item.kind === "builtin" ||
+				item.kind === "a2ui")
 		) {
 			recent.push(item);
 			continue;
@@ -68,6 +70,9 @@ function buildSections(items: LauncherItem[]): Section[] {
 			case "builtin":
 				builtin.push(item);
 				break;
+			case "a2ui":
+				a2ui.push(item);
+				break;
 		}
 	}
 
@@ -75,6 +80,7 @@ function buildSections(items: LauncherItem[]): Section[] {
 	if (running.length) out.push({ label: "running", heading: "Running", items: running });
 	if (recent.length) out.push({ label: "recent", heading: "Recent", items: recent });
 	if (builtin.length) out.push({ label: "builtin", heading: "Pages", items: builtin });
+	if (a2ui.length) out.push({ label: "a2ui", heading: "A2UI Pages", items: a2ui });
 	if (sessions.length) out.push({ label: "sessions", heading: "Sessions", items: sessions });
 	if (applications.length) out.push({ label: "applications", heading: "Applications", items: applications });
 
@@ -482,6 +488,8 @@ function getValue(item: LauncherItem): string {
 			return `builtin:${item.title} ${item.keyword} ${item.page}`;
 		case "agent":
 			return `agent:${item.query}`;
+		case "a2ui":
+			return `a2ui:${item.pageId} ${item.title}`;
 	}
 }
 

@@ -66,6 +66,7 @@ export default function App() {
 		getMemoryStats,
 		getMemoryGraph,
 		getUsageInfo,
+		sendA2uiAction,
 		getWorkspaceMemoryPreferences,
 		setWorkspaceMemoryPreference,
 		executeShellCommandAndDisplay,
@@ -1023,6 +1024,7 @@ export default function App() {
 							mode={sidebarView}
 							workingDir={state.workingDir}
 							theme={effectiveTheme}
+							onA2uiAction={sendA2uiAction}
 						/>
 					</>
 				) : (
