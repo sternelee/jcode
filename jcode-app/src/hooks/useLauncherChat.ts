@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { LauncherChatProvider } from "@/lib/launcherTypes";
@@ -27,6 +27,7 @@ function createAssistantMessage(): ChatMessage {
 		id: `assistant-${Date.now()}`,
 		role: "assistant",
 		content: "",
+		reasoning: "",
 		toolExecutions: [],
 		isStreaming: true,
 		timestamp: Date.now(),
@@ -40,6 +41,12 @@ export function useLauncherChat(provider: LauncherChatProvider) {
 		isProcessing: false,
 		error: null,
 	});
+	const sessionIdRef = useRef<string | null>(null);
+
+	const currentToolNameRef = useRef<string>("");
+	useEffect(() => {
+		sessionIdRef.current = state.sessionId;
+	}, [state.sessionId]);
 
 	const setSessionId = useCallback((sessionId: string) => {
 		setState((prev) => ({ ...prev, sessionId }));
@@ -116,7 +123,7 @@ export function useLauncherChat(provider: LauncherChatProvider) {
 				session_id?: string;
 				type?: string;
 			};
-			if (payload.session_id !== state.sessionId) return;
+			if (payload.session_id !== sessionIdRef.current) return;
 
 			const type = payload.type;
 			setState((prev) => {
@@ -129,7 +136,7 @@ export function useLauncherChat(provider: LauncherChatProvider) {
 
 				switch (type) {
 					case "text_delta": {
-						const delta = (payload.delta as string) || "";
+						const delta = (payload.text as string) || "";
 						lastAssistant.content += delta;
 						break;
 					}
@@ -137,18 +144,29 @@ export function useLauncherChat(provider: LauncherChatProvider) {
 						lastAssistant.content = (payload.text as string) || "";
 						break;
 					}
+					case "reasoning_delta": {
+						const delta = (payload.text as string) || "";
+						lastAssistant.reasoning = (lastAssistant.reasoning || "") + delta;
+						break;
+					}
+					case "reasoning_done": {
+						break;
+					}
 					case "tool_start":
-					case "tool_input":
 					case "tool_exec": {
-						const toolName = (payload.tool_name as string) || "";
-						const toolInput = payload.tool_input
-							? JSON.stringify(payload.tool_input)
-							: "";
+						const toolName = (payload.name as string) || "";
+						currentToolNameRef.current = toolName;
+						const toolInput = payload.delta ? JSON.stringify(payload.delta) : "";
 						lastAssistant.content = `\`${toolName}\`${toolInput ? ` — ${toolInput}` : ""}`;
 						break;
 					}
+					case "tool_input": {
+						lastAssistant.content = `\`${currentToolNameRef.current}\` — ${(payload.delta as string) || ""}`;
+						break;
+					}
 					case "tool_done": {
-						const toolName = (payload.tool_name as string) || "";
+						const toolName = (payload.name as string) || "";
+						currentToolNameRef.current = "";
 						lastAssistant.content = `\`${toolName}\` done`;
 						break;
 					}
@@ -181,7 +199,7 @@ export function useLauncherChat(provider: LauncherChatProvider) {
 			active = false;
 			void unlisten.then((fn) => fn());
 		};
-	}, [state.sessionId]);
+	}, []);
 
 	return {
 		...state,

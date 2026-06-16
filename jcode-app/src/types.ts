@@ -453,6 +453,8 @@ export interface ChatMessage {
 	id: string;
 	role: "user" | "assistant" | "system";
 	content: string;
+	/** Reasoning/thinking content streamed before the final answer */
+	reasoning?: string;
 	toolExecutions: ToolExecution[];
 	isStreaming: boolean;
 	tokenUsage?: {

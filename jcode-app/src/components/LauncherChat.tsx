@@ -28,6 +28,11 @@ function ChatMessageRow({ message }: { message: ChatMessage }) {
 						: "bg-muted text-foreground rounded-bl-md",
 				)}
 			>
+				{!isUser && message.reasoning && (
+					<div className="text-[12px] italic opacity-60 mb-1 border-l-2 border-current pl-2">
+						{message.reasoning}
+					</div>
+				)}
 				{message.content}
 				{message.isStreaming && (
 					<span className="inline-block w-1.5 h-1.5 rounded-full bg-current opacity-50 animate-pulse ml-1 align-middle" />
