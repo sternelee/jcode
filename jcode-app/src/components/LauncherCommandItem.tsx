@@ -104,7 +104,7 @@ function valueOf(item: LauncherItem): string {
 		case "agent":
 			return `agent:${item.query}`;
 		case "chat-provider":
-			return `provider:${item.provider.providerKey} ${item.provider.displayName}`;
+			return `provider:${item.provider.providerKey ?? ""} ${item.provider.displayName ?? ""}`;
 		case "a2ui":
 			return `a2ui:${item.pageId} ${item.title}`;
 	}
@@ -369,13 +369,13 @@ function Body({
 						aria-hidden="true"
 					>
 						<span className="text-[12px] font-semibold">
-							{item.provider.displayName.charAt(0).toUpperCase()}
+							{(item.provider.displayName ?? item.provider.providerKey ?? "?").charAt(0).toUpperCase()}
 						</span>
 					</div>
 					<div className="min-w-0 flex-1">
 						<div className="text-[13px] font-medium truncate text-foreground flex items-center gap-2">
 							<span className="truncate">
-								<Highlight text={item.provider.displayName} query={highlight} />
+								<Highlight text={item.provider.displayName ?? item.provider.providerKey ?? ""} query={highlight} />
 							</span>
 							{item.recent && (
 								<span className="text-[9px] uppercase tracking-wider rounded px-1 py-px bg-primary/10 text-primary font-semibold shrink-0">

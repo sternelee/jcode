@@ -222,8 +222,20 @@ export function useLauncher() {
 
 	const refreshChatProviders = useCallback(async () => {
 		try {
-			const list = await invoke<LauncherChatProvider[]>("list_chat_providers");
-			setChatProviders(list || []);
+			const list = await invoke<{
+				provider_key: string;
+				display_name: string;
+				model: string;
+				is_current_provider?: boolean;
+			}[]>("list_chat_providers");
+			setChatProviders(
+				(list || []).map((p) => ({
+					providerKey: p.provider_key,
+					displayName: p.display_name,
+					model: p.model,
+					isCurrentProvider: p.is_current_provider,
+				})),
+			);
 		} catch (e) {
 			console.warn("list_chat_providers failed in launcher:", e);
 		}
@@ -425,27 +437,29 @@ export function useLauncher() {
 		// Configured AI providers for quick chat
 		const providerItems: Array<Extract<LauncherItem, { kind: "chat-provider" }>> = [];
 		for (const provider of chatProviders) {
+			const displayName = provider.displayName || provider.providerKey || "";
+			const providerKey = provider.providerKey || "";
 			if (
 				trimmed &&
-				!provider.displayName.toLowerCase().includes(lower) &&
-				!provider.providerKey.toLowerCase().includes(lower)
+				!displayName.toLowerCase().includes(lower) &&
+				!providerKey.toLowerCase().includes(lower)
 			) {
 				continue;
 			}
 			providerItems.push({
 				kind: "chat-provider",
-				id: `provider:${provider.providerKey}`,
+				id: `provider:${providerKey}`,
 				provider,
 			});
 		}
 		if (trimmed) {
 			providerItems.sort((a, b) => {
-				const sa = fuzzyScore(a.provider.displayName, trimmed);
-				const sb = fuzzyScore(b.provider.displayName, trimmed);
+				const aName = a.provider.displayName || a.provider.providerKey || "";
+				const bName = b.provider.displayName || b.provider.providerKey || "";
+				const sa = fuzzyScore(aName, trimmed);
+				const sb = fuzzyScore(bName, trimmed);
 				if (sb !== sa) return sb - sa;
-				return a.provider.displayName
-					.toLowerCase()
-					.localeCompare(b.provider.displayName.toLowerCase());
+				return aName.toLowerCase().localeCompare(bName.toLowerCase());
 			});
 		}
 		out.push(...providerItems);

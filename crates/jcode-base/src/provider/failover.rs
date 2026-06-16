@@ -72,16 +72,26 @@ impl MultiProvider {
             .collect()
     }
 
-    pub(super) fn no_provider_available_error(&self, notes: &[String]) -> anyhow::Error {
-        let mut msg = "No tokens/providers left: no usable provider right now. Anthropic/OpenAI usage may be exhausted and GitHub Copilot is not authenticated or currently unavailable.".to_string();
+    pub(super) fn no_provider_available_error(
+        &self,
+        notes: &[String],
+        locked_label: Option<&str>,
+    ) -> anyhow::Error {
+        let mut msg = if let Some(label) = locked_label {
+            format!("Provider '{}' is not available right now.", label)
+        } else {
+            "No tokens/providers left: no usable provider right now. Anthropic/OpenAI usage may be exhausted and GitHub Copilot is not authenticated or currently unavailable.".to_string()
+        };
         if !notes.is_empty() {
             msg.push_str(" Details: ");
             msg.push_str(&notes.join(" | "));
         }
-        let extra_guidance = self.additional_no_provider_guidance();
-        if !extra_guidance.is_empty() {
-            msg.push(' ');
-            msg.push_str(&extra_guidance.join(" "));
+        if locked_label.is_none() {
+            let extra_guidance = self.additional_no_provider_guidance();
+            if !extra_guidance.is_empty() {
+                msg.push(' ');
+                msg.push_str(&extra_guidance.join(" "));
+            }
         }
         msg.push_str(" Use `/usage` to check limits and `/login <provider>` to re-authenticate.");
         anyhow::anyhow!(msg)

@@ -40,6 +40,7 @@ use async_trait::async_trait;
 use jcode_provider_core::FailoverDecision;
 use registry::ProviderRegistry;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 
 pub use catalog_routes::{
@@ -55,8 +56,8 @@ pub use jcode_provider_core::{
     ModelCapabilities, ModelCatalogRefreshSummary, ModelRoute, ModelRouteApiMethod,
     NativeCompactionResult, NativeToolResult, NativeToolResultSender, PremiumMode, Provider,
     RouteBillingKind, RouteCheapnessEstimate, RouteCostConfidence, RouteCostSource, RouteSelection,
-    RuntimeKey, dedupe_model_routes, explicit_model_provider_prefix, fresh_transport_client,
-    model_name_for_provider, normalize_copilot_model_name, provider_from_model_key,
+    dedupe_model_routes, explicit_model_provider_prefix, fresh_transport_client,
+    model_name_for_provider, normalize_copilot_model_name, provider_from_model_key, provider_label,
     shared_http_client, summarize_model_catalog_refresh,
 };
 pub use jcode_provider_core::{ProviderFailoverPrompt, parse_failover_prompt_message};
@@ -291,6 +292,10 @@ pub struct MultiProvider {
     /// Notifications generated during provider/account auto-selection.
     /// The TUI should drain and display these on session start.
     startup_notices: RwLock<Vec<String>>,
+    /// Runtime lock set by explicit provider-selection surfaces. When true,
+    /// failover treats the current active provider as forced so failures are
+    /// reported for the selected provider instead of falling back to others.
+    active_provider_locked: AtomicBool,
     /// Optional explicit provider lock set by CLI `--provider`.
     /// When present, cross-provider fallback is disabled.
     forced_provider: Option<ActiveProvider>,
@@ -313,7 +318,13 @@ impl MultiProvider {
         self.spawn_openai_catalog_refresh_if_needed();
 
         let detected_active = self.active_provider();
-        let active = if let Some(forced) = self.forced_provider {
+        let runtime_locked = self.active_provider_locked.load(Ordering::Acquire);
+        let forced_provider = if runtime_locked {
+            Some(detected_active)
+        } else {
+            self.forced_provider
+        };
+        let active = if let Some(forced) = forced_provider {
             if detected_active != forced {
                 crate::logging::warn(&format!(
                     "Provider lock corrected active provider from {} to {} before request",
@@ -326,7 +337,7 @@ impl MultiProvider {
         } else {
             detected_active
         };
-        let sequence = Self::fallback_sequence_for(active, self.forced_provider);
+        let sequence = Self::fallback_sequence_for(active, forced_provider);
         let mut notes: Vec<String> = Vec::new();
         let mut failover_reason: Option<String> = None;
         let (estimated_input_chars, estimated_input_tokens) =
@@ -474,7 +485,12 @@ impl MultiProvider {
             }
         }
 
-        Err(self.no_provider_available_error(&notes))
+        let locked_label = if runtime_locked {
+            Some(Self::provider_label(active))
+        } else {
+            None
+        };
+        Err(self.no_provider_available_error(&notes, locked_label))
     }
 
     /// Record which login/credential just served a request in the
@@ -2226,14 +2242,20 @@ impl Provider for MultiProvider {
             active: RwLock::new(active),
             use_claude_cli: self.use_claude_cli,
             startup_notices: RwLock::new(Vec::new()),
+            active_provider_locked: AtomicBool::new(
+                self.active_provider_locked.load(Ordering::Acquire),
+            ),
             forced_provider: self.forced_provider,
         };
-
         provider.spawn_anthropic_catalog_refresh_if_needed();
         provider.spawn_openai_catalog_refresh_if_needed();
         let switch_request = self.fork_model_switch_request(active, &current_model);
         let _ = provider.set_model(&switch_request);
         Arc::new(provider)
+    }
+
+    fn lock_active_provider(&self) {
+        self.active_provider_locked.store(true, Ordering::Release);
     }
 
     fn native_result_sender(&self) -> Option<NativeToolResultSender> {

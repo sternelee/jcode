@@ -5,7 +5,6 @@ import { CreateSessionDialog } from "@/components/CreateSessionDialog";
 import { StdinInputModal } from "@/components/StdinInputModal";
 import { SessionSwitcherDialog } from "@/components/SessionSwitcherDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { PermissionDialog } from "@/components/PermissionDialog";
 import { SettingsPage } from "@/components/SettingsPage";
 import { ProviderConfigPage } from "@/components/ProviderConfigPage";
 import { TasksPage } from "@/components/TasksPage";
@@ -18,7 +17,7 @@ import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { parseSlashCommand, profileIdFromDisplayName, profileIdFromRoute } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
-import type { SessionInfo, PermissionRequest } from "@/types";
+import type { SessionInfo } from "@/types";
 import type { BuiltinPage } from "@/lib/launcherTypes";
 import {
 	DEFAULT_WORKSPACE_ID,
@@ -55,7 +54,6 @@ export default function App() {
 		rewindChat,
 		gitStatus,
 		renameSession,
-		renameSession,
 		exportMemories,
 		importMemories,
 		searchMemories,
@@ -91,12 +89,7 @@ export default function App() {
 	>([]);
 	// Read cursor: track when each conversation was last viewed
 	const [lastReadAt, setLastReadAt] = useState<Record<string, number>>({});
-	// Pending permission requests
-	const [permissionRequests, setPermissionRequests] = useState<
-		PermissionRequest[]
-	>([]);
 	const [helpOpen, setHelpOpen] = useState(false);
-	const [sidePanelOpen, setSidePanelOpen] = useState(true);
 	const [leftCollapsed, setLeftCollapsed] = useState(false);
 	const [sidebarView, setSidebarView] = useState<"work" | "chat">("work");
 	const [onboardingComplete, setOnboardingComplete] = useState(() => {
@@ -219,24 +212,6 @@ export default function App() {
 		}
 	}, [state.connected, listSessions]);
 
-	// Poll permission requests — only on chat tab, adaptive interval
-	useEffect(() => {
-		if (!state.connected || activeNavTab !== "chat") return;
-		const poll = async () => {
-			try {
-				const result = await invoke<{ requests: PermissionRequest[] }>(
-					"get_permission_requests",
-				);
-				setPermissionRequests(result.requests || []);
-			} catch {
-				/* ignore */
-			}
-		};
-		void poll();
-		const intervalMs = permissionRequests.length > 0 ? 3000 : 10000;
-		const interval = setInterval(poll, intervalMs);
-		return () => clearInterval(interval);
-	}, [state.connected, activeNavTab, permissionRequests.length]);
 
 	// Cmd+P keyboard shortcut
 	useEffect(() => {
@@ -407,11 +382,6 @@ export default function App() {
 		);
 	};
 
-	/** Open the create dialog pre-set to swarm mode for the current workspace. */
-	const handleAddAgentToWorkspace = () => {
-		setCreateDialogInitMode("addMember");
-		setCreateDialogOpen(true);
-	};
 
 	/** Toggle swarm mode for a workspace. */
 
@@ -567,100 +537,8 @@ export default function App() {
 		await sendMessage(content, images, targetSessionId);
 	};
 
-	const handleRegenerateMessage = async (frontendIndex: number) => {
-		if (selectedConvId?.startsWith("workspace:")) {
-			// Workspace threads are merged from multiple sessions;
-			// regeneration is not supported yet.
-			return;
-		}
-		const targetSessionId = resolveTargetSessionId();
-		if (!targetSessionId) return;
 
-		const sessionMsgs = state.sessionData[targetSessionId]?.messages || [];
-		const assistantMsg = sessionMsgs[frontendIndex];
-		if (!assistantMsg || assistantMsg.role !== "assistant") return;
 
-		// Find the preceding user message
-		let userMsgIndex = -1;
-		for (let i = frontendIndex - 1; i >= 0; i--) {
-			if (sessionMsgs[i]?.role === "user") {
-				userMsgIndex = i;
-				break;
-			}
-		}
-		if (userMsgIndex === -1) return;
-
-		// Compute 1-based visible conversation count of messages *before* the user
-		// message so the rewind removes the user message and the assistant response.
-		let visibleCount = 0;
-		for (let i = 0; i < userMsgIndex; i++) {
-			const role = sessionMsgs[i]?.role;
-			if (role === "user" || role === "assistant") {
-				visibleCount += 1;
-			}
-		}
-
-		if (visibleCount === 0) {
-			// Nothing to preserve before the user message; clear and resend.
-			await clearChat(targetSessionId);
-		} else {
-			await rewindChat(visibleCount, targetSessionId);
-		}
-
-		// Re-send the user message content
-		const userMsg = sessionMsgs[userMsgIndex];
-		const images: [string, string][] | undefined = userMsg.images?.map(
-			(img) => [img.mediaType, img.base64Data || ""],
-		);
-		await sendMessage(userMsg.content, images, targetSessionId);
-	};
-
-	const handleEditMessage = async (frontendIndex: number, newContent: string) => {
-		if (selectedConvId?.startsWith("workspace:")) {
-			// Workspace threads are merged from multiple sessions;
-			// editing is not supported yet.
-			return;
-		}
-		const targetSessionId = resolveTargetSessionId();
-		if (!targetSessionId) return;
-
-		const sessionMsgs = state.sessionData[targetSessionId]?.messages || [];
-		const userMsg = sessionMsgs[frontendIndex];
-		if (!userMsg || userMsg.role !== "user") return;
-
-		// Compute 1-based visible conversation count of messages *before* the user
-		// message so the rewind removes the user message and everything after it.
-		let visibleCount = 0;
-		for (let i = 0; i < frontendIndex; i++) {
-			const role = sessionMsgs[i]?.role;
-			if (role === "user" || role === "assistant") {
-				visibleCount += 1;
-			}
-		}
-
-		if (visibleCount === 0) {
-			// Nothing to preserve before the first user message; clear and resend.
-			await clearChat(targetSessionId);
-		} else {
-			// Rewind to remove the user message and everything after it
-			await rewindChat(visibleCount, targetSessionId);
-		}
-
-		// Send the edited content
-		const images: [string, string][] | undefined = userMsg.images?.map(
-			(img) => [img.mediaType, img.base64Data || ""],
-		);
-		await sendMessage(newContent, images, targetSessionId);
-	};
-
-	const handleQuoteMessage = (content: string, role: string) => {
-		const quoted = `> **${role === "user" ? "You" : "Assistant"}**:\n> ${content.split("\n").join("\n> ")}\n\n`;
-		// Pre-fill the input area with the quote
-		// We need to access the ChatArea's textarea — use a custom event
-		window.dispatchEvent(
-			new CustomEvent("jcode:prefill-input", { detail: quoted }),
-		);
-	};
 
 	const handleResume = (session: SessionInfo) => {
 		setActiveWorkspace(workspaceIdFromDir(session.workingDir));
@@ -691,21 +569,9 @@ export default function App() {
 		});
 	}, [state.sessions]);
 
-	const workspaceSessions = useMemo(
-		() => getWorkspaceSessions(currentWorkspaceId),
-		[currentWorkspaceId, state.sessions],
-	);
 
 
 
-	const respondingRoles = workspaceSessions
-		.filter(
-			(session) =>
-				state.sessionData[session.sessionId]?.isProcessing ||
-				session.liveProcessing,
-		)
-		.map((session) => session.roleName)
-		.filter((role): role is string => Boolean(role));
 
 	// Compute last-message preview + unread count per session for ConversationsList
 	const sessionPreviewMap = useMemo(() => {
@@ -733,39 +599,9 @@ export default function App() {
 		return map;
 	}, [state.sessionData, lastReadAt]);
 
-	const displayMessages = useMemo(() => {
-		if (!selectedConvId) return [];
-		if (selectedConvId.startsWith("workspace:")) {
-			const workspaceId = selectedConvId.slice("workspace:".length);
-			const virtualSessionId = `workspace:${workspaceId}`;
-			return state.sessionData[virtualSessionId]?.messages || [];
-		}
-		return state.sessionData[selectedConvId]?.messages || [];
-	}, [selectedConvId, state.sessionData]);
 
-	const displayIsProcessing = useMemo(() => {
-		if (!selectedConvId) return false;
-		if (selectedConvId.startsWith("workspace:")) {
-			return respondingRoles.length > 0;
-		}
-		return state.sessionData[selectedConvId]?.isProcessing ?? false;
-	}, [respondingRoles, selectedConvId, state.sessionData]);
 
-	// True while a DM session is in the process of loading its history
-	const displayIsLoading = useMemo(() => {
-		if (!selectedConvId || selectedConvId.startsWith("workspace:"))
-			return false;
-		const phase = state.sessionData[selectedConvId]?.connectionPhase;
-		return phase === "initializing" || phase === "connecting";
-	}, [selectedConvId, state.sessionData]);
 
-	const selectedSession = useMemo(
-		() =>
-			selectedConvId && !selectedConvId.startsWith("workspace:")
-				? state.sessions.find((session) => session.sessionId === selectedConvId)
-				: undefined,
-		[selectedConvId, state.sessions],
-	);
 
 	const currentProfileId = useMemo(() => {
 		if (!selectedConvId) return null;
@@ -784,22 +620,8 @@ export default function App() {
 		return null;
 	}, [selectedConvId, state.sessionData]);
 
-	const selectedProviderName = selectedConvId
-		? (state.sessionData[selectedConvId]?.providerName ?? null)
-		: null;
 
-	const channelName = selectedConvId?.startsWith("workspace:")
-		? "Everyone"
-		: selectedSession?.roleName || selectedSession?.title || "Conversation";
-	const channelMembers = selectedConvId?.startsWith("workspace:")
-		? workspaceSessions
-				.map((session) => session.roleName)
-				.filter((role): role is string => Boolean(role))
-		: selectedSession?.roleName
-			? [selectedSession.roleName]
-			: undefined;
 
-	const isChatTab = activeNavTab === "chat";
 
 	// Launcher → workbench bridge.
 	//
@@ -928,98 +750,7 @@ export default function App() {
 					sessionPreviewMap={sessionPreviewMap}
 				/>
 
-				{isChatTab ? (
-					<>
-						<ChatArea
-							messages={displayMessages}
-							isProcessing={displayIsProcessing}
-							isLoading={displayIsLoading}
-							connected={state.connected}
-							totalTokens={
-								selectedConvId
-									? (state.sessionData[selectedConvId]?.totalTokens ?? null)
-									: null
-							}
-							onSend={handleSendMessage}
-							onCancel={() => cancel(resolveTargetSessionId() || undefined)}
-							channelName={channelName}
-							channelMembers={channelMembers}
-							onRenameSession={renameSession}
-							currentSessionId={
-								selectedConvId?.startsWith("workspace:")
-									? undefined
-									: selectedConvId
-							}
-							respondingRoles={respondingRoles}
-							workspaceSessions={workspaceSessions}
-							onAddAgent={handleAddAgentToWorkspace}
-							lastReadTimestamp={
-								selectedConvId ? lastReadAt[selectedConvId] : undefined
-							}
-							onConvene={() => {
-								void handleSendMessage("/convene");
-							}}
-						currentModel={
-							selectedConvId
-								? (state.sessionData[selectedConvId]?.providerModel ?? state.providerModel)
-								: state.providerModel
-						}
-						providerName={selectedProviderName}
-						currentProfileId={currentProfileId}
-							reasoningEffort={state.reasoningEffort}
-							memoryEnabled={state.memoryEnabled}
-							availableModels={state.availableModels}
-							onSetModel={(m, pid) =>
-								void setModel(m, pid, resolveTargetSessionId() || undefined)
-							}
-							onSetAgentModel={(sid, m, pid) => void setModel(m, pid, sid)}
-							onSetEffort={(e) =>
-								void setReasoningEffort(
-									e,
-									resolveTargetSessionId() || undefined,
-								)
-							}
-							onToggleMemory={() =>
-								void setMemoryEnabled(
-									!state.memoryEnabled,
-									resolveTargetSessionId() || undefined,
-								)
-							}
-							onCompact={() =>
-								void compactContext(resolveTargetSessionId() || undefined)
-							}
-							onClearChat={() =>
-								void clearChat(resolveTargetSessionId() || undefined)
-							}
-							onRunDictation={runDictation}
-							onSendSoftInterrupt={async (content) => {
-								const sid = resolveTargetSessionId();
-								if (sid) await sendSoftInterrupt(content, sid);
-							}}
-							onRegenerateMessage={handleRegenerateMessage}
-							onEditMessage={handleEditMessage}
-							onQuoteMessage={handleQuoteMessage}
-							onExecuteShellCommand={executeShellCommandAndDisplay}
-							onNewSession={() => {
-								setCreateDialogInitMode("normal");
-								setCreateDialogOpen(true);
-							}}
-						/>
-						<RightSidebar
-							snapshot={
-								selectedConvId
-									? (state.sessionData[selectedConvId]?.sidePanel ?? null)
-									: null
-							}
-							open={sidePanelOpen}
-							onToggle={() => setSidePanelOpen((o) => !o)}
-							mode={sidebarView}
-							workingDir={state.workingDir}
-							theme={effectiveTheme}
-							onA2uiAction={sendA2uiAction}
-						/>
-					</>
-				) : (
+				{
 					<div key={activeNavTab} className="animate-fade-in flex-1 flex min-w-0">
 						{activeNavTab === "settings" ? (
 							<SettingsPage
@@ -1070,7 +801,7 @@ export default function App() {
 							/>
 						)}
 					</div>
-				)}
+				}
 			</div>
 
 			<CreateSessionDialog
@@ -1125,21 +856,6 @@ export default function App() {
 				variant="destructive"
 				onConfirm={handleConfirmRemove}
 				onCancel={() => setConfirmRemove(null)}
-			/>
-			<PermissionDialog
-				requests={permissionRequests}
-				onRespond={async (id, approved, message) => {
-					try {
-						await invoke("respond_to_permission", {
-							requestId: id,
-							approved,
-							message: message || null,
-						});
-						setPermissionRequests((prev) => prev.filter((r) => r.id !== id));
-					} catch (e) {
-						console.error("Permission response failed:", e);
-					}
-				}}
 			/>
 			<ShortcutsHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
 		</div>

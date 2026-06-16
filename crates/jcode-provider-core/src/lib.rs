@@ -343,6 +343,12 @@ pub trait Provider: Send + Sync {
     /// Create a new provider instance with independent mutable state.
     fn fork(&self) -> Arc<dyn Provider>;
 
+    /// Lock the currently active provider selection so that cross-provider
+    /// failover is disabled for subsequent requests. Used by explicit
+    /// provider-selection surfaces (e.g. launcher quick chat) so a failure
+    /// surfaces as that provider's error rather than an aggregate fallback.
+    fn lock_active_provider(&self) {}
+
     /// Get a sender for native tool results (if the provider supports it).
     fn native_result_sender(&self) -> Option<NativeToolResultSender> {
         None

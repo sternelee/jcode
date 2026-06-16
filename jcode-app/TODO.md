@@ -63,11 +63,11 @@
 
 ### Session 管理
 - [x] `session_rename` — 重命名会话
-
 ### Provider 管理
 - [x] `provider_list` / `get_provider_profiles` — 列出现有提供商配置
 - [x] `provider_current` / `get_models` — 显示当前解析的提供商/模型
 - [x] `provider_add` / `addProviderProfile` — 添加 OpenAI 兼容提供商配置
+- [x] 显式选择提供商时锁定当前 provider（launcher chat `forceProvider`），避免跨 provider failover 导致错误信息混乱
 
 ### Auth 诊断
 - [x] `auth_status` — 显示所有配置提供商的认证状态
@@ -142,11 +142,13 @@
 
 ---
 
-## 📝 已完成的工作
-
 - [x] 2026-05-11: 消除外部 jcode CLI 依赖 — 将认证流程从外部 CLI 调用改为内部 API 调用
   - `start_scriptable_login_data()` / `complete_scriptable_login_data()` 数据返回函数
   - Tauri `.setup()` 钩子设置 `JCODE_HOME` 到 app data dir
+- [x] 2026-06-15: launcher chat 显式 provider 选择时锁定 provider
+  - `Provider::lock_active_provider` trait 方法 + `MultiProvider.active_provider_locked`
+  - `begin_session` 增加 `force_provider` 参数，前端 `useLauncherChat.ts` 传入 `forceProvider: true`
+  - 锁定后失败报错显示为所选 provider 专属错误，不再跨 provider failover 到 Copilot 等无关 provider
 
 ---
 

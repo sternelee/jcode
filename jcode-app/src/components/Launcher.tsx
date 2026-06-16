@@ -410,9 +410,9 @@ export function Launcher() {
 								className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 hover:bg-muted/80 px-2.5 py-1 text-[11px] text-foreground transition-colors"
 							>
 								<span className="w-3.5 h-3.5 rounded-full bg-primary/10 flex items-center justify-center text-[8px] font-semibold text-primary">
-									{provider.displayName.charAt(0).toUpperCase()}
+									{(provider.displayName ?? provider.providerKey ?? "?").charAt(0).toUpperCase()}
 								</span>
-								{provider.displayName}
+								<span className="truncate">{provider.displayName ?? provider.providerKey}</span>
 							</button>
 						))}
 					</div>
@@ -567,7 +567,7 @@ function getValue(item: LauncherItem): string {
 		case "agent":
 			return `agent:${item.query}`;
 		case "chat-provider":
-			return `provider:${item.provider.providerKey} ${item.provider.displayName}`;
+			return `provider:${item.provider.providerKey ?? ""} ${item.provider.displayName ?? ""}`;
 		case "a2ui":
 			return `a2ui:${item.title} ${item.pageId}`;
 	}

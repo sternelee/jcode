@@ -18,6 +18,7 @@ pub async fn begin_session(
     memory_enabled: Option<bool>,
     role_name: Option<String>,
     profile_id: Option<String>,
+    force_provider: Option<bool>,
 ) -> Result<String, TauriError> {
     let provider = state.get_provider().await?.fork();
     if let Some(ref model_name) = model {
@@ -32,6 +33,9 @@ pub async fn begin_session(
         };
         jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg)
             .map_err(|e| TauriError::Other(format!("Failed to set model: {e}")))?;
+        if force_provider.unwrap_or(false) {
+            provider.lock_active_provider();
+        }
     }
 
     let mut session = Session::create(None, None);

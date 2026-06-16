@@ -53,6 +53,7 @@ export function useLauncherChat(provider: LauncherChatProvider) {
 			memoryEnabled: true,
 			roleName: null,
 			profileId: provider.providerKey,
+			forceProvider: true,
 		});
 		setSessionId(sessionId);
 		return sessionId;

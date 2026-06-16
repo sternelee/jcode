@@ -310,6 +310,7 @@ impl MultiProvider {
             active: RwLock::new(active),
             use_claude_cli,
             startup_notices: RwLock::new(Vec::new()),
+            active_provider_locked: std::sync::atomic::AtomicBool::new(false),
             forced_provider,
         };
 

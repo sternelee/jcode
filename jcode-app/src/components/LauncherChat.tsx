@@ -42,6 +42,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 		useLauncherChat(provider);
 	const [input, setInput] = useState(initialQuery || "");
 	const [hasSentInitial, setHasSentInitial] = useState(false);
+	const displayName = provider.displayName || provider.providerKey || "AI";
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -87,17 +88,18 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 				<div className="flex items-center justify-between px-3 py-2 border-b border-border">
 					<div className="flex items-center gap-2">
 						<div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-medium text-primary">
-							{provider.displayName.charAt(0).toUpperCase()}
+							{displayName.charAt(0).toUpperCase()}
 						</div>
-						<span className="text-[13px] font-medium">{provider.displayName}</span>
+						<span className="text-[13px] font-medium">{displayName}</span>
 						<span className="text-[10px] text-muted-foreground">{provider.model}</span>
 					</div>
 					<button
 						type="button"
 						onClick={onClose}
-						className="text-muted-foreground hover:text-foreground transition-colors"
+						className="ml-auto size-6 rounded-md flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 transition-colors"
+						aria-label="Close chat"
 					>
-						<X className="w-4 h-4" />
+						<X className="size-3.5" />
 					</button>
 				</div>
 
@@ -108,7 +110,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 				>
 					{messages.length === 0 && !initialQuery && (
 						<div className="h-full flex items-center justify-center text-muted-foreground text-xs">
-							Start a conversation with {provider.displayName}
+							Start a conversation with {displayName}
 						</div>
 					)}
 					{messages.map((msg) => (
@@ -128,7 +130,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 							onChange={(e) => setInput(e.target.value)}
 							onKeyDown={handleKeyDown}
 							rows={1}
-							placeholder={`Ask ${provider.displayName}...`}
+							placeholder={`Ask ${displayName}...`}
 							className="flex-1 bg-transparent resize-none outline-none text-[13px] max-h-24 py-1"
 							style={{ minHeight: "24px" }}
 						/>

@@ -200,6 +200,7 @@ fn test_multi_provider_with_openai() -> MultiProvider {
         use_claude_cli: false,
         startup_notices: RwLock::new(Vec::new()),
         forced_provider: None,
+        active_provider_locked: std::sync::atomic::AtomicBool::new(false),
     }
 }
 
@@ -674,6 +675,7 @@ fn test_multi_provider_with_cursor() -> MultiProvider {
         use_claude_cli: false,
         startup_notices: RwLock::new(Vec::new()),
         forced_provider: None,
+        active_provider_locked: std::sync::atomic::AtomicBool::new(false),
     }
 }
 
