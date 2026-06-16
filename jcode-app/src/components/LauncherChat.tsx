@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUp, X, Loader2, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLauncherChat } from "@/hooks/useLauncherChat";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import type { LauncherChatProvider } from "@/lib/launcherTypes";
 import type { ChatMessage } from "@/types";
 
@@ -43,11 +50,12 @@ function ChatMessageRow({ message }: { message: ChatMessage }) {
 }
 
 export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatProps) {
-	const { messages, isProcessing, error, send, cancel } =
+	const { messages, isProcessing, error, send, cancel, currentModel, setModel } =
 		useLauncherChat(provider);
 	const [input, setInput] = useState(initialQuery || "");
 	const [hasSentInitial, setHasSentInitial] = useState(false);
 	const displayName = provider.displayName || provider.providerKey || "AI";
+	const hasModelSwitcher = provider.models.length > 1;
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -96,7 +104,27 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 							{displayName.charAt(0).toUpperCase()}
 						</div>
 						<span className="text-[13px] font-medium">{displayName}</span>
-						<span className="text-[10px] text-muted-foreground">{provider.model}</span>
+						{hasModelSwitcher ? (
+							<Select
+								value={currentModel}
+								onValueChange={(value) => {
+									if (value) void setModel(value);
+								}}
+							>
+								<SelectTrigger className="h-5 border-0 bg-transparent p-0 text-[10px] text-muted-foreground shadow-none hover:text-foreground focus:ring-0 gap-1 w-fit">
+									<SelectValue placeholder={currentModel} />
+								</SelectTrigger>
+								<SelectContent>
+									{provider.models.map((m) => (
+										<SelectItem key={m} value={m} className="text-[12px]">
+											{m}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						) : (
+							<span className="text-[10px] text-muted-foreground">{currentModel}</span>
+						)}
 					</div>
 					<button
 						type="button"

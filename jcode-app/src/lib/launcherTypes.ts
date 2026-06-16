@@ -28,6 +28,8 @@ export interface LauncherChatProvider {
 	providerKey: string;
 	displayName: string;
 	model: string;
+	/** Available models for this provider profile. */
+	models: string[];
 	isCurrentProvider?: boolean;
 }
 /** Discriminated union of every selectable item in the launcher palette. */

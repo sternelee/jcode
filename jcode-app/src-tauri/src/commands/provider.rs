@@ -2,6 +2,7 @@ use crate::commands::*;
 use crate::error::TauriError;
 use crate::utils::*;
 use jcode::provider::Provider;
+use std::collections::HashMap;
 use tauri::{AppHandle, State};
 
 use jcode::cli::login::scriptable::{complete_scriptable_login_data, start_scriptable_login_data};
@@ -450,6 +451,23 @@ pub async fn list_chat_providers(
             (raw_routes, None, None)
         };
 
+    // Collect all listable models available for each provider profile.
+    let mut provider_models: HashMap<String, Vec<String>> = HashMap::new();
+    for route in &raw_routes {
+        if !route.available || !jcode::provider::is_listable_model_name(&route.model) {
+            continue;
+        }
+        if let Some(auth_id) = auth_provider_id_for_route(&route.provider, Some(&route.api_method))
+        {
+            let list = provider_models.entry(auth_id).or_default();
+            if !list.contains(&route.model) {
+                list.push(route.model.clone());
+            }
+        }
+    }
+    for models in provider_models.values_mut() {
+        models.sort();
+    }
     let entries = provider_entries_from_profiles(&raw_routes, current_provider_name.as_deref());
 
     let mut out = Vec::new();
@@ -496,10 +514,15 @@ pub async fn list_chat_providers(
         }
 
         if let Some(model) = default_model {
+            let models = provider_models
+                .get(&provider_key)
+                .cloned()
+                .unwrap_or_default();
             out.push(serde_json::json!({
                 "provider_key": provider_key,
                 "display_name": display_name,
                 "model": model,
+                "models": models,
                 "is_current_provider": entry
                     .get("is_current_provider")
                     .and_then(|v| v.as_bool())

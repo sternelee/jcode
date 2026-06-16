@@ -226,6 +226,7 @@ export function useLauncher() {
 				provider_key: string;
 				display_name: string;
 				model: string;
+				models: string[];
 				is_current_provider?: boolean;
 			}[]>("list_chat_providers");
 			setChatProviders(
@@ -233,6 +234,7 @@ export function useLauncher() {
 					providerKey: p.provider_key,
 					displayName: p.display_name,
 					model: p.model,
+					models: p.models || [],
 					isCurrentProvider: p.is_current_provider,
 				})),
 			);

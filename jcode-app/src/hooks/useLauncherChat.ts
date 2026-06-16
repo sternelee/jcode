@@ -41,22 +41,42 @@ export function useLauncherChat(provider: LauncherChatProvider) {
 		isProcessing: false,
 		error: null,
 	});
+	const [currentModel, setCurrentModel] = useState(provider.model);
 	const sessionIdRef = useRef<string | null>(null);
-
 	const currentToolNameRef = useRef<string>("");
+
 	useEffect(() => {
-		sessionIdRef.current = state.sessionId;
-	}, [state.sessionId]);
+		setCurrentModel(provider.model);
+	}, [provider.model]);
 
 	const setSessionId = useCallback((sessionId: string) => {
 		setState((prev) => ({ ...prev, sessionId }));
 	}, []);
+	const setModel = useCallback(
+		async (model: string) => {
+			setCurrentModel(model);
+			if (!state.sessionId) return;
+			try {
+				await invoke("set_model", {
+					sessionId: state.sessionId,
+					model,
+					profileId: provider.providerKey,
+				});
+			} catch (e) {
+				setState((prev) => ({
+					...prev,
+					error: `Failed to switch model: ${e}`,
+				}));
+			}
+		},
+		[state.sessionId, provider.providerKey],
+	);
 
 	const ensureSession = useCallback(async () => {
 		if (state.sessionId) return state.sessionId;
 		const sessionId = await invoke<string>("begin_session", {
 			workingDir: null,
-			model: provider.model,
+			model: currentModel,
 			memoryEnabled: true,
 			roleName: null,
 			profileId: provider.providerKey,
@@ -64,13 +84,12 @@ export function useLauncherChat(provider: LauncherChatProvider) {
 		});
 		setSessionId(sessionId);
 		return sessionId;
-	}, [provider.model, provider.providerKey, state.sessionId, setSessionId]);
+	}, [currentModel, provider.providerKey, state.sessionId, setSessionId]);
 
 	const send = useCallback(
 		async (content: string) => {
 			const text = content.trim();
 			if (!text) return;
-
 			setState((prev) => ({
 				...prev,
 				messages: [...prev.messages, createUserMessage(text)],
@@ -203,8 +222,10 @@ export function useLauncherChat(provider: LauncherChatProvider) {
 
 	return {
 		...state,
+		currentModel,
 		send,
 		cancel,
 		reset,
+		setModel,
 	};
 }
