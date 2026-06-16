@@ -28,6 +28,13 @@ fn copy_badge_shortcut_width(key_label: &str) -> usize {
     UnicodeWidthStr::width(format!("{} [⇧] [{key_label}]", copy_badge_alt_badge()).as_str())
 }
 
+/// Display width reserved for the inline expand-edit badge (`[Alt] [⇧] [E] …`).
+/// The badge text differs between the collapsed (` expand`) and just-activated
+/// (` ✓ Expanded`) states, so callers pass the suffix that will actually render.
+pub(crate) fn expand_badge_reserved_width(badge_text: &str) -> usize {
+    UnicodeWidthStr::width(format!(" {} [⇧] [E]{badge_text}", copy_badge_alt_badge()).as_str())
+}
+
 fn lower_bound(values: &[usize], target: usize) -> usize {
     values.partition_point(|&v| v < target)
 }
@@ -684,11 +691,20 @@ pub(super) fn draw_messages(
                 } else {
                     " expand"
                 };
-                let reserved = UnicodeWidthStr::width(
-                    format!(" {} [⇧] [E] expand", copy_badge_alt_badge()).as_str(),
-                );
+                let reserved = expand_badge_reserved_width(badge_text);
                 let max_content_width = (content_area.width as usize).saturating_sub(reserved);
                 truncate_line_in_place_to_width(line, max_content_width);
+
+                // Reserve the badge's width in the info-widget margin profile so a
+                // floating widget (e.g. the KV cache panel) docks far enough left to
+                // clear the appended `[Alt] [⇧] [E] expand` block instead of being
+                // squeezed into a too-narrow slot that wraps/collides with it. The
+                // margin row for `visible_lines[rel_idx]` is offset by the synthetic
+                // prompt-preview band, matching the image-region carve above.
+                let margin_row = prompt_preview_lines as usize + rel_idx;
+                if let Some(width) = margins.right_widths.get_mut(margin_row) {
+                    *width = (*width).saturating_sub(reserved as u16);
+                }
 
                 let alt_style = if copy_badge_ui.alt_is_active(copy_badge_now) {
                     Style::default().fg(queued_color()).bold()
@@ -955,6 +971,43 @@ pub(super) fn draw_messages(
                         }
                     }
                 }
+            }
+        }
+
+        // Look-ahead prefetch: warm inline raster images within a margin band
+        // above/below the viewport so they are already decoded+scaled by the
+        // time they scroll into view, killing the first-scroll "blank then
+        // pop" hitch. Cheap and non-blocking: prefetch dedups against in-flight
+        // and already-warm state, and only the background worker does real
+        // work. Margin scales with viewport height so faster scrolls (which
+        // cover more rows per frame) get a deeper warm band.
+        if content_area.height > 0 {
+            const PREFETCH_VIEWPORTS: usize = 2;
+            let margin_lines = (content_area.height as usize)
+                .saturating_mul(PREFETCH_VIEWPORTS)
+                .max(1);
+            let prefetch_start = scroll.saturating_sub(margin_lines);
+            let prefetch_end = visible_end.saturating_add(margin_lines);
+            let band_start = prepared
+                .image_regions
+                .partition_point(|region| region.end_line <= prefetch_start);
+            let band_end = prepared
+                .image_regions
+                .partition_point(|region| region.abs_line_idx < prefetch_end);
+            for region in &prepared.image_regions[band_start..band_end] {
+                // Only inline raster images use the prewarm pipeline; mermaid
+                // crops build their own state at draw time. In pinned mode the
+                // raster images still render in the flow, so always prefetch.
+                if region.render != jcode_tui_messages::ImageRegionRender::Fit {
+                    continue;
+                }
+                // Skip the ones already on screen; the draw pass above warmed
+                // them via ensure_drawable.
+                let on_screen = region.end_line > scroll && region.abs_line_idx < visible_end;
+                if on_screen {
+                    continue;
+                }
+                super::inline_image_ui::prefetch(region.hash, content_area.width, region.height);
             }
         }
     }

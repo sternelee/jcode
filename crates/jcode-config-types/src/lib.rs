@@ -453,10 +453,45 @@ pub struct AgentsConfig {
     pub swarm_model: Option<String>,
     /// Default terminal mode for swarm-created agents.
     pub swarm_spawn_mode: SwarmSpawnMode,
+    /// Maximum percentage (1-90) of the chat column height the inline swarm
+    /// gallery band may occupy. Leave unset to use the built-in default (40%).
+    /// Lower values keep more of the transcript visible; set near the minimum
+    /// to effectively collapse the gallery to a thin strip.
+    pub swarm_gallery_max_pct: Option<u8>,
     /// Optional default model override for the memory sidecar.
     pub memory_model: Option<String>,
     /// Whether memory should use the sidecar for relevance/extraction.
     pub memory_sidecar_enabled: bool,
+    /// Minimum turns between Mode-2 memory reranks (cadence floor). The
+    /// expensive listwise LLM rerank runs at most once per this many turns;
+    /// skipped turns fall back to hybrid-ordered surfacing. A topic change or
+    /// the first turn always forces a rerank regardless of cadence. 0 or 1 =
+    /// rerank every turn (no gating). Default 3.
+    #[serde(default = "default_memory_rerank_cadence")]
+    pub memory_rerank_cadence: usize,
+    /// Number of independent LLM rerank "judges" to run per fired rerank. Their
+    /// votes are combined and only memories meeting `memory_rerank_min_agree`
+    /// agreement are injected. 1 = single judge (cheapest). 2 = two judges must
+    /// agree, which lifts injection precision to ~1.0 with ~100% clean-rate on
+    /// no-memory turns (offline adjudication), at 2 LLM calls per fired turn.
+    #[serde(default = "default_memory_rerank_votes")]
+    pub memory_rerank_votes: usize,
+    /// Minimum judge agreement (of `memory_rerank_votes`) required to inject a
+    /// memory. Clamped to 1..=votes. Higher = stricter precision, lower recall.
+    #[serde(default = "default_memory_rerank_min_agree")]
+    pub memory_rerank_min_agree: usize,
+}
+
+fn default_memory_rerank_cadence() -> usize {
+    3
+}
+
+fn default_memory_rerank_votes() -> usize {
+    2
+}
+
+fn default_memory_rerank_min_agree() -> usize {
+    2
 }
 
 /// How swarm-created agents should be spawned.
@@ -468,6 +503,9 @@ pub enum SwarmSpawnMode {
     Visible,
     /// Create the worker in-process without opening a terminal window.
     Headless,
+    /// Like headless (no terminal window), but the coordinator renders a live
+    /// inline gallery viewport of each worker's streaming output.
+    Inline,
     /// Try visible first and fall back to headless if a window cannot be opened.
     Auto,
 }
@@ -477,6 +515,7 @@ impl SwarmSpawnMode {
         match value.trim().to_ascii_lowercase().as_str() {
             "visible" | "headed" => Some(Self::Visible),
             "headless" => Some(Self::Headless),
+            "inline" => Some(Self::Inline),
             "auto" => Some(Self::Auto),
             _ => None,
         }
@@ -487,6 +526,7 @@ impl SwarmSpawnMode {
         match self {
             Self::Visible => "visible",
             Self::Headless => "headless",
+            Self::Inline => "inline",
             Self::Auto => "auto",
         }
     }
@@ -838,6 +878,13 @@ pub struct FeatureConfig {
     /// Persist auto-recalled memory injections into normal session history instead of sending
     /// them as request-only ephemeral suffix messages (default: false)
     pub persist_memory_injections: bool,
+    /// Surface an in-chat system message whenever a request misses the KV cache
+    /// for a harness-caused (avoidable) reason: the system prompt, tool set, or
+    /// message prefix changed without the conversation legitimately growing.
+    /// These should essentially never happen, so the notice acts as a loud alarm
+    /// that something in the harness silently invalidated the prefix cache
+    /// (default: true).
+    pub kv_cache_miss_notices: bool,
     /// Update channel: "stable" (releases only) or "main" (latest commits)
     pub update_channel: UpdateChannel,
 }
@@ -849,6 +896,7 @@ impl Default for FeatureConfig {
             swarm: true,
             message_timestamps: true,
             persist_memory_injections: false,
+            kv_cache_miss_notices: true,
             update_channel: UpdateChannel::default(),
         }
     }

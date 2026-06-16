@@ -86,7 +86,10 @@ fn persisted_swarm_state_round_trips_and_marks_running_stale() {
         joined_at: Instant::now(),
         last_status_change: Instant::now(),
         is_headless: true,
+        output_tail: None,
+
         model: None,
+
         provider_key: None,
     }];
 
@@ -176,7 +179,10 @@ fn persisted_swarm_state_without_plan_still_restores_coordinator_and_members() {
         joined_at: Instant::now(),
         last_status_change: Instant::now(),
         is_headless: false,
+        output_tail: None,
+
         model: None,
+
         provider_key: None,
     }];
 

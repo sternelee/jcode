@@ -63,7 +63,10 @@ async fn handle_resume_session_registers_live_events_before_history_replay() -> 
             joined_at: now,
             last_status_change: now,
             is_headless: false,
+            output_tail: None,
+
             model: None,
+
             provider_key: None,
         },
     )])));

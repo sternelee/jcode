@@ -366,8 +366,9 @@ async fn ensure_oauth_preflight(
     Ok(())
 }
 
-/// Default model
-const DEFAULT_MODEL: &str = "claude-fable-5";
+/// Default model. `claude-fable-5` was retired by Anthropic (it 404s), so the
+/// default is the current flagship.
+const DEFAULT_MODEL: &str = "claude-opus-4-8";
 
 /// API version header
 const API_VERSION: &str = "2023-06-01";
@@ -385,7 +386,6 @@ const DEFAULT_MAX_TOKENS: u32 = 32_768;
 
 /// Available models
 pub const AVAILABLE_MODELS: &[&str] = &[
-    "claude-fable-5",
     "claude-opus-4-8",
     "claude-opus-4-6",
     "claude-opus-4-6[1m]",
@@ -581,8 +581,12 @@ impl AnthropicProvider {
 
     fn model_supports_output_effort(model: &str) -> bool {
         let model = Self::normalized_model_key(model);
+        // NOTE: `claude-fable-5` is intentionally excluded. Despite being listed
+        // with effort levels in `GET /v1/models`, the live Messages API rejects
+        // an `output_config` effort with a 400 ("This model does not support the
+        // effort parameter."), just as it rejects an adaptive `thinking` block.
+        // Fable 5 is effectively a non-reasoning model, so it must send neither.
         model.contains("claude-mythos")
-            || model.contains("claude-fable-5")
             || model.contains("claude-opus-4-8")
             || model.contains("claude-opus-4-7")
             || model.contains("claude-opus-4-6")
@@ -592,8 +596,11 @@ impl AnthropicProvider {
 
     fn model_supports_adaptive_thinking(model: &str) -> bool {
         let model = Self::normalized_model_key(model);
+        // NOTE: `claude-fable-5` is intentionally excluded. The Messages API
+        // rejects an explicit adaptive `thinking` block with a 400 ("adaptive
+        // thinking is not supported on this model"). See
+        // `model_supports_output_effort` for the matching effort restriction.
         model.contains("claude-mythos")
-            || model.contains("claude-fable-5")
             || model.contains("claude-opus-4-8")
             || model.contains("claude-opus-4-7")
             || model.contains("claude-opus-4-6")
@@ -609,9 +616,9 @@ impl AnthropicProvider {
 
     fn model_supports_xhigh_effort(model: &str) -> bool {
         let model = Self::normalized_model_key(model);
-        model.contains("claude-fable-5")
-            || model.contains("claude-opus-4-8")
-            || model.contains("claude-opus-4-7")
+        // `claude-fable-5` is excluded: it does not accept the effort parameter
+        // at all (see `model_supports_output_effort`).
+        model.contains("claude-opus-4-8") || model.contains("claude-opus-4-7")
     }
 
     fn model_supports_reasoning_effort(model: &str) -> bool {
@@ -1524,24 +1531,63 @@ async fn run_stream_with_retries(
 
                 // Model not found (e.g. a retired or renamed model id): the
                 // server rejects the request up front with a 404 before any
-                // output streams. Transparently fall back to an available
+                // output streams. Transparently fall back to the *best* available
                 // model so the in-flight request still completes instead of
-                // hard-failing, and persist the switch so later turns reuse
-                // the working model.
+                // hard-failing, and persist the switch so later turns reuse the
+                // working model. The fallback honors any server "Please use X"
+                // recommendation, then the curated flagship-first quality order,
+                // and never downgrades to a cheaper tier when a stronger model is
+                // available (see `anthropic_fallback_model`).
                 if is_model_not_found_error(&error_str)
                     && !saw_output
-                    && let Some(fallback) = anthropic_fallback_model(&tried_models)
+                    && let Some(fallback) = anthropic_fallback_model(&tried_models, &error_str)
                 {
                     crate::logging::warn(&format!(
                         "Anthropic model '{}' is not available ({}); retrying with fallback '{}'",
                         model_name, e, fallback
                     ));
+                    // Surface the substitution so the user is not silently moved
+                    // to a different model than they selected.
+                    let _ = tx
+                        .send(Ok(StreamEvent::StatusDetail {
+                            detail: format!(
+                                "⚠ '{}' is unavailable; falling back to '{}'",
+                                strip_1m_suffix(&model_name),
+                                strip_1m_suffix(&fallback)
+                            ),
+                        }))
+                        .await;
                     request.model = strip_1m_suffix(&fallback).to_string();
                     *model_state
                         .write()
                         .unwrap_or_else(|poisoned| poisoned.into_inner()) = fallback.clone();
                     tried_models.push(fallback.clone());
                     model_name = fallback;
+                    last_error = Some(e);
+                    continue;
+                }
+
+                // Reasoning request rejected (e.g. a model listed with effort or
+                // thinking capabilities that the live API does not actually
+                // accept: "adaptive thinking is not supported on this model" or
+                // "This model does not support the effort parameter."). Self-heal
+                // once by stripping the reasoning fields (and restoring an OAuth
+                // temperature, which we omit only because thinking was active)
+                // and retrying, so a stale capability table degrades gracefully
+                // instead of hard-failing.
+                if (request.thinking.is_some() || request.output_config.is_some())
+                    && !saw_output
+                    && is_reasoning_unsupported_error(&error_str)
+                {
+                    crate::logging::warn(&format!(
+                        "Anthropic model '{}' rejected the reasoning request ({}); retrying without thinking/effort",
+                        model_name, e
+                    ));
+                    request.thinking = None;
+                    request.output_config = None;
+                    if is_oauth {
+                        request.temperature = Some(1.0);
+                    }
                     last_error = Some(e);
                     continue;
                 }
@@ -1653,6 +1699,7 @@ async fn stream_response(
     oauth_session_id: &str,
 ) -> Result<()> {
     use crate::message::ConnectionPhase;
+    let requested_model_base = strip_1m_suffix(&request.model).to_ascii_lowercase();
     if std::env::var("JCODE_ANTHROPIC_DEBUG")
         .map(|v| v == "1")
         .unwrap_or(false)
@@ -1743,7 +1790,10 @@ async fn stream_response(
     // Parse SSE stream
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
-    let mut sse_state = SseStreamState::default();
+    let mut sse_state = SseStreamState {
+        requested_model_base,
+        ..SseStreamState::default()
+    };
 
     const SSE_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
 
@@ -1834,22 +1884,148 @@ fn is_model_not_found_error(error_str: &str) -> bool {
             || error_str.contains("please use"))
 }
 
+/// Detect an Anthropic rejection of an explicit reasoning request.
+///
+/// Some models are listed with reasoning capabilities in `GET /v1/models` but
+/// the live Messages API still rejects them with a 400 `invalid_request_error`:
+///
+/// - an adaptive `thinking` block -> "adaptive thinking is not supported on
+///   this model"
+/// - an `output_config` effort -> "This model does not support the effort
+///   parameter."
+///
+/// (e.g. `claude-fable-5`). When we hit either we can self-heal by dropping the
+/// offending reasoning fields and retrying, rather than hard-failing the turn.
+/// `error_str` is expected to already be lowercased.
+fn is_reasoning_unsupported_error(error_str: &str) -> bool {
+    let is_bad_request =
+        error_str.contains("invalid_request_error") || error_str.contains("400 bad request");
+    let mentions_reasoning_field = error_str.contains("thinking")
+        || error_str.contains("effort")
+        || error_str.contains("output_config");
+    let mentions_unsupported =
+        error_str.contains("not supported") || error_str.contains("does not support");
+    is_bad_request && mentions_reasoning_field && mentions_unsupported
+}
+
+/// Models that have been retired and must never be chosen as a fallback target
+/// (the server 404s them, so picking one just loops). Matched as a substring of
+/// the normalized id so dated variants are covered too.
+const RETIRED_ANTHROPIC_MODEL_MARKERS: &[&str] = &["claude-fable", "claude-mythos"];
+
+fn anthropic_model_is_retired(model: &str) -> bool {
+    let normalized = AnthropicProvider::normalized_model_key(model);
+    RETIRED_ANTHROPIC_MODEL_MARKERS
+        .iter()
+        .any(|marker| normalized.contains(marker))
+}
+
+/// Quality rank for an Anthropic model id: lower is better. Uses the curated
+/// flagship-first `ALL_CLAUDE_MODELS` order (Opus > Sonnet > Haiku > older), so
+/// fallback never silently downgrades to a cheaper tier when a stronger model is
+/// available. Unknown/uncurated ids sort after every curated one but before
+/// retired models, which sort last.
+fn anthropic_model_quality_rank(model: &str) -> usize {
+    if anthropic_model_is_retired(model) {
+        return usize::MAX;
+    }
+    let normalized = jcode_provider_core::model_id::strip_date_suffix(
+        &jcode_provider_core::model_id::canonical(model),
+    )
+    .to_string();
+    crate::provider::ALL_CLAUDE_MODELS
+        .iter()
+        .position(|candidate| {
+            jcode_provider_core::model_id::strip_date_suffix(
+                &jcode_provider_core::model_id::canonical(candidate),
+            ) == normalized
+        })
+        // Curated models keep their position; unknown-but-not-retired models sort
+        // just after the curated list so they only win when nothing curated is
+        // available.
+        .unwrap_or(crate::provider::ALL_CLAUDE_MODELS.len())
+}
+
+/// Parse a server-recommended replacement model from a 404 body, e.g.
+/// "Claude Fable 5 is not available. Please use Opus 4.8." -> the catalog id
+/// `claude-opus-4-8`. Returns the best matching known catalog id, if any.
+/// `error_str` is expected to already be lowercased.
+fn anthropic_recommended_model_from_error(error_str: &str) -> Option<String> {
+    // Look for the phrase after "please use" / "use " and try to match it against
+    // the known catalog by collapsing it to a comparable token form. The server
+    // phrases the recommendation in prose ("Opus 4.8"), so compare on the digits
+    // and family word rather than exact ids.
+    let hint = error_str
+        .split("please use")
+        .nth(1)
+        .or_else(|| error_str.split("use ").nth(1))?;
+    // Take up to the next sentence boundary.
+    let hint = hint.split(['.', '!', '\n']).next().unwrap_or(hint).trim();
+    if hint.is_empty() {
+        return None;
+    }
+    // Reduce the hint to alphanumeric tokens (e.g. "opus", "4", "8").
+    let hint_tokens: Vec<String> = hint
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_ascii_lowercase())
+        .collect();
+    if hint_tokens.is_empty() {
+        return None;
+    }
+    // Score each known catalog model by how many hint tokens it contains.
+    crate::provider::known_anthropic_model_ids()
+        .into_iter()
+        .filter(|candidate| !anthropic_model_is_retired(candidate))
+        .map(|candidate| {
+            let key = AnthropicProvider::normalized_model_key(&candidate);
+            // The catalog id uses hyphenated digits ("claude-opus-4-8"), so the
+            // hint tokens ["opus","4","8"] should all appear.
+            let score = hint_tokens
+                .iter()
+                .filter(|token| key.contains(token.as_str()))
+                .count();
+            (candidate, score)
+        })
+        // Require at least the family word plus one version digit to match so we
+        // do not pick an arbitrary model from a single shared token.
+        .filter(|(_, score)| *score >= 2)
+        .max_by_key(|(_, score)| *score)
+        .map(|(candidate, _)| candidate)
+}
+
 /// Pick the next Anthropic model to try after a "model not found" failure.
 ///
-/// Walks the known model catalog (live catalog when available, otherwise the
-/// static list) in preference order and returns the first model that has not
-/// already been attempted. Returns `None` once every candidate is exhausted so
-/// the caller can surface the original error.
-fn anthropic_fallback_model(tried: &[String]) -> Option<String> {
+/// Strategy (most authoritative first):
+///   1. Honor any server "Please use X" recommendation parsed from the error.
+///   2. Otherwise pick the highest-quality untried model from the curated
+///      flagship-first catalog, skipping retired families so we never downgrade
+///      to a cheaper tier (e.g. Haiku) while a stronger model is available.
+///
+/// Returns `None` once every viable candidate is exhausted so the caller can
+/// surface the original error.
+fn anthropic_fallback_model(tried: &[String], error_str: &str) -> Option<String> {
     let already_tried = |candidate: &str| {
         tried.iter().any(|model| {
             AnthropicProvider::normalized_model_key(model)
                 == AnthropicProvider::normalized_model_key(candidate)
         })
     };
+
+    // 1. Server recommendation wins when it points at an untried, non-retired
+    //    model.
+    if let Some(recommended) = anthropic_recommended_model_from_error(error_str)
+        && !already_tried(&recommended)
+        && !anthropic_model_is_retired(&recommended)
+    {
+        return Some(recommended);
+    }
+
+    // 2. Best available by curated quality order, skipping retired and tried.
     crate::provider::known_anthropic_model_ids()
         .into_iter()
-        .find(|candidate| !already_tried(candidate))
+        .filter(|candidate| !already_tried(candidate) && !anthropic_model_is_retired(candidate))
+        .min_by_key(|candidate| anthropic_model_quality_rank(candidate))
 }
 
 fn is_oauth_auth_error(error_str: &str) -> bool {
@@ -1917,6 +2093,12 @@ struct SseStreamState {
     output_tokens: Option<u64>,
     cache_read_input_tokens: Option<u64>,
     cache_creation_input_tokens: Option<u64>,
+    /// Lowercased base id of the model we asked for, so `message_start` can flag
+    /// a silent server-side substitution (e.g. an unavailable id aliased to a
+    /// different model). Empty when unknown (e.g. in unit tests).
+    requested_model_base: String,
+    /// Set once we have warned about a substitution, so we only warn per stream.
+    warned_model_substitution: bool,
 }
 
 /// Process an SSE event and return StreamEvents if applicable
@@ -1930,17 +2112,48 @@ fn process_sse_event(
     match event.event_type.as_str() {
         "message_start" => {
             // Extract usage from message_start (includes cache info)
-            if let Ok(parsed) = serde_json::from_str::<MessageStartEvent>(&event.data)
-                && let Some(usage) = parsed.message.usage
-            {
-                state.input_tokens = usage.input_tokens.map(|t| t as u64);
-                state.cache_read_input_tokens = usage.cache_read_input_tokens.map(|t| t as u64);
-                state.cache_creation_input_tokens =
-                    usage.cache_creation_input_tokens.map(|t| t as u64);
-                if let Some(tier) = usage.service_tier.as_deref() {
-                    crate::logging::info(&format!("Anthropic granted service_tier={}", tier));
-                    if std::env::var("JCODE_LOG_SERVICE_TIER").is_ok() {
-                        eprintln!("[anthropic] granted service_tier={tier}");
+            if let Ok(parsed) = serde_json::from_str::<MessageStartEvent>(&event.data) {
+                // The server echoes the model that actually served the request.
+                // Log it so we can confirm there was no silent server-side
+                // substitution (and surface it under JCODE_LOG_SERVED_MODEL).
+                if let Some(served) = parsed.message.model.as_deref() {
+                    crate::logging::info(&format!("Anthropic served model={}", served));
+                    if std::env::var("JCODE_LOG_SERVED_MODEL").is_ok() {
+                        eprintln!("[anthropic] served model={served}");
+                    }
+                    // Anthropic can silently alias an unavailable/retired model
+                    // id to a different model (observed: claude-fable-5 ->
+                    // claude-haiku-4-5). That is a correctness hazard: the user
+                    // believes they are on the requested flagship. Warn loudly
+                    // once per stream when the served base id differs.
+                    let served_base = strip_1m_suffix(served).to_ascii_lowercase();
+                    if !state.requested_model_base.is_empty()
+                        && !state.warned_model_substitution
+                        && served_base != state.requested_model_base
+                    {
+                        state.warned_model_substitution = true;
+                        crate::logging::warn(&format!(
+                            "Anthropic served a DIFFERENT model than requested: requested '{}', served '{}'. The requested model is likely unavailable and is being substituted server-side.",
+                            state.requested_model_base, served_base
+                        ));
+                        events.push(StreamEvent::StatusDetail {
+                            detail: format!(
+                                "⚠ Anthropic served '{}' instead of requested '{}' (requested model unavailable)",
+                                served_base, state.requested_model_base
+                            ),
+                        });
+                    }
+                }
+                if let Some(usage) = parsed.message.usage {
+                    state.input_tokens = usage.input_tokens.map(|t| t as u64);
+                    state.cache_read_input_tokens = usage.cache_read_input_tokens.map(|t| t as u64);
+                    state.cache_creation_input_tokens =
+                        usage.cache_creation_input_tokens.map(|t| t as u64);
+                    if let Some(tier) = usage.service_tier.as_deref() {
+                        crate::logging::info(&format!("Anthropic granted service_tier={}", tier));
+                        if std::env::var("JCODE_LOG_SERVICE_TIER").is_ok() {
+                            eprintln!("[anthropic] granted service_tier={tier}");
+                        }
                     }
                 }
             }
@@ -2082,6 +2295,8 @@ struct MessageStartEvent {
 
 #[derive(Deserialize)]
 struct MessageStartMessage {
+    #[serde(default)]
+    model: Option<String>,
     usage: Option<UsageInfo>,
 }
 

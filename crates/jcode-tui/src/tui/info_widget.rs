@@ -15,9 +15,11 @@ mod memory_render;
 #[path = "info_widget_memory_utils.rs"]
 mod memory_utils;
 #[path = "info_widget_model.rs"]
-mod model;
+pub(crate) mod model;
 #[path = "info_widget_swarm_background.rs"]
 mod swarm_background;
+#[path = "info_widget_swarm_gallery.rs"]
+pub(crate) mod swarm_gallery;
 #[path = "info_widget_text.rs"]
 mod text;
 #[path = "info_widget_tips.rs"]
@@ -52,10 +54,7 @@ use unicode_width::UnicodeWidthStr;
 use git::{render_git_compact, render_git_widget};
 pub use graph::{GraphEdge, GraphNode, build_graph_topology, graph_node_score};
 pub(crate) use memory_utils::is_traceworthy_memory_event;
-use memory_utils::{
-    compact_memory_model_label, memory_active_summary, memory_last_trace_summary,
-    memory_state_detail,
-};
+use memory_utils::{memory_active_summary, memory_last_trace_summary, memory_state_detail};
 use model::{render_model_info, render_model_widget};
 use swarm_background::{render_background_compact, render_background_widget, render_swarm_widget};
 use text::{truncate_smart, truncate_with_ellipsis};
@@ -708,7 +707,7 @@ impl InfoWidgetData {
             WidgetKind::MemoryActivity => self
                 .memory_info
                 .as_ref()
-                .map(|m| m.total_count > 0 || m.activity.is_some() || m.sidecar_model.is_some())
+                .map(|m| m.total_count > 0 || m.activity.is_some())
                 .unwrap_or(false),
             WidgetKind::SwarmStatus => false,
             WidgetKind::BackgroundTasks => self
@@ -877,6 +876,60 @@ pub fn calculate_placements(
     state.anchors = outcome.anchors;
     state.placements = outcome.visible.clone();
     outcome.visible
+}
+
+/// Facts surfaced by the info-widget HUD as of the last rendered frame.
+///
+/// The bottom bar (status line + idle input hint) draws *before* widget
+/// placement is recomputed each frame, so we read the placements stored from
+/// the previous frame. This is a deliberately cheap, one-frame-stale proxy used
+/// only to decide which facts an idle fallback surface should fill in; being a
+/// frame behind is visually harmless.
+pub(crate) fn widget_visible_facts(data: &InfoWidgetData) -> crate::tui::session_facts::FactLedger {
+    use crate::tui::session_facts::Fact;
+    let mut ledger = crate::tui::session_facts::FactLedger::new();
+    let guard = get_or_init_state();
+    let Some(state) = guard.as_ref() else {
+        return ledger;
+    };
+    if !state.enabled {
+        return ledger;
+    }
+    for placement in &state.placements {
+        match placement.kind {
+            WidgetKind::ModelInfo => {
+                ledger.claim(Fact::Model);
+                if data.reasoning_effort.is_some() {
+                    ledger.claim(Fact::ReasoningEffort);
+                }
+                if data.provider_name.is_some() {
+                    ledger.claim(Fact::Provider);
+                }
+                if data.auth_method != AuthMethod::Unknown {
+                    ledger.claim(Fact::Auth);
+                }
+                if data.working_dir.is_some() {
+                    ledger.claim(Fact::Dir);
+                }
+                if data.session_count.is_some() {
+                    ledger.claim(Fact::Session);
+                }
+            }
+            WidgetKind::Overview => {
+                // The overview panel summarizes model, context, provider, dir.
+                ledger.claim_all([Fact::Model, Fact::Context, Fact::Provider, Fact::Dir]);
+                if data.reasoning_effort.is_some() {
+                    ledger.claim(Fact::ReasoningEffort);
+                }
+                if data.auth_method != AuthMethod::Unknown {
+                    ledger.claim(Fact::Auth);
+                }
+            }
+            WidgetKind::ContextUsage => ledger.claim(Fact::Context),
+            _ => {}
+        }
+    }
+    ledger
 }
 
 /// Calculate the height needed for a specific widget type

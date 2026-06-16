@@ -308,6 +308,7 @@ mod tests {
             superseded_by: None,
             reinforcements: vec![],
             embedding: None,
+            embedding_model: None,
             confidence: 1.0,
         };
         let json = memory_entry_to_json(&entry);

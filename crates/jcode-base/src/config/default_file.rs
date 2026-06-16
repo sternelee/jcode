@@ -167,6 +167,10 @@ swarm = true
 message_timestamps = true
 # Persist memory injections into session history instead of sending them as request-only ephemeral context
 persist_memory_injections = false
+# Show an in-chat warning when a request misses the KV cache for a harness-caused
+# (avoidable) reason: system prompt, tool set, or message prefix changed. These
+# should essentially never happen and indicate a prefix-cache bug.
+kv_cache_miss_notices = true
 # Update channel: "stable" (releases only) or "main" (latest commits on push)
 # Set to "main" for bleeding edge updates every time code is pushed
 update_channel = "stable"
@@ -271,10 +275,16 @@ cross_provider_failover = "countdown"
 # How swarm-created agents are spawned:
 #   "visible"  - open a headed terminal window (default; alias: "headed")
 #   "headless" - create the worker in-process with no terminal window
+#   "inline"   - in-process (no window), shown as a live gallery viewport in the coordinator
 #   "auto"     - try visible first, fall back to headless if no window can open
 # The swarm tool's per-call `spawn_mode` overrides this when set.
 # Env override: JCODE_SWARM_SPAWN_MODE
 swarm_spawn_mode = "visible"
+#
+# Max percentage (1-90) of the chat height the inline swarm gallery band may use.
+# Unset = built-in default (40%). Lower values keep more transcript visible; set
+# near the minimum to collapse the gallery to a thin strip.
+# swarm_gallery_max_pct = 40
 #
 # Model for the memory sidecar (relevance/extraction). Unset = sidecar auto-select.
 # Env override: JCODE_MEMORY_MODEL
@@ -282,6 +292,20 @@ swarm_spawn_mode = "visible"
 #
 # Whether the memory sidecar handles relevance/extraction.
 # memory_sidecar_enabled = false
+#
+# Minimum turns between Mode-2 memory reranks (cadence floor). The expensive
+# listwise LLM rerank runs at most once per this many turns; skipped turns fall
+# back to hybrid-ordered surfacing. A topic change always forces a rerank. Set 1
+# to rerank every turn. Default 3.
+# memory_rerank_cadence = 3
+#
+# High-precision consensus rerank: run N independent LLM judges per fired rerank
+# and inject only memories that >= memory_rerank_min_agree of them agree on.
+# Default 2 judges / 2 agreement -> injection precision ~1.0 with ~100% clean
+# (zero memory) on no-memory turns, at 2 LLM calls per fired turn. Set votes=1
+# for the cheaper single-judge path (precision ~0.77).
+# memory_rerank_votes = 2
+# memory_rerank_min_agree = 2
 
 [terminal]
 # External command that takes over headed session spawns (swarm agents,

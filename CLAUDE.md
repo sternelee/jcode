@@ -13,6 +13,23 @@ Key surfaces:
 - **iOS** (`ios/`) — XcodeGen-based iOS app
 - **Telemetry** (`telemetry-worker/`) — Cloudflare Workers service
 
+## Quick Start
+
+```bash
+# Launch the interactive TUI
+jcode
+
+# Run a single command non-interactively
+jcode run "say hello"
+
+# Resume a previous session by memorable name
+jcode --resume fox
+
+# Run as a persistent background server, then attach more clients
+jcode serve
+jcode connect
+```
+
 ## Crate Layering
 
 The root `jcode` crate (`src/lib.rs`, `src/main.rs`) is a thin entrypoint. The real work lives in:
@@ -101,8 +118,8 @@ scripts/test_fast.sh
 # Single crate
 cargo test -p <crate-name>
 
-# Specific test
-cargo test <test_name> -- --nocapture
+# Specific test (optionally scope to a crate)
+cargo test -p <crate-name> <test_name> -- --nocapture
 
 # Integration tests
 cargo test --test e2e
@@ -179,8 +196,8 @@ User Input → TUI / Desktop / Client → Agent → Provider(s) → StreamEvent 
 ### Key Architectural Layers
 
 1. **`Agent`** — orchestrates turn loops: sends messages to provider, dispatches tool calls, builds prompts
-2. **`Provider`** — `async_trait Provider` in `jcode-provider-core`. Implementations: OpenAI, Gemini, OpenRouter, AWS Bedrock. Returns `EventStream` (pinned `Stream<Item = Result<StreamEvent>>`)
-3. **`Tool`** — `async_trait Tool` in `jcode-tool-core`. Each tool gets a `ToolContext` (session_id, working_dir, interrupt signals). 30+ tools: bash, file ops, git, web search, browser, etc.
+2. **`Provider`** — `async_trait Provider` in `jcode-provider-core`. Implementations include OpenAI, Gemini, OpenRouter, AWS Bedrock, Anthropic, Copilot, Cursor, Antigravity, and many OpenAI-compatible endpoints. Returns `EventStream` (pinned `Stream<Item = Result<StreamEvent>>`)
+3. **`Tool`** — `async_trait Tool` in `jcode-tool-core`. Each tool gets a `ToolContext` (session_id, working_dir, interrupt signals). 37+ base tools: bash, file ops, git, web search, browser, memory, communicate/swarm, batch, MCP, selfdev, etc.
 4. **`Session`** — owns conversation history, git state, model selection, memory config. Persisted via `jcode-storage`
 5. **`Protocol`** — `ServerEvent` enum in `jcode-protocol` — newline-delimited JSON over Unix socket (main socket for client communication; agent socket for AI-to-AI)
 6. **`Server`** — named with adjective+animal (e.g. "🔥 blazing 🦊 fox"), registry at `~/.jcode/servers.json`, transparent reconnect on `/reload`
@@ -206,6 +223,67 @@ Cross-cutting concerns (signals, soft interrupts, stream errors, graceful shutdo
 - Registry at `~/.jcode/servers.json`
 - MCP pool shared across sessions
 - Supports transparent reconnect after server reload (`/reload` execs new binary)
+
+## Important Files
+
+| File | Purpose |
+|------|---------|
+| `src/main.rs` | Entry point, global allocator (jemalloc), tokio runtime bootstrap |
+| `src/lib.rs` | Module declarations, `run()` entry point, session ID global |
+| `src/cli/startup.rs` | Startup orchestration and dependency-inversion callbacks |
+| `src/cli/dispatch.rs` | Command dispatcher |
+| `src/cli/args.rs` | clap CLI argument definitions |
+| `Cargo.toml` | Workspace definition, members, dependencies, features, profiles |
+| `crates/jcode-protocol/src/lib.rs` / `wire.rs` | `Request` and `ServerEvent` |
+| `crates/jcode-provider-core/src/lib.rs` | `Provider` trait, `EventStream` |
+| `crates/jcode-tool-core/src/lib.rs` | `Tool` trait, `ToolContext` |
+| `crates/jcode-agent-runtime/src/lib.rs` | `InterruptSignal`, `SoftInterruptMessage`, `StreamError` |
+| `crates/jcode-base/src/config.rs` | Hot-reloadable config |
+| `crates/jcode-base/src/session.rs` | Session model |
+| `crates/jcode-app-core/src/agent/turn_loops.rs` | Main agent turn loop (orchestration; execution logic is in `turn_execution.rs`) |
+| `crates/jcode-app-core/src/server.rs` | Server module and client request dispatch |
+| `crates/jcode-app-core/src/tool/mod.rs` | Tool registry |
+| `jcode-app/src-tauri/src/lib.rs` | Tauri commands and event streaming |
+
+## Cross-Cutting Patterns
+
+### Dependency Inversion
+
+Several lower-layer crates expose registration hooks so higher layers can inject behavior without creating reverse dependencies. All of these are wired in `src/cli/startup.rs`:
+
+- `safety::register_permission_notifier()` — safety raises requests; notifications layer delivers them
+- `config::on_config_reloaded(...)` — invalidate auth cache and broadcast model updates on config reload
+- `memory::register_synthetic_entry_provider()` — memory collects synthetic entries from the skill registry
+- `server_spawn::register_default_server_spawner()` — TUI reconnect can spawn a replacement server without depending on CLI
+- `session_list_cache::register_invalidator(...)` — server can drop the TUI session-list cache without referencing TUI
+- `provider_catalog::register_api_key_fallback_resolver(...)` — auth layer supplies fallback API-key resolution
+
+When adding a new cross-cutting concern, prefer registering a callback over introducing a new crate dependency.
+
+### Self-Development Mode
+
+`jcode` can modify its own source code, build, and reload its binary to continue work across sessions. The `/selfdev` command (or `jcode selfdev`) enters this mode. It uses the tool registry in `crates/jcode-app-core/src/tool/selfdev/` and a dedicated build queue. Use a frontier model for self-dev; weaker models can introduce subtle breaking changes.
+
+### Browser Automation
+
+The built-in `browser` tool controls Firefox via the Firefox Agent Bridge. Setup and status:
+
+```bash
+jcode browser status
+jcode browser setup
+```
+
+Actions include `open`, `snapshot`, `click`, `type`, `fill_form`, `select`, `screenshot`, `eval`, `scroll`, `upload`, and others. See `docs/BROWSER_PROVIDER_PROTOCOL.md`.
+
+### MCP Configuration
+
+MCP config is separate from `config.toml`:
+
+- `~/.jcode/mcp.json` — global MCP servers
+- `.jcode/mcp.json` — project-local MCP servers
+- `.claude/mcp.json` — compatibility fallback
+
+On first run, jcode imports MCP servers from `~/.claude/mcp.json` and `~/.codex/config.toml` if `~/.jcode/mcp.json` does not exist.
 
 ## Code Conventions
 
@@ -270,7 +348,10 @@ Cross-cutting concerns (signals, soft interrupts, stream errors, graceful shutdo
 - `docs/SERVER_ARCHITECTURE.md` — server design and lifecycle
 - `docs/SWARM_ARCHITECTURE.md` — multi-agent swarm coordination
 - `docs/MEMORY_ARCHITECTURE.md` — persistent memory graph system
+- `docs/MEMORY_GRAPH_PLAN.md` — memory graph implementation plan
 - `docs/AMBIENT_MODE.md` — background/ambient agent mode
 - `docs/SAFETY_SYSTEM.md` — permission gating and safety
+- `docs/BROWSER_PROVIDER_PROTOCOL.md` — browser automation protocol
 - `docs/CRATE_OWNERSHIP_BOUNDARIES.md` — crate dependency rules
 - `docs/MODULAR_ARCHITECTURE_RFC.md` — crate modularization RFC
+- `docs/REFACTORING.md` — ongoing refactor notes

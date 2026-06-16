@@ -423,7 +423,7 @@ pub(super) fn effort_display_label(effort: &str) -> &str {
 ///   `claude-opus-4-6[1m]`-> `Claude Opus 4.6 (1M)`
 ///   `gemini-2.5-pro`     -> `Gemini 2.5 Pro`
 /// Unknown shapes are returned mostly as-is so we never hide the real id.
-pub(super) fn pretty_model_display_name(model: &str) -> String {
+pub(crate) fn pretty_model_display_name(model: &str) -> String {
     let model = model.trim();
     if model.is_empty() {
         return "your default model".to_string();
@@ -514,8 +514,10 @@ pub(super) fn inferred_reasoning_efforts(
         || provider.contains("claude")
         || model.starts_with("claude-");
     if is_anthropic {
+        // NOTE: `claude-fable-5` is intentionally excluded. The live Messages
+        // API rejects both an adaptive `thinking` block and an `output_config`
+        // effort for it, so it exposes no reasoning-effort levels.
         let supports_effort = model.contains("claude-mythos")
-            || model.contains("claude-fable-5")
             || model.contains("claude-opus-4-8")
             || model.contains("claude-opus-4-7")
             || model.contains("claude-opus-4-6")
@@ -526,10 +528,7 @@ pub(super) fn inferred_reasoning_efforts(
         if !supports_effort {
             return Vec::new();
         }
-        if model.contains("claude-fable-5")
-            || model.contains("claude-opus-4-8")
-            || model.contains("claude-opus-4-7")
-        {
+        if model.contains("claude-opus-4-8") || model.contains("claude-opus-4-7") {
             return vec!["none", "low", "medium", "high", "xhigh"];
         }
         return vec!["none", "low", "medium", "high"];

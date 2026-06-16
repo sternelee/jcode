@@ -82,7 +82,10 @@ async fn comm_message_default_does_not_queue_soft_interrupt_for_connected_sessio
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),
@@ -104,7 +107,10 @@ async fn comm_message_default_does_not_queue_soft_interrupt_for_connected_sessio
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),
@@ -238,7 +244,10 @@ async fn comm_message_with_wake_queues_soft_interrupt_for_busy_connected_session
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),
@@ -260,7 +269,10 @@ async fn comm_message_with_wake_queues_soft_interrupt_for_busy_connected_session
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),
@@ -383,7 +395,10 @@ async fn comm_list_includes_member_status_and_detail() {
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),
@@ -405,7 +420,10 @@ async fn comm_list_includes_member_status_and_detail() {
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),
@@ -485,7 +503,10 @@ async fn comm_message_accepts_friendly_name_dm_target() {
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),
@@ -507,7 +528,10 @@ async fn comm_message_accepts_friendly_name_dm_target() {
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),
@@ -613,7 +637,10 @@ async fn comm_message_rejects_ambiguous_friendly_name_dm_target() {
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),
@@ -635,7 +662,10 @@ async fn comm_message_rejects_ambiguous_friendly_name_dm_target() {
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),
@@ -657,7 +687,10 @@ async fn comm_message_rejects_ambiguous_friendly_name_dm_target() {
                 joined_at: Instant::now(),
                 last_status_change: Instant::now(),
                 is_headless: false,
+                output_tail: None,
+
                 model: None,
+
                 provider_key: None,
             },
         ),

@@ -128,7 +128,10 @@ mod transcript_routing_tests {
             joined_at: now,
             last_status_change: now,
             is_headless: false,
+            output_tail: None,
+
             model: None,
+
             provider_key: None,
         }
     }

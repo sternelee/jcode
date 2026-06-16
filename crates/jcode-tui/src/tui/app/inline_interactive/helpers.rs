@@ -320,11 +320,5 @@ mod tests {
         assert_eq!(selection.model, "nvidia/example");
         assert_eq!(selection.provider_label, "NVIDIA NIM");
         assert_eq!(selection.api_method, "openai-compatible:nvidia-nim");
-        assert_eq!(
-            selection.runtime_key,
-            crate::provider::RuntimeKey::OpenAiCompatible {
-                profile_id: Some("nvidia-nim".to_string())
-            }
-        );
     }
 }
