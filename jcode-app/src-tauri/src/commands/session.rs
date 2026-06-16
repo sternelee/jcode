@@ -9,6 +9,29 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
+
+/// Persist the real provider/profile identity into a session. For direct
+/// OpenAI-compatible profiles (e.g. DeepSeek) the transport provider reports
+/// `name() == "openrouter"`, but the session must remember the profile id so
+/// that restore/re-selection stays on the direct endpoint instead of routing
+/// back through the real OpenRouter aggregator.
+fn apply_provider_identity_to_session(session: &mut Session, provider: &dyn Provider) {
+    let route = provider
+        .model_routes()
+        .into_iter()
+        .find(|r| r.model == provider.model());
+    session.provider_key = route
+        .as_ref()
+        .and_then(|r| {
+            if let Some(profile_id) = r.api_method.strip_prefix("openai-compatible:") {
+                Some(profile_id.trim().to_string())
+            } else {
+                jcode::session::derive_session_provider_key(&r.provider)
+            }
+        })
+        .or_else(|| jcode::session::derive_session_provider_key(provider.name()));
+    session.route_api_method = route.map(|r| r.api_method);
+}
 #[tauri::command]
 pub async fn begin_session(
     app_handle: AppHandle,
@@ -41,7 +64,7 @@ pub async fn begin_session(
     let mut session = Session::create(None, None);
     session.working_dir = working_dir.clone();
     session.model = Some(provider.model());
-    session.provider_key = jcode::session::derive_session_provider_key(provider.name());
+    apply_provider_identity_to_session(&mut session, provider.as_ref());
     if let Some(name) = role_name {
         session.rename_title(Some(name));
     }
@@ -101,8 +124,7 @@ pub async fn begin_swarm(
     let mut coordinator_session = Session::create(None, None);
     coordinator_session.working_dir = working_dir.clone();
     coordinator_session.model = Some(coordinator_provider.model());
-    coordinator_session.provider_key =
-        jcode::session::derive_session_provider_key(coordinator_provider.name());
+    apply_provider_identity_to_session(&mut coordinator_session, coordinator_provider.as_ref());
     coordinator_session.rename_title(Some("Coordinator".to_string()));
     coordinator_session
         .save()
@@ -159,7 +181,7 @@ pub async fn begin_swarm(
             let mut session = Session::create(None, None);
             session.working_dir = working_dir.clone();
             session.model = Some(provider.model());
-            session.provider_key = jcode::session::derive_session_provider_key(provider.name());
+            apply_provider_identity_to_session(&mut session, provider.as_ref());
             session.rename_title(Some(role_name.clone()));
             session.save().map_err(|e| {
                 TauriError::Other(format!(
@@ -246,7 +268,7 @@ pub async fn add_swarm_member(
     let mut session = Session::create(None, None);
     session.working_dir = working_dir.clone();
     session.model = Some(provider.model());
-    session.provider_key = jcode::session::derive_session_provider_key(provider.name());
+    apply_provider_identity_to_session(&mut session, provider.as_ref());
     session.rename_title(Some(role_name.clone()));
     session.save().map_err(|e| {
         TauriError::Other(format!(
