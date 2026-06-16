@@ -114,7 +114,12 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 								<SelectTrigger className="h-5 border-0 bg-transparent p-0 text-[10px] text-muted-foreground shadow-none hover:text-foreground focus:ring-0 gap-1 w-fit">
 									<SelectValue placeholder={currentModel} />
 								</SelectTrigger>
-								<SelectContent>
+								<SelectContent
+									className="max-h-40"
+									sideOffset={2}
+									align="start"
+									side="bottom"
+								>
 									{provider.models.map((m) => (
 										<SelectItem key={m} value={m} className="text-[12px]">
 											{m}
