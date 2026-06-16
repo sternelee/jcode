@@ -119,15 +119,16 @@ export function Launcher() {
 	const [chatInitialQuery, setChatInitialQuery] = useState<string>("");
 	const [inputValue, setInputValue] = useState("");
 
-	// Listen for the global shortcut so the launcher resets state every time
-	// it appears. Without this, a half-typed query from the previous
-	// invocation would carry over.
 	useEffect(() => {
 		let unlisten: (() => void) | null = null;
 		void listen<string>("global-shortcut", () => {
-			setMode("palette");
-			setChatProvider(null);
-			setChatInitialQuery("");
+			// Keep an active chat visible when the launcher is re-summoned so
+			// the conversation is not interrupted. Only reset palette state.
+			if (mode !== "chat") {
+				setMode("palette");
+				setChatProvider(null);
+				setChatInitialQuery("");
+			}
 			setQuery("");
 			setInputValue("");
 			setError(null);
@@ -151,7 +152,7 @@ export function Launcher() {
 		return () => {
 			if (unlisten) unlisten();
 		};
-	}, [setQuery, setError, refreshSessions, applications]);
+	}, [mode, setQuery, setError, refreshSessions, applications]);
 	// Debounce typing so we only ask the backend to filter/score apps once
 	// the user pauses. This keeps the launcher responsive and avoids a
 	// command invocation per keystroke.

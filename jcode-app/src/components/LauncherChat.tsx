@@ -88,7 +88,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 			e.preventDefault();
 			handleSend();
 		}
-		if (e.key === "Escape") {
+		if (e.key === "Escape" && !isProcessing) {
 			e.preventDefault();
 			onClose();
 		}
