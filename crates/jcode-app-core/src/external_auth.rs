@@ -352,7 +352,9 @@ fn prompt_to_review_external_auth_sources(
     parse_external_auth_review_selection(&input, candidates.len())
 }
 
-pub fn approve_external_auth_review_candidate(candidate: &ExternalAuthReviewCandidate) -> Result<()> {
+pub fn approve_external_auth_review_candidate(
+    candidate: &ExternalAuthReviewCandidate,
+) -> Result<()> {
     match candidate.action {
         ExternalAuthReviewAction::SharedExternal(source) => {
             auth::external::trust_external_auth_source(source)?

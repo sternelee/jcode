@@ -79,10 +79,7 @@ pub async fn refresh_applications(state: State<'_, AppState>) -> Result<(), Taur
     index.refresh().map_err(|e| TauriError::from(e))
 }
 #[tauri::command]
-pub async fn launch_application(
-    path: String,
-    args: Option<Vec<String>>,
-) -> Result<(), TauriError> {
+pub async fn launch_application(path: String, args: Option<Vec<String>>) -> Result<(), TauriError> {
     crate::launcher::launch_application(&path, args).map_err(|e| TauriError::from(e))
 }
 #[tauri::command]
@@ -93,7 +90,9 @@ pub async fn quit_application(bundle_id: String) -> Result<(), TauriError> {
 pub async fn show_launcher(app_handle: AppHandle) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("launcher") {
         window.show().map_err(|e| TauriError::from(e.to_string()))?;
-        window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
+        window
+            .set_focus()
+            .map_err(|e| TauriError::from(e.to_string()))?;
         // Mirror the global-hotkey behaviour: tell the launcher to reset
         // its query and re-focus the input. Without this, a Cmd+K
         // invocation from inside the workbench would show the launcher
@@ -114,7 +113,9 @@ pub async fn show_workbench(app_handle: AppHandle) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("workbench") {
         let _ = window.unminimize(); // restore if miniaturized
         window.show().map_err(|e| TauriError::from(e.to_string()))?;
-        window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
+        window
+            .set_focus()
+            .map_err(|e| TauriError::from(e.to_string()))?;
     }
     crate::hide_dock_if_all_visible(&app_handle);
     Ok(())
@@ -138,7 +139,9 @@ pub async fn expand_to_workbench(
     if let Some(window) = app_handle.get_webview_window("workbench") {
         let _ = window.unminimize(); // restore if miniaturized
         window.show().map_err(|e| TauriError::from(e.to_string()))?;
-        window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
+        window
+            .set_focus()
+            .map_err(|e| TauriError::from(e.to_string()))?;
     }
     if let Some(value) = payload {
         let event = match value.get("kind").and_then(|v| v.as_str()) {
@@ -159,14 +162,13 @@ pub async fn hide_pages_window(app_handle: AppHandle) -> Result<(), TauriError> 
     Ok(())
 }
 #[tauri::command]
-pub async fn open_pages_window(
-    app_handle: AppHandle,
-    page: String,
-) -> Result<(), TauriError> {
+pub async fn open_pages_window(app_handle: AppHandle, page: String) -> Result<(), TauriError> {
     if let Some(window) = app_handle.get_webview_window("pages") {
         let _ = window.unminimize(); // restore if miniaturized
         window.show().map_err(|e| TauriError::from(e.to_string()))?;
-        window.set_focus().map_err(|e| TauriError::from(e.to_string()))?;
+        window
+            .set_focus()
+            .map_err(|e| TauriError::from(e.to_string()))?;
         let _ = app_handle.emit("pages:navigate", page);
     }
     crate::hide_dock_if_all_visible(&app_handle);
@@ -182,12 +184,16 @@ pub async fn delete_a2ui_page(page_id: String) -> Result<(), TauriError> {
 }
 #[tauri::command]
 pub async fn drag_window(window: tauri::WebviewWindow) -> Result<(), TauriError> {
-    window.start_dragging().map_err(|e| TauriError::from(e.to_string()))
+    window
+        .start_dragging()
+        .map_err(|e| TauriError::from(e.to_string()))
 }
 #[tauri::command]
 pub async fn minimize_window(window: tauri::WebviewWindow) -> Result<(), TauriError> {
     let label = window.label().to_string();
-    window.minimize().map_err(|e| TauriError::from(e.to_string()))?;
+    window
+        .minimize()
+        .map_err(|e| TauriError::from(e.to_string()))?;
     // Show the Dock AFTER minimizing so macOS knows a miniaturized
     // window exists and will restore it on Dock click.
     if label == "workbench" || label == "pages" {
@@ -208,7 +214,9 @@ pub async fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<(), 
             .clone()
             .run_on_main_thread(move || {
                 let result = (|| {
-                    let ns_window_ptr = window.ns_window().map_err(|e| TauriError::from(e.to_string()))?;
+                    let ns_window_ptr = window
+                        .ns_window()
+                        .map_err(|e| TauriError::from(e.to_string()))?;
                     if ns_window_ptr.is_null() {
                         return Err(TauriError::Other("native NSWindow is null".to_string()));
                     }
@@ -226,11 +234,17 @@ pub async fn toggle_maximize_window(window: tauri::WebviewWindow) -> Result<(), 
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let maximized = window.is_maximized().map_err(|e| TauriError::from(e.to_string()))?;
+        let maximized = window
+            .is_maximized()
+            .map_err(|e| TauriError::from(e.to_string()))?;
         if maximized {
-            window.unmaximize().map_err(|e| TauriError::from(e.to_string()))
+            window
+                .unmaximize()
+                .map_err(|e| TauriError::from(e.to_string()))
         } else {
-            window.maximize().map_err(|e| TauriError::from(e.to_string()))
+            window
+                .maximize()
+                .map_err(|e| TauriError::from(e.to_string()))
         }
     }
 }

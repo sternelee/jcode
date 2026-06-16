@@ -1373,10 +1373,11 @@ impl Provider for MultiProvider {
             let prefix = prefix.trim().to_ascii_lowercase();
             let rest = rest.trim();
             if !rest.is_empty()
-                && let Some(target) = provider_from_model_key(&prefix) {
-                    self.ensure_provider_lock_allows_model_target(target, requested_model)?;
-                    return self.set_model_on_provider(target, rest);
-                }
+                && let Some(target) = provider_from_model_key(&prefix)
+            {
+                self.ensure_provider_lock_allows_model_target(target, requested_model)?;
+                return self.set_model_on_provider(target, rest);
+            }
         }
 
         // Provider-prefixed model names are explicit routing directives. They

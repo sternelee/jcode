@@ -6,6 +6,7 @@ import { useApplications } from "./useApplications";
 import type {
 	AppInfo,
 	BuiltinPage,
+	LauncherChatProvider,
 	LauncherItem,
 	SavedA2uiPage,
 } from "@/lib/launcherTypes";
@@ -79,7 +80,6 @@ function sessionScore(session: SessionInfo, query: string): number {
 	}
 	return best;
 }
-
 const BUILTIN_COMMANDS: ReadonlyArray<{
 	page: BuiltinPage;
 	title: string;
@@ -87,13 +87,6 @@ const BUILTIN_COMMANDS: ReadonlyArray<{
 	keyword: string;
 	iconName: string;
 }> = [
-	{
-		page: "chat",
-		title: "Open Chat",
-		description: "Jump to the active conversation",
-		keyword: "chat conversation talk",
-		iconName: "message",
-	},
 	{
 		page: "providers",
 		title: "Open Providers",
@@ -151,12 +144,12 @@ const AGENT_ITEM: LauncherItem = {
 const RECENT_KEY = "jcode-launcher-recent";
 const FREQUENCY_KEY = "jcode-launcher-frequency";
 const RECENT_LIMIT = 5;
-
 type RecentEntry =
 	| { kind: "application"; id: string; name: string; appPath: string }
 	| { kind: "builtin"; id: string; page: BuiltinPage; title: string }
 	| { kind: "session"; id: string; sessionId: string; title: string }
-	| { kind: "a2ui"; id: string; pageId: string; title: string };
+	| { kind: "a2ui"; id: string; pageId: string; title: string }
+	| { kind: "chat-provider"; id: string; providerKey: string; displayName: string };
 
 function loadRecent(): RecentEntry[] {
 	try {
@@ -225,6 +218,16 @@ export function useLauncher() {
 	const [a2uiPages, setA2uiPages] = useState<SavedA2uiPage[]>([]);
 	const [recent, setRecent] = useState<RecentEntry[]>(() => loadRecent());
 	const [frequency, setFrequency] = useState<FrequencyMap>(() => loadFrequency());
+	const [chatProviders, setChatProviders] = useState<LauncherChatProvider[]>([]);
+
+	const refreshChatProviders = useCallback(async () => {
+		try {
+			const list = await invoke<LauncherChatProvider[]>("list_chat_providers");
+			setChatProviders(list || []);
+		} catch (e) {
+			console.warn("list_chat_providers failed in launcher:", e);
+		}
+	}, []);
 	const [error, setError] = useState<string | null>(null);
 	const applications = useApplications();
 
@@ -251,7 +254,8 @@ export function useLauncher() {
 	useEffect(() => {
 		void refreshSessions();
 		void refreshA2uiPages();
-	}, [refreshSessions, refreshA2uiPages]);
+		void refreshChatProviders();
+	}, [refreshSessions, refreshA2uiPages, refreshChatProviders]);
 
 	const recordRecent = useCallback((entry: RecentEntry) => {
 		setRecent((prev) => {
@@ -418,6 +422,34 @@ export function useLauncher() {
 		}
 		out.push(...sessionItems);
 
+		// Configured AI providers for quick chat
+		const providerItems: Array<Extract<LauncherItem, { kind: "chat-provider" }>> = [];
+		for (const provider of chatProviders) {
+			if (
+				trimmed &&
+				!provider.displayName.toLowerCase().includes(lower) &&
+				!provider.providerKey.toLowerCase().includes(lower)
+			) {
+				continue;
+			}
+			providerItems.push({
+				kind: "chat-provider",
+				id: `provider:${provider.providerKey}`,
+				provider,
+			});
+		}
+		if (trimmed) {
+			providerItems.sort((a, b) => {
+				const sa = fuzzyScore(a.provider.displayName, trimmed);
+				const sb = fuzzyScore(b.provider.displayName, trimmed);
+				if (sb !== sa) return sb - sa;
+				return a.provider.displayName
+					.toLowerCase()
+					.localeCompare(b.provider.displayName.toLowerCase());
+			});
+		}
+		out.push(...providerItems);
+
 		// Builtin commands
 		const builtinItems: Array<Extract<LauncherItem, { kind: "builtin" }>> = [];
 		for (const builtin of BUILTIN_COMMANDS) {
@@ -468,11 +500,16 @@ export function useLauncher() {
 		}
 
 		return out;
-	}, [query, applications.apps, sessions, a2uiPages, recent, frequency]);
+	}, [query, applications.apps, sessions, a2uiPages, recent, frequency, chatProviders]);
 
 	const selectItem = useCallback(
 		async (item: LauncherItem) => {
 			setError(null);
+			// Agent prompts and provider chat are handled by the launcher
+			// itself, not sent to the workbench.
+			if (item.kind === "agent" || item.kind === "chat-provider") {
+				return;
+			}
 			try {
 				if (item.kind === "application") {
 					await invoke("launch_application", {
@@ -486,12 +523,7 @@ export function useLauncher() {
 						appPath: item.app.appPath,
 					});
 					recordUsage(`app:${item.app.appPath}`);
-					// Eagerly refresh the running-apps snapshot so the
-					// freshly-launched app shows up as "Running" the next
-					// time the user opens the launcher.
 					void applications.refresh();
-					// Hide the launcher without expanding to the workbench; the
-					// user explicitly wanted to launch an external app.
 					await invoke("hide_launcher");
 					return;
 				}
@@ -512,24 +544,6 @@ export function useLauncher() {
 				}
 
 				if (item.kind === "builtin") {
-					// "Open Chat" should bring the workbench to the front and
-					// focus the chat tab, not open the pages window.
-					if (item.page === "chat") {
-						await invoke("expand_to_workbench", {
-							payload: { kind: "chat" },
-						});
-						const builtinId = `builtin:${item.page}`;
-						recordRecent({
-							kind: "builtin",
-							id: builtinId,
-							page: item.page,
-							title: item.title,
-						});
-						recordUsage(builtinId);
-						return;
-					}
-
-					// Other builtins open the dedicated pages window.
 					await invoke("open_pages_window", { page: item.page });
 					const builtinId = `builtin:${item.page}`;
 					recordRecent({
@@ -539,14 +553,6 @@ export function useLauncher() {
 						title: item.title,
 					});
 					recordUsage(builtinId);
-					return;
-				}
-
-				if (item.kind === "agent") {
-					const text = item.query.trim();
-					await invoke("expand_to_workbench", {
-						payload: { kind: "agent", query: text },
-					});
 					return;
 				}
 
@@ -586,7 +592,10 @@ export function useLauncher() {
 		recent,
 		frequency,
 		recordUsage,
+		recordRecent,
 		refreshSessions,
+		refreshChatProviders,
+		chatProviders,
 		error,
 		setError,
 		builtinCommands: BUILTIN_COMMANDS,

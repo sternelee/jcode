@@ -13,20 +13,6 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "label": "workbench",
-        "title": "JFlow",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 400,
-        "minHeight": 400,
-        "resizable": true,
-        "visible": false,
-        "acceptFirstMouse": true,
-        "tabbingIdentifier": "JFlow",
-        "decorations": false,
-        "transparent": true
-      },
-      {
         "label": "launcher",
         "title": "JFlow Launcher",
         "width": 720,
@@ -41,6 +27,20 @@
         "visible": false,
         "center": true,
         "acceptFirstMouse": true
+      },
+      {
+        "label": "workbench",
+        "title": "JFlow",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 400,
+        "minHeight": 400,
+        "resizable": true,
+        "visible": false,
+        "acceptFirstMouse": true,
+        "tabbingIdentifier": "JFlow",
+        "decorations": false,
+        "transparent": true
       },
       {
         "label": "pages",

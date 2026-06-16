@@ -6,7 +6,9 @@ use serde_json;
 pub async fn get_config_path() -> Result<String, TauriError> {
     jcode::config::Config::path()
         .map(|p| p.to_string_lossy().to_string())
-        .ok_or_else(|| TauriError::Other("No config path available (JCODE_HOME not set)".to_string()))
+        .ok_or_else(|| {
+            TauriError::Other("No config path available (JCODE_HOME not set)".to_string())
+        })
 }
 
 /// Returns the resolved config as a JSON value.
@@ -21,10 +23,7 @@ pub async fn get_config() -> Result<serde_json::Value, TauriError> {
 ///
 /// Sending `null` as the value deletes the key.
 #[tauri::command]
-pub async fn set_config_value(
-    key: String,
-    value: serde_json::Value,
-) -> Result<(), TauriError> {
+pub async fn set_config_value(key: String, value: serde_json::Value) -> Result<(), TauriError> {
     let path = jcode::config::Config::path()
         .ok_or_else(|| TauriError::Other("No config path available".to_string()))?;
     let content = std::fs::read_to_string(&path).unwrap_or_default();
@@ -37,27 +36,37 @@ pub async fn set_config_value(
 
     let segments: Vec<&str> = key.split('.').collect();
     if segments.is_empty() {
-        return Err(TauriError::InvalidInput("Key must not be empty".to_string()));
+        return Err(TauriError::InvalidInput(
+            "Key must not be empty".to_string(),
+        ));
     }
 
     set_toml_value(&mut root, &segments, json_to_toml(&value))?;
 
     let new_content = toml::to_string_pretty(&root)
         .map_err(|e| TauriError::Other(format!("Failed to serialize config: {e}")))?;
-    std::fs::write(&path, &new_content)
-        .map_err(|e| TauriError::Io(e))?;
+    std::fs::write(&path, &new_content).map_err(|e| TauriError::Io(e))?;
     jcode::config::Config::invalidate_cache();
     Ok(())
 }
 
-fn set_toml_value(root: &mut toml::Value, path: &[&str], value: Option<toml::Value>) -> Result<(), TauriError> {
-    let table = root.as_table_mut()
+fn set_toml_value(
+    root: &mut toml::Value,
+    path: &[&str],
+    value: Option<toml::Value>,
+) -> Result<(), TauriError> {
+    let table = root
+        .as_table_mut()
         .ok_or_else(|| TauriError::Other(format!("Cannot set nested key on non-table value")))?;
 
     if path.len() == 1 {
         match value {
-            Some(v) => { table.insert(path[0].to_string(), v); }
-            None => { table.remove(path[0]); }
+            Some(v) => {
+                table.insert(path[0].to_string(), v);
+            }
+            None => {
+                table.remove(path[0]);
+            }
         }
     } else {
         let child = table
@@ -137,8 +146,18 @@ mod tests {
     #[test]
     fn test_set_toml_value_simple() {
         let mut root = toml::Value::Table(toml::Table::new());
-        set_toml_value(&mut root, &["features"], Some(toml::Value::Table(toml::Table::new()))).unwrap();
-        set_toml_value(&mut root, &["features", "memory"], Some(toml::Value::Boolean(true))).unwrap();
+        set_toml_value(
+            &mut root,
+            &["features"],
+            Some(toml::Value::Table(toml::Table::new())),
+        )
+        .unwrap();
+        set_toml_value(
+            &mut root,
+            &["features", "memory"],
+            Some(toml::Value::Boolean(true)),
+        )
+        .unwrap();
 
         let tbl = root.as_table().unwrap();
         let features = tbl.get("features").unwrap().as_table().unwrap();

@@ -1,0 +1,171 @@
+import { useEffect, useRef, useState } from "react";
+import { ArrowUp, X, Loader2, Square } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { useLauncherChat } from "@/hooks/useLauncherChat";
+import type { LauncherChatProvider } from "@/lib/launcherTypes";
+import type { ChatMessage } from "@/types";
+
+interface LauncherChatProps {
+	provider: LauncherChatProvider;
+	onClose: () => void;
+	initialQuery?: string;
+}
+
+function ChatMessageRow({ message }: { message: ChatMessage }) {
+	const isUser = message.role === "user";
+	return (
+		<div
+			className={cn(
+				"flex w-full",
+				isUser ? "justify-end" : "justify-start",
+			)}
+		>
+			<div
+				className={cn(
+					"max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap",
+					isUser
+						? "bg-primary text-primary-foreground rounded-br-md"
+						: "bg-muted text-foreground rounded-bl-md",
+				)}
+			>
+				{message.content}
+				{message.isStreaming && (
+					<span className="inline-block w-1.5 h-1.5 rounded-full bg-current opacity-50 animate-pulse ml-1 align-middle" />
+				)}
+			</div>
+		</div>
+	);
+}
+
+export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatProps) {
+	const { messages, isProcessing, error, send, cancel } =
+		useLauncherChat(provider);
+	const [input, setInput] = useState(initialQuery || "");
+	const [hasSentInitial, setHasSentInitial] = useState(false);
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const inputRef = useRef<HTMLTextAreaElement>(null);
+
+	useEffect(() => {
+		if (initialQuery && !hasSentInitial) {
+			setHasSentInitial(true);
+			void send(initialQuery);
+		}
+	}, [initialQuery, hasSentInitial, send]);
+
+	useEffect(() => {
+		const el = scrollRef.current;
+		if (!el) return;
+		el.scrollTop = el.scrollHeight;
+	}, [messages]);
+
+	useEffect(() => {
+		inputRef.current?.focus();
+	}, []);
+
+	const handleSend = () => {
+		if (!input.trim() || isProcessing) return;
+		const text = input;
+		setInput("");
+		void send(text);
+	};
+
+	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+		if (e.key === "Enter" && !e.shiftKey) {
+			e.preventDefault();
+			handleSend();
+		}
+		if (e.key === "Escape") {
+			e.preventDefault();
+			onClose();
+		}
+	};
+
+	return (
+		<div className="h-screen w-screen flex flex-col bg-background text-foreground p-2">
+			<div className="flex-1 rounded-xl bg-card/95 backdrop-blur-xl border border-border shadow-2xl overflow-hidden flex flex-col animate-fade-in">
+				{/* Header */}
+				<div className="flex items-center justify-between px-3 py-2 border-b border-border">
+					<div className="flex items-center gap-2">
+						<div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-medium text-primary">
+							{provider.displayName.charAt(0).toUpperCase()}
+						</div>
+						<span className="text-[13px] font-medium">{provider.displayName}</span>
+						<span className="text-[10px] text-muted-foreground">{provider.model}</span>
+					</div>
+					<button
+						type="button"
+						onClick={onClose}
+						className="text-muted-foreground hover:text-foreground transition-colors"
+					>
+						<X className="w-4 h-4" />
+					</button>
+				</div>
+
+				{/* Messages */}
+				<div
+					ref={scrollRef}
+					className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0"
+				>
+					{messages.length === 0 && !initialQuery && (
+						<div className="h-full flex items-center justify-center text-muted-foreground text-xs">
+							Start a conversation with {provider.displayName}
+						</div>
+					)}
+					{messages.map((msg) => (
+						<ChatMessageRow key={msg.id} message={msg} />
+					))}
+					{error && (
+						<div className="text-[11px] text-destructive px-1">{error}</div>
+					)}
+				</div>
+
+				{/* Input */}
+				<div className="p-2 border-t border-border">
+					<div className="flex items-end gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2 focus-within:ring-1 focus-within:ring-primary/30">
+						<textarea
+							ref={inputRef}
+							value={input}
+							onChange={(e) => setInput(e.target.value)}
+							onKeyDown={handleKeyDown}
+							rows={1}
+							placeholder={`Ask ${provider.displayName}...`}
+							className="flex-1 bg-transparent resize-none outline-none text-[13px] max-h-24 py-1"
+							style={{ minHeight: "24px" }}
+						/>
+						<button
+							type="button"
+							onClick={isProcessing ? cancel : handleSend}
+							disabled={!isProcessing && !input.trim()}
+							className={cn(
+								"w-7 h-7 rounded-lg flex items-center justify-center transition-colors shrink-0",
+								isProcessing
+									? "bg-destructive/10 text-destructive hover:bg-destructive/20"
+									: input.trim()
+										? "bg-primary text-primary-foreground hover:bg-primary/90"
+										: "bg-muted text-muted-foreground",
+							)}
+						>
+							{isProcessing ? (
+								<Square className="w-3.5 h-3.5 fill-current" />
+							) : (
+								<ArrowUp className="w-3.5 h-3.5" />
+							)}
+						</button>
+					</div>
+					<div className="flex items-center justify-between px-1 pt-1">
+						<span className="text-[10px] text-muted-foreground">
+							{isProcessing ? (
+								<span className="flex items-center gap-1">
+									<Loader2 className="w-3 h-3 animate-spin" />
+									Thinking…
+								</span>
+							) : (
+								"Enter to send · Esc to close"
+							)}
+						</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}

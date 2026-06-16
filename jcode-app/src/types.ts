@@ -930,3 +930,13 @@ export interface SkillInfo {
 	allowed_tools?: string[];
 	path: string;
 }
+
+export interface EnvFileEntry {
+	key: string;
+	value: string;
+}
+
+export interface EnvFileInfo {
+	file_name: string;
+	entries: EnvFileEntry[];
+}

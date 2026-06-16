@@ -1,6 +1,5 @@
 import { cn } from "@/lib/utils";
 import {
-	MessageSquare,
 	Globe,
 	Image,
 	CheckSquare,
@@ -24,10 +23,9 @@ interface NavBarProps {
 }
 
 const navItems = [
-	{ id: "chat", icon: MessageSquare, label: "Chat" },
 	{ id: "network", icon: Globe, label: "Network" },
 	{ id: "media", icon: Image, label: "Media" },
-	{ id: "tasks", icon: CheckSquare, label: "Tasks" },
+	{ id: "tasks", icon: CheckSquare, label: "Work" },
 	{ id: "monitor", icon: Eye, label: "Monitor" },
 	{ id: "team", icon: Users, label: "Swarm" },
 	{ id: "mcp", icon: Server, label: "MCP" },

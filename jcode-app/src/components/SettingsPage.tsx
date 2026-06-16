@@ -9,9 +9,10 @@ import type {
 	MemoryGraphSnapshot,
 	WorkspaceMemoryPreferences,
 } from "@/types";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { MemoryGraph } from "@/components/MemoryGraph";
-import { cn } from "@/lib/utils";
+import { ModelPickerModal } from "./SlashCommands";
 import {
 	Moon,
 	Sun,
@@ -33,8 +34,9 @@ import {
 	ChevronDown,
 	ChevronRight,
 	Bot,
+	FileKey,
 } from "lucide-react";
-import { ModelPickerModal } from "./SlashCommands";
+import { EnvVariablesCard } from "./EnvVariablesCard";
 
 interface SettingsPageProps {
 	theme: "light" | "dark";
@@ -109,10 +111,10 @@ export function SettingsPage({
 	const [workspaceMemPrefs, setWorkspaceMemPrefs] =
 		useState<WorkspaceMemoryPreferences | null>(null);
 	const [workspaceMemLoading, setWorkspaceMemLoading] = useState(false);
-
 	const [configPath, setConfigPath] = useState<string>("");
 	const [configData, setConfigData] = useState<Record<string, unknown> | null>(null);
 	const [configLoading, setConfigLoading] = useState(false);
+
 
 	useEffect(() => {
 		if (!onGetMemoryStats) return;
@@ -220,6 +222,7 @@ export function SettingsPage({
 		},
 		[loadConfig],
 	);
+
 
 	const copyToClipboard = useCallback(async (text: string, label: string) => {
 		try {
@@ -884,9 +887,14 @@ export function SettingsPage({
 					</div>
 				</SettingsCard>
 
-					{/* Version */}
-					<SettingsCard icon={<Cpu className="w-4 h-4" />} title="Version">
-						{versionInfo ? (
+				{/* Environment variables */}
+				<SettingsCard icon={<FileKey className="w-4 h-4" />} title="Environment variables">
+					<EnvVariablesCard />
+				</SettingsCard>
+
+				{/* Version */}
+				<SettingsCard icon={<Cpu className="w-4 h-4" />} title="Version">
+					{versionInfo ? (
 							<div className="space-y-1.5">
 								{(
 									[

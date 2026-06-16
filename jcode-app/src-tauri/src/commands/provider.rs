@@ -180,7 +180,9 @@ pub async fn get_external_auth_candidates() -> Result<serde_json::Value, TauriEr
     Ok(serde_json::json!({ "candidates": items, "total": items.len() }))
 }
 #[tauri::command]
-pub async fn approve_external_auth_candidate(index: usize) -> Result<serde_json::Value, TauriError> {
+pub async fn approve_external_auth_candidate(
+    index: usize,
+) -> Result<serde_json::Value, TauriError> {
     let candidates = jcode::external_auth::pending_external_auth_review_candidates()
         .map_err(|e| TauriError::Other(format!("Failed to check external auth sources: {e}")))?;
     if index >= candidates.len() {
@@ -290,7 +292,9 @@ pub async fn run_provider_doctor(
     }))
 }
 #[tauri::command]
-pub async fn test_provider_connection(provider_id: String) -> Result<serde_json::Value, TauriError> {
+pub async fn test_provider_connection(
+    provider_id: String,
+) -> Result<serde_json::Value, TauriError> {
     use jcode::auth::live_provider_probes::fetch_live_openai_compatible_models;
     use jcode::provider_catalog;
 
@@ -375,7 +379,9 @@ pub async fn get_models(state: State<'_, AppState>) -> Result<serde_json::Value,
     }))
 }
 #[tauri::command]
-pub async fn get_provider_profiles(state: State<'_, AppState>) -> Result<serde_json::Value, TauriError> {
+pub async fn get_provider_profiles(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, TauriError> {
     let (raw_routes, current_provider_name) = if let Ok(runtime) = active_runtime(&state).await {
         let provider = { runtime.agent.lock().await.provider_handle() };
         let _ = provider.prefetch_models().await;
@@ -413,6 +419,96 @@ pub async fn get_provider_profiles(state: State<'_, AppState>) -> Result<serde_j
         "providers": providers,
         "current": current_provider_name.as_deref().unwrap_or(""),
     }))
+}
+/// Returns the configured providers suitable for a quick launcher chat.
+/// Each entry includes a default model derived from the provider's routes.
+#[tauri::command]
+pub async fn list_chat_providers(
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, TauriError> {
+    let (raw_routes, current_provider_name, current_model) =
+        if let Ok(runtime) = active_runtime(&state).await {
+            let provider = { runtime.agent.lock().await.provider_handle() };
+            let _ = provider.prefetch_models().await;
+            let guard = runtime.agent.lock().await;
+            let raw_routes = guard
+                .model_routes()
+                .into_iter()
+                .filter(|r| jcode::provider::is_listable_model_name(&r.model))
+                .collect::<Vec<_>>();
+            let current_provider = guard.provider_handle().name().to_string();
+            let current_model = guard.provider_handle().model().to_string();
+            (raw_routes, Some(current_provider), Some(current_model))
+        } else {
+            let provider = jcode::provider::MultiProvider::new();
+            let _ = provider.prefetch_models().await;
+            let raw_routes = provider
+                .model_routes()
+                .into_iter()
+                .filter(|r| jcode::provider::is_listable_model_name(&r.model))
+                .collect::<Vec<_>>();
+            (raw_routes, None, None)
+        };
+
+    let entries = provider_entries_from_profiles(&raw_routes, current_provider_name.as_deref());
+
+    let mut out = Vec::new();
+    for entry in entries {
+        let configured = entry
+            .get("configured")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !configured {
+            continue;
+        }
+        let provider_key = entry
+            .get("provider_key")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let display_name = entry
+            .get("display_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or(&provider_key)
+            .to_string();
+
+        // Pick a default model: the current model if it belongs to this
+        // provider, otherwise the first available route for the provider.
+        let mut default_model: Option<String> = None;
+        if let Some(ref current) = current_model {
+            if raw_routes.iter().any(|r| {
+                r.model == *current
+                    && auth_provider_id_for_route(&r.provider, Some(&r.api_method)).as_deref()
+                        == Some(&provider_key)
+            }) {
+                default_model = Some(current.clone());
+            }
+        }
+        if default_model.is_none() {
+            default_model = raw_routes
+                .iter()
+                .find(|r| {
+                    r.available
+                        && auth_provider_id_for_route(&r.provider, Some(&r.api_method)).as_deref()
+                            == Some(&provider_key)
+                })
+                .map(|r| r.model.clone());
+        }
+
+        if let Some(model) = default_model {
+            out.push(serde_json::json!({
+                "provider_key": provider_key,
+                "display_name": display_name,
+                "model": model,
+                "is_current_provider": entry
+                    .get("is_current_provider")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+            }));
+        }
+    }
+
+    Ok(out)
 }
 #[tauri::command]
 pub async fn save_provider_api_key(
@@ -511,7 +607,12 @@ pub async fn save_provider_api_key(
                     &resolved.api_key_env,
                     trimmed_key,
                 )
-                .map_err(|e| TauriError::Other(format!("Failed to save {} API key: {e}", resolved.display_name)))?;
+                .map_err(|e| {
+                    TauriError::Other(format!(
+                        "Failed to save {} API key: {e}",
+                        resolved.display_name
+                    ))
+                })?;
             } else {
                 return Err(TauriError::Other(format!(
                     "Inline API key save is not supported for provider `{provider_id}`"
@@ -526,7 +627,9 @@ pub async fn save_provider_api_key(
     Ok(())
 }
 #[tauri::command]
-pub async fn start_provider_auth_flow(provider_id: String) -> Result<serde_json::Value, TauriError> {
+pub async fn start_provider_auth_flow(
+    provider_id: String,
+) -> Result<serde_json::Value, TauriError> {
     let provider = resolve_login_provider(&provider_id)
         .ok_or_else(|| format!("Unknown provider: {provider_id}"))?;
     let options = LoginOptions {
@@ -586,7 +689,11 @@ pub async fn complete_provider_auth_flow(
                 ))
             }
         }
-        other => return Err(TauriError::Other(format!("Unsupported auth completion kind `{other}`"))),
+        other => {
+            return Err(TauriError::Other(format!(
+                "Unsupported auth completion kind `{other}`"
+            )))
+        }
     };
 
     let provider = resolve_login_provider(&provider_id)

@@ -51,7 +51,10 @@ impl ServerClient {
         let socket_path = jcode::server::socket_path();
         let was_stale = jcode::server::reap_stale_socket_if_dead(&socket_path).await;
         if was_stale {
-            eprintln!("[server_client] reaped stale socket at {}", socket_path.display());
+            eprintln!(
+                "[server_client] reaped stale socket at {}",
+                socket_path.display()
+            );
         }
 
         let stream = jcode::server::connect_socket(&socket_path)
@@ -191,7 +194,9 @@ impl ServerClient {
     pub async fn send(&self, req: Request) -> Result<(), TauriError> {
         let json = serde_json::to_string(&req).map_err(|e| TauriError::from(e.to_string()))? + "\n";
         let mut guard = self.writer.lock().await;
-        let writer = guard.as_mut().ok_or_else(|| TauriError::Other("Not connected to server".to_string()))?;
+        let writer = guard
+            .as_mut()
+            .ok_or_else(|| TauriError::Other("Not connected to server".to_string()))?;
         writer
             .write_all(json.as_bytes())
             .await

@@ -15,15 +15,15 @@ use tokio::sync::Mutex;
 use crate::error::TauriError;
 use crate::launcher::AppIndex;
 use crate::server_client::ServerClient;
-pub mod session;
+pub mod config;
+pub mod env;
+pub mod launcher;
 pub mod memory;
 pub mod provider;
+pub mod session;
 pub mod swarm;
 pub mod system;
 pub mod tools;
-pub mod launcher;
-pub mod config;
-
 
 /// Shared cache of currently-running macOS app bundle IDs. Kept in a
 /// plain `std::sync::Mutex` because it's only ever written from a
@@ -273,6 +273,7 @@ pub fn setup_stdin_channel(
 /// Get the shared server client from app state, if initialized.
 pub fn get_server_client(state: &tauri::State<'_, AppState>) -> Result<Arc<ServerClient>, String> {
     let guard = state.server_client.lock().map_err(|e| e.to_string())?;
-    guard.clone().ok_or_else(|| "Server client not initialized".to_string())
+    guard
+        .clone()
+        .ok_or_else(|| "Server client not initialized".to_string())
 }
-

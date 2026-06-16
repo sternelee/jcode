@@ -3255,11 +3255,7 @@ async fn send_simple_request(request: crate::protocol::Request) -> Result<()> {
         match client.read_event().await? {
             crate::protocol::ServerEvent::Ack { id } if id == request_id => {}
             crate::protocol::ServerEvent::Done { id } if id == request_id => return Ok(()),
-            crate::protocol::ServerEvent::Error {
-                id,
-                message,
-                ..
-            } if id == request_id => {
+            crate::protocol::ServerEvent::Error { id, message, .. } if id == request_id => {
                 anyhow::bail!(message)
             }
             _ => {}

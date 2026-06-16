@@ -1,7 +1,6 @@
 import { useJcodeSession } from "@/hooks/useJcodeSession";
 import { TitleBar } from "@/components/TitleBar";
 import { LeftSidebar } from "@/components/LeftSidebar";
-import { ChatArea } from "@/components/ChatArea";
 import { CreateSessionDialog } from "@/components/CreateSessionDialog";
 import { StdinInputModal } from "@/components/StdinInputModal";
 import { SessionSwitcherDialog } from "@/components/SessionSwitcherDialog";
@@ -16,7 +15,6 @@ import { MediaPage } from "@/components/MediaPage";
 import { McpPage } from "@/components/McpPage";
 import { SkillsPage } from "@/components/SkillsPage";
 import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
-import { RightSidebar } from "@/components/RightSidebar";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { parseSlashCommand, profileIdFromDisplayName, profileIdFromRoute } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
@@ -57,8 +55,7 @@ export default function App() {
 		rewindChat,
 		gitStatus,
 		renameSession,
-		runDictation,
-		sendSoftInterrupt,
+		renameSession,
 		exportMemories,
 		importMemories,
 		searchMemories,
@@ -66,13 +63,11 @@ export default function App() {
 		getMemoryStats,
 		getMemoryGraph,
 		getUsageInfo,
-		sendA2uiAction,
 		getWorkspaceMemoryPreferences,
 		setWorkspaceMemoryPreference,
-		executeShellCommandAndDisplay,
-	} = useJcodeSession();
+} = useJcodeSession();
 
-	const [activeNavTab, setActiveNavTab] = useState("chat");
+	const [activeNavTab, setActiveNavTab] = useState("tasks");
 	const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
 	const [confirmRemove, setConfirmRemove] = useState<{
 		sessionId: string;
@@ -844,11 +839,8 @@ export default function App() {
 				},
 			),
 		);
-		unlisteners.push(
-			listen<{ kind?: string }>("launcher:open-chat", () => {
-				setActiveNavTab("chat");
-			}),
-		);
+		// Chat now lives in the launcher window; the workbench no longer
+		// exposes a Chat tab, so ignore legacy "open-chat" events.
 
 		unlisteners.push(
 			listen<{ kind?: string; query?: string }>(

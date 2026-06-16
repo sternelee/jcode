@@ -27,6 +27,7 @@ export function MemorySection({
 		"all",
 	);
 	const [clearTestStatus, setClearTestStatus] = useState<string | null>(null);
+	const [expandedId, setExpandedId] = useState<string | null>(null);
 
 	const loadMemoryData = useCallback(async () => {
 		try {
@@ -228,14 +229,27 @@ export function MemorySection({
 					<div className="text-[10px] uppercase tracking-wide text-muted-foreground">
 						Recent entries ({memoryEntries.length})
 					</div>
-					{memoryEntries.map((entry) => (
+				{memoryEntries.map((entry) => {
+					const isExpanded = expandedId === entry.id;
+					return (
 						<div
 							key={entry.id}
-							className="rounded border bg-secondary px-2 py-2 space-y-1 text-xs"
+							className={cn(
+								"rounded border bg-secondary px-2 py-2 space-y-1 text-xs",
+								"cursor-pointer hover:bg-secondary/80 transition-colors",
+								isExpanded && "bg-secondary/90",
+							)}
+							onClick={() =>
+								setExpandedId((current) =>
+									current === entry.id ? null : entry.id,
+								)
+							}
 						>
 							<div className="flex items-start justify-between gap-2">
 								<div className="font-medium break-words">
-									{compactText(entry.content, 80)}
+									{isExpanded
+										? entry.content
+										: compactText(entry.content, 80)}
 								</div>
 								<Badge variant="outline" className="text-[10px] shrink-0">
 									{entry.category}
@@ -259,8 +273,37 @@ export function MemorySection({
 								</span>
 								<span>{entry.access_count} reads</span>
 							</div>
+							{isExpanded && (
+								<div className="pt-1 border-t border-border/50 space-y-1 text-[11px]">
+									<div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+										<span className="text-muted-foreground">Confidence</span>
+										<span>{Math.round(entry.confidence * 100)}%</span>
+										<span className="text-muted-foreground">Strength</span>
+										<span>{Math.round(entry.strength * 100)}%</span>
+										<span className="text-muted-foreground">Active</span>
+										<span>{entry.active ? "Yes" : "No"}</span>
+										{entry.source && (
+											<>
+												<span className="text-muted-foreground">Source</span>
+												<span className="break-all">{entry.source}</span>
+											</>
+										)}
+										{entry.superseded_by && (
+											<>
+												<span className="text-muted-foreground">Superseded by</span>
+												<span className="break-all">{entry.superseded_by}</span>
+											</>
+										)}
+									</div>
+									<div className="flex justify-between text-[10px] text-muted-foreground">
+										<span>Created {new Date(entry.created_at).toLocaleString()}</span>
+										<span>Updated {new Date(entry.updated_at).toLocaleString()}</span>
+									</div>
+								</div>
+							)}
 						</div>
-					))}
+					);
+				})}
 				</div>
 			)}
 		</section>

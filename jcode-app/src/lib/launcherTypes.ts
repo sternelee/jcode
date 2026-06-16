@@ -17,13 +17,19 @@ export interface AppInfo {
 
 /** Built-in launcher commands that open a specific workbench page. */
 export type BuiltinPage =
-	| "chat"
 	| "providers"
 	| "team"
 	| "skills"
 	| "mcp"
 	| "settings";
 
+/** Configured AI provider exposed for quick launcher chat. */
+export interface LauncherChatProvider {
+	providerKey: string;
+	displayName: string;
+	model: string;
+	isCurrentProvider?: boolean;
+}
 /** Discriminated union of every selectable item in the launcher palette. */
 export type LauncherItem =
 	| {
@@ -40,7 +46,7 @@ export type LauncherItem =
 			session: SessionInfo;
 			recent?: boolean;
 	  }
-	| {
+  | {
 			kind: "builtin";
 			id: string;
 			page: BuiltinPage;
@@ -49,7 +55,13 @@ export type LauncherItem =
 			keyword: string;
 			iconName: string;
 			recent?: boolean;
-	  }
+    }
+  | {
+			kind: "chat-provider";
+			id: string;
+			provider: LauncherChatProvider;
+			recent?: boolean;
+    }
 	| {
 			kind: "agent";
 			id: string;

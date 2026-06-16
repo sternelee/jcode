@@ -103,6 +103,8 @@ function valueOf(item: LauncherItem): string {
 			return `builtin:${item.title} ${item.keyword} ${item.page}`;
 		case "agent":
 			return `agent:${item.query}`;
+		case "chat-provider":
+			return `provider:${item.provider.providerKey} ${item.provider.displayName}`;
 		case "a2ui":
 			return `a2ui:${item.pageId} ${item.title}`;
 	}
@@ -358,12 +360,40 @@ function Body({
 					<Badge variant="primary">Send</Badge>
 				</>
 			);
+		case "chat-provider":
+			return (
+				<>
+					{quickHint !== undefined && <QuickHint index={quickHint} />}
+					<div
+						className="size-8 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0"
+						aria-hidden="true"
+					>
+						<span className="text-[12px] font-semibold">
+							{item.provider.displayName.charAt(0).toUpperCase()}
+						</span>
+					</div>
+					<div className="min-w-0 flex-1">
+						<div className="text-[13px] font-medium truncate text-foreground flex items-center gap-2">
+							<span className="truncate">
+								<Highlight text={item.provider.displayName} query={highlight} />
+							</span>
+							{item.recent && (
+								<span className="text-[9px] uppercase tracking-wider rounded px-1 py-px bg-primary/10 text-primary font-semibold shrink-0">
+									Recent
+								</span>
+							)}
+						</div>
+						<div className="text-[11px] text-muted-foreground truncate">
+							{item.provider.model}
+						</div>
+					</div>
+					<Badge variant="primary">Chat</Badge>
+				</>
+			);
 		case "a2ui":
 			return (
 				<>
-					{quickHint !== undefined && (
-						<QuickHint index={quickHint} />
-					)}
+					{quickHint !== undefined && <QuickHint index={quickHint} />}
 					<div
 						className="size-8 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0"
 						aria-hidden="true"

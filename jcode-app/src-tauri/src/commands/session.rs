@@ -6,9 +6,9 @@ use jcode::provider::Provider;
 use jcode::session::Session;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fs;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
-use std::fs;
 #[tauri::command]
 pub async fn begin_session(
     app_handle: AppHandle,
@@ -157,18 +157,31 @@ pub async fn begin_swarm(
             session.model = Some(provider.model());
             session.provider_key = jcode::session::derive_session_provider_key(provider.name());
             session.rename_title(Some(role_name.clone()));
-            session
-                .save()
-                .map_err(|e| TauriError::Other(format!("Failed to persist member session '{}': {}", role_name, e)))?;
+            session.save().map_err(|e| {
+                TauriError::Other(format!(
+                    "Failed to persist member session '{}': {}",
+                    role_name, e
+                ))
+            })?;
 
             let mut agent = create_agent_with_session(provider, session, working_dir.as_deref())
                 .await
-                .map_err(|e| TauriError::Other(format!("Swarm creation failed for member '{}': {}.", role_name, e)))?;
+                .map_err(|e| {
+                    TauriError::Other(format!(
+                        "Swarm creation failed for member '{}': {}.",
+                        role_name, e
+                    ))
+                })?;
             agent.set_memory_enabled(resolved_memory_enabled);
 
             let runtime = register_runtime_and_emit_with_active(&app_handle, &state, agent, false)
                 .await
-                .map_err(|e| TauriError::Other(format!("Swarm creation failed for member '{}': {}.", role_name, e)))?;
+                .map_err(|e| {
+                    TauriError::Other(format!(
+                        "Swarm creation failed for member '{}': {}.",
+                        role_name, e
+                    ))
+                })?;
             Ok::<String, TauriError>(runtime.session_id.clone())
         }
         .await;
@@ -189,7 +202,10 @@ pub async fn begin_swarm(
                     let _ = state.runtimes.lock().await.remove(id);
                     state.swarm.lock().await.remove_session(id);
                 }
-                return Err(TauriError::Other(format!("{} All sessions rolled back.", e)));
+                return Err(TauriError::Other(format!(
+                    "{} All sessions rolled back.",
+                    e
+                )));
             }
         }
     }
@@ -228,9 +244,12 @@ pub async fn add_swarm_member(
     session.model = Some(provider.model());
     session.provider_key = jcode::session::derive_session_provider_key(provider.name());
     session.rename_title(Some(role_name.clone()));
-    session
-        .save()
-        .map_err(|e| TauriError::Other(format!("Failed to persist member session '{}': {}", role_name, e)))?;
+    session.save().map_err(|e| {
+        TauriError::Other(format!(
+            "Failed to persist member session '{}': {}",
+            role_name, e
+        ))
+    })?;
 
     let mut agent = create_agent_with_session(provider, session, working_dir.as_deref()).await?;
     let resolved_memory_enabled = memory_enabled.unwrap_or_else(|| {
@@ -274,9 +293,16 @@ pub async fn resume_session(
         };
         match client.request(req).await {
             Ok(jcode::protocol::ServerEvent::History { .. }) => {
-                eprintln!("[resume_session] server resume succeeded for {}", session_id);
+                eprintln!(
+                    "[resume_session] server resume succeeded for {}",
+                    session_id
+                );
                 client.set_active_session(Some(session_id.clone()));
-                state.server_managed_sessions.lock().await.insert(session_id.clone());
+                state
+                    .server_managed_sessions
+                    .lock()
+                    .await
+                    .insert(session_id.clone());
                 {
                     let mut active = state.active_session_id.lock().await;
                     *active = Some(session_id.clone());
@@ -293,7 +319,10 @@ pub async fn resume_session(
                         } else {
                             saved_model.clone()
                         };
-                        let _ = jcode::provider::set_model_with_auth_refresh(provider.as_ref(), &model_arg);
+                        let _ = jcode::provider::set_model_with_auth_refresh(
+                            provider.as_ref(),
+                            &model_arg,
+                        );
                     }
                     app_handle
                         .emit(
@@ -330,10 +359,16 @@ pub async fn resume_session(
                 return Ok(());
             }
             Ok(other) => {
-                eprintln!("[resume_session] unexpected server response for {}: {:?}", session_id, other);
+                eprintln!(
+                    "[resume_session] unexpected server response for {}: {:?}",
+                    session_id, other
+                );
             }
             Err(e) => {
-                eprintln!("[resume_session] server resume failed for {}: {}, falling back to local", session_id, e);
+                eprintln!(
+                    "[resume_session] server resume failed for {}: {}, falling back to local",
+                    session_id, e
+                );
             }
         }
     }
@@ -372,7 +407,12 @@ pub async fn send_message(
     );
 
     // Server-managed session: forward message to the jcode server.
-    if state.server_managed_sessions.lock().await.contains(&session_id) {
+    if state
+        .server_managed_sessions
+        .lock()
+        .await
+        .contains(&session_id)
+    {
         let client = get_server_client(&state)?;
         client.set_active_session(Some(session_id.clone()));
         let req = jcode::protocol::Request::Message {
@@ -656,7 +696,12 @@ pub async fn send_message(
 }
 #[tauri::command]
 pub async fn cancel(state: State<'_, AppState>, session_id: String) -> Result<(), TauriError> {
-    if state.server_managed_sessions.lock().await.contains(&session_id) {
+    if state
+        .server_managed_sessions
+        .lock()
+        .await
+        .contains(&session_id)
+    {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::Cancel { id: 1 };
         client.send(req).await?;
@@ -673,7 +718,12 @@ pub async fn send_soft_interrupt(
     content: String,
     urgent: bool,
 ) -> Result<(), TauriError> {
-    if state.server_managed_sessions.lock().await.contains(&session_id) {
+    if state
+        .server_managed_sessions
+        .lock()
+        .await
+        .contains(&session_id)
+    {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::SoftInterrupt {
             id: 1,
@@ -699,7 +749,12 @@ pub async fn set_model(
     model: String,
     profile_id: Option<String>,
 ) -> Result<(), TauriError> {
-    if state.server_managed_sessions.lock().await.contains(&session_id) {
+    if state
+        .server_managed_sessions
+        .lock()
+        .await
+        .contains(&session_id)
+    {
         let client = get_server_client(&state)?;
         let model_arg = if let Some(pid) = profile_id
             .as_deref()
@@ -769,18 +824,26 @@ pub async fn set_memory_enabled(
     Ok(())
 }
 fn delete_session_artifacts(session_id: &str) -> Result<(), TauriError> {
-    let session_path = jcode::session::session_path(session_id)
-        .map_err(|e| TauriError::Other(format!("Failed to resolve session path for {session_id}: {e}")))?;
+    let session_path = jcode::session::session_path(session_id).map_err(|e| {
+        TauriError::Other(format!(
+            "Failed to resolve session path for {session_id}: {e}"
+        ))
+    })?;
     if session_path.exists() {
-        fs::remove_file(&session_path)
-            .map_err(|e| TauriError::Other(format!("Failed to remove {}: {e}", session_path.display())))?;
+        fs::remove_file(&session_path).map_err(|e| {
+            TauriError::Other(format!("Failed to remove {}: {e}", session_path.display()))
+        })?;
     }
 
-    let journal_path = jcode::session::session_journal_path(session_id)
-        .map_err(|e| TauriError::Other(format!("Failed to resolve journal path for {session_id}: {e}")))?;
+    let journal_path = jcode::session::session_journal_path(session_id).map_err(|e| {
+        TauriError::Other(format!(
+            "Failed to resolve journal path for {session_id}: {e}"
+        ))
+    })?;
     if journal_path.exists() {
-        fs::remove_file(&journal_path)
-            .map_err(|e| TauriError::Other(format!("Failed to remove {}: {e}", journal_path.display())))?;
+        fs::remove_file(&journal_path).map_err(|e| {
+            TauriError::Other(format!("Failed to remove {}: {e}", journal_path.display()))
+        })?;
     }
 
     Ok(())
@@ -791,7 +854,12 @@ pub async fn rename_session(
     session_id: String,
     title: String,
 ) -> Result<(), TauriError> {
-    if state.server_managed_sessions.lock().await.contains(&session_id) {
+    if state
+        .server_managed_sessions
+        .lock()
+        .await
+        .contains(&session_id)
+    {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::RenameSession {
             id: 1,
@@ -800,16 +868,23 @@ pub async fn rename_session(
         client.send(req).await?;
         return Ok(());
     }
-    let session_path = jcode::session::session_path(&session_id)
-        .map_err(|e| TauriError::Other(format!("Failed to resolve session path for {session_id}: {e}")))?;
+    let session_path = jcode::session::session_path(&session_id).map_err(|e| {
+        TauriError::Other(format!(
+            "Failed to resolve session path for {session_id}: {e}"
+        ))
+    })?;
     if !session_path.exists() {
-        return Err(TauriError::Other(format!("Session file not found for {session_id}")));
+        return Err(TauriError::Other(format!(
+            "Session file not found for {session_id}"
+        )));
     }
 
-    let raw = fs::read_to_string(&session_path)
-        .map_err(|e| TauriError::Other(format!("failed to read {}: {e}", session_path.display())))?;
-    let mut value: Value = serde_json::from_str(&raw)
-        .map_err(|e| TauriError::Other(format!("failed to parse {}: {e}", session_path.display())))?;
+    let raw = fs::read_to_string(&session_path).map_err(|e| {
+        TauriError::Other(format!("failed to read {}: {e}", session_path.display()))
+    })?;
+    let mut value: Value = serde_json::from_str(&raw).map_err(|e| {
+        TauriError::Other(format!("failed to parse {}: {e}", session_path.display()))
+    })?;
 
     value["custom_title"] = serde_json::json!(title.trim());
 
@@ -822,10 +897,15 @@ pub async fn rename_session(
     Ok(())
 }
 #[tauri::command]
-pub async fn delete_session(state: State<'_, AppState>, session_id: String) -> Result<(), TauriError> {
+pub async fn delete_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<(), TauriError> {
     if let Some(runtime) = state.runtimes.lock().await.get(&session_id).cloned() {
         if *runtime.is_processing.lock().await {
-            return Err(TauriError::Other("Cannot delete a running session.".to_string()));
+            return Err(TauriError::Other(
+                "Cannot delete a running session.".to_string(),
+            ));
         }
     }
 
@@ -839,7 +919,11 @@ pub async fn delete_session(state: State<'_, AppState>, session_id: String) -> R
 
     state.runtimes.lock().await.remove(&session_id);
     state.swarm.lock().await.remove_session(&session_id);
-    state.server_managed_sessions.lock().await.remove(&session_id);
+    state
+        .server_managed_sessions
+        .lock()
+        .await
+        .remove(&session_id);
 
     delete_session_artifacts(&session_id)
 }
@@ -880,8 +964,8 @@ pub async fn delete_workspace_sessions(
     if !blocked_sessions.is_empty() {
         return Err(TauriError::Other(format!(
             "Cannot delete workspace while active/running sessions exist: {}",
-            blocked_sessions.join(", "))
-        ));
+            blocked_sessions.join(", ")
+        )));
     }
 
     let dir = jcode::storage::jcode_dir()
@@ -1007,7 +1091,9 @@ pub async fn get_workspace_thread_history(
     Ok(messages)
 }
 #[tauri::command]
-pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json::Value>, TauriError> {
+pub async fn list_sessions(
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, TauriError> {
     let dir = jcode::storage::jcode_dir()
         .map_err(|e| TauriError::from(e.to_string()))?
         .join("sessions");
@@ -1250,11 +1336,10 @@ pub async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<serde_json:
             for session_id in &all_sessions {
                 if existing_ids.contains(session_id) {
                     // Mark existing session as server-managed
-                    if let Some(summary) = sessions.iter_mut().find(|s| {
-                        s.get("id")
-                            .and_then(Value::as_str)
-                            == Some(session_id.as_str())
-                    }) {
+                    if let Some(summary) = sessions
+                        .iter_mut()
+                        .find(|s| s.get("id").and_then(Value::as_str) == Some(session_id.as_str()))
+                    {
                         summary["server_managed"] = serde_json::json!(true);
                         if let Some(ref name) = server_name {
                             summary["server_name"] = serde_json::json!(name);
@@ -1291,7 +1376,12 @@ pub async fn send_stdin_response(
 ) -> Result<(), TauriError> {
     let active = state.active_session_id.lock().await.clone();
     if let Some(ref session_id) = active {
-        if state.server_managed_sessions.lock().await.contains(session_id) {
+        if state
+            .server_managed_sessions
+            .lock()
+            .await
+            .contains(session_id)
+        {
             let client = get_server_client(&state)?;
             let req = jcode::protocol::Request::StdinResponse {
                 id: 1,
@@ -1307,7 +1397,10 @@ pub async fn send_stdin_response(
         let _ = tx.send(input);
         Ok(())
     } else {
-        Err(TauriError::Other(format!("No pending stdin request with id {}", request_id)))
+        Err(TauriError::Other(format!(
+            "No pending stdin request with id {}",
+            request_id
+        )))
     }
 }
 #[tauri::command]
@@ -1316,7 +1409,12 @@ pub async fn clear_chat(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<(), TauriError> {
-    if state.server_managed_sessions.lock().await.contains(&session_id) {
+    if state
+        .server_managed_sessions
+        .lock()
+        .await
+        .contains(&session_id)
+    {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::Clear { id: 1 };
         client.send(req).await?;
@@ -1371,9 +1469,17 @@ pub async fn rewind_chat(
     session_id: String,
     message_index: usize,
 ) -> Result<(), TauriError> {
-    if state.server_managed_sessions.lock().await.contains(&session_id) {
+    if state
+        .server_managed_sessions
+        .lock()
+        .await
+        .contains(&session_id)
+    {
         let client = get_server_client(&state)?;
-        let req = jcode::protocol::Request::Rewind { id: 1, message_index };
+        let req = jcode::protocol::Request::Rewind {
+            id: 1,
+            message_index,
+        };
         client.send(req).await?;
         return Ok(());
     }
@@ -1398,7 +1504,12 @@ pub async fn set_reasoning_effort(
     session_id: String,
     effort: String,
 ) -> Result<(), TauriError> {
-    if state.server_managed_sessions.lock().await.contains(&session_id) {
+    if state
+        .server_managed_sessions
+        .lock()
+        .await
+        .contains(&session_id)
+    {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::SetReasoningEffort {
             id: 1,
@@ -1433,7 +1544,12 @@ pub async fn compact_context(
     state: State<'_, AppState>,
     session_id: String,
 ) -> Result<(), TauriError> {
-    if state.server_managed_sessions.lock().await.contains(&session_id) {
+    if state
+        .server_managed_sessions
+        .lock()
+        .await
+        .contains(&session_id)
+    {
         let client = get_server_client(&state)?;
         let req = jcode::protocol::Request::Compact { id: 1 };
         client.send(req).await?;

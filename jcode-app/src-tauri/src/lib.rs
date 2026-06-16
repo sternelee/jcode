@@ -2,16 +2,16 @@
 extern crate objc;
 pub mod commands;
 pub mod error;
-mod server_client;
 mod launcher;
+mod server_client;
 
 use commands::AppState;
 use server_client::ServerClient;
 use std::sync::Arc;
-use tauri::{Emitter, Manager};
 use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 mod utils;
@@ -112,9 +112,7 @@ pub fn run() {
                     "Option+Space",
                     move |app_handle, _shortcut, event| {
                         if event.state() == ShortcutState::Pressed {
-                            if let Some(window) =
-                                app_handle.get_webview_window("launcher")
-                            {
+                            if let Some(window) = app_handle.get_webview_window("launcher") {
                                 let visible = window.is_visible().unwrap_or(false);
                                 let focused = window.is_focused().unwrap_or(false);
                                 if visible && focused {
@@ -122,8 +120,7 @@ pub fn run() {
                                 } else {
                                     let _ = window.show();
                                     let _ = window.set_focus();
-                                    let _ = app_handle
-                                        .emit("global-shortcut", "Option+Space");
+                                    let _ = app_handle.emit("global-shortcut", "Option+Space");
                                 }
                             }
                         }
@@ -181,20 +178,9 @@ pub fn run() {
                     true,
                     None::<&str>,
                 )?;
-                let show_workbench_item = MenuItem::with_id(
-                    app,
-                    "show_workbench",
-                    "Show Workbench",
-                    true,
-                    None::<&str>,
-                )?;
-                let quit_item = MenuItem::with_id(
-                    app,
-                    "quit",
-                    "Quit JFlow",
-                    true,
-                    None::<&str>,
-                )?;
+                let show_workbench_item =
+                    MenuItem::with_id(app, "show_workbench", "Show Workbench", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "quit", "Quit JFlow", true, None::<&str>)?;
                 let menu = MenuBuilder::new(app)
                     .item(&show_launcher_item)
                     .item(&show_workbench_item)
@@ -215,20 +201,15 @@ pub fn run() {
                     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                         .join("icons")
                         .join("32x32.png");
-                    let owned_default = || {
-                        app.default_window_icon()
-                            .cloned()
-                            .map(|img| img.to_owned())
-                    };
+                    let owned_default =
+                        || app.default_window_icon().cloned().map(|img| img.to_owned());
                     if path.exists() {
                         // `from_path` returns `Image<'_>` borrowing from
                         // `path`; convert to `'static` so the tray can
                         // outlive this scope.
                         Image::from_path(&path)
                             .map(|img| img.to_owned())
-                            .unwrap_or_else(|_| {
-                                owned_default().unwrap_or_else(placeholder_icon)
-                            })
+                            .unwrap_or_else(|_| owned_default().unwrap_or_else(placeholder_icon))
                     } else {
                         owned_default().unwrap_or_else(placeholder_icon)
                     }
@@ -307,6 +288,7 @@ pub fn run() {
             commands::session::send_stdin_response,
             commands::provider::get_models,
             commands::provider::get_provider_profiles,
+            commands::provider::list_chat_providers,
             commands::provider::save_provider_api_key,
             commands::provider::start_provider_auth_flow,
             commands::provider::complete_provider_auth_flow,
@@ -394,7 +376,9 @@ pub fn run() {
             commands::launcher::expand_to_workbench,
             commands::config::get_config_path,
             commands::config::get_config,
-            commands::config::set_config_value
+            commands::config::set_config_value,
+            commands::env::list_env_files,
+            commands::env::set_env_value,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

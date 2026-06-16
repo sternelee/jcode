@@ -152,7 +152,7 @@ fn copy_image_xclip(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-    #[cfg(not(target_os = "android"))]
+#[cfg(not(target_os = "android"))]
 fn copy_image_arboard(png: &[u8]) -> bool {
     let Ok(decoded) = image::load_from_memory(png) else {
         return false;

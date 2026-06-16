@@ -42,7 +42,8 @@ pub fn load_page(page_id: &str) -> Result<SavedA2uiPage> {
     if !path.exists() {
         anyhow::bail!("a2ui page not found: {}", page_id);
     }
-    crate::storage::read_json(&path).with_context(|| format!("failed to load a2ui page {}", page_id))
+    crate::storage::read_json(&path)
+        .with_context(|| format!("failed to load a2ui page {}", page_id))
 }
 
 pub fn list_pages() -> Result<Vec<SavedA2uiPage>> {
@@ -76,6 +77,5 @@ pub fn delete_page(page_id: &str) -> Result<()> {
     if !path.exists() {
         anyhow::bail!("a2ui page not found: {}", page_id);
     }
-    std::fs::remove_file(&path)
-        .with_context(|| format!("failed to delete a2ui page {}", page_id))
+    std::fs::remove_file(&path).with_context(|| format!("failed to delete a2ui page {}", page_id))
 }

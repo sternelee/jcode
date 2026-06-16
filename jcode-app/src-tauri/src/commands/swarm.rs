@@ -5,7 +5,10 @@ use tauri::State;
 #[tauri::command]
 pub async fn server_connect(state: State<'_, AppState>) -> Result<bool, TauriError> {
     let client = {
-        let guard = state.server_client.lock().map_err(|e| TauriError::from(e.to_string()))?;
+        let guard = state
+            .server_client
+            .lock()
+            .map_err(|e| TauriError::from(e.to_string()))?;
         guard.clone()
     };
     if let Some(client) = client {
@@ -17,7 +20,10 @@ pub async fn server_connect(state: State<'_, AppState>) -> Result<bool, TauriErr
 #[tauri::command]
 pub async fn server_is_connected(state: State<'_, AppState>) -> Result<bool, TauriError> {
     let client = {
-        let guard = state.server_client.lock().map_err(|e| TauriError::from(e.to_string()))?;
+        let guard = state
+            .server_client
+            .lock()
+            .map_err(|e| TauriError::from(e.to_string()))?;
         guard.clone()
     };
     if let Some(client) = client {
@@ -52,8 +58,12 @@ pub async fn comm_spawn(
         jcode::protocol::ServerEvent::CommSpawnResponse { new_session_id, .. } => {
             Ok(serde_json::json!({ "new_session_id": new_session_id }))
         }
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
-        _ => Err(TauriError::Other("Unexpected response from server".to_string())),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
+        _ => Err(TauriError::Other(
+            "Unexpected response from server".to_string(),
+        )),
     }
 }
 #[tauri::command]
@@ -73,7 +83,9 @@ pub async fn comm_stop(
     let response = client.request(req).await?;
     match response {
         jcode::protocol::ServerEvent::Ack { .. } => Ok(()),
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
         _ => Ok(()),
     }
 }
@@ -83,15 +95,16 @@ pub async fn comm_list(
     session_id: String,
 ) -> Result<Vec<jcode::protocol::AgentInfo>, TauriError> {
     let client = get_server_client(&state)?;
-    let req = jcode::protocol::Request::CommList {
-        id: 1,
-        session_id,
-    };
+    let req = jcode::protocol::Request::CommList { id: 1, session_id };
     let response = client.request(req).await?;
     match response {
         jcode::protocol::ServerEvent::CommMembers { members, .. } => Ok(members),
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
-        _ => Err(TauriError::Other("Unexpected response from server".to_string())),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
+        _ => Err(TauriError::Other(
+            "Unexpected response from server".to_string(),
+        )),
     }
 }
 #[tauri::command]
@@ -111,8 +124,12 @@ pub async fn comm_status(
         jcode::protocol::ServerEvent::CommStatusResponse { snapshot, .. } => {
             Ok(serde_json::to_value(snapshot).map_err(|e| TauriError::from(e.to_string()))?)
         }
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
-        _ => Err(TauriError::Other("Unexpected response from server".to_string())),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
+        _ => Err(TauriError::Other(
+            "Unexpected response from server".to_string(),
+        )),
     }
 }
 #[tauri::command]
@@ -141,8 +158,12 @@ pub async fn comm_assign_task(
             "task_id": task_id,
             "target_session": target_session,
         })),
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
-        _ => Err(TauriError::Other("Unexpected response from server".to_string())),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
+        _ => Err(TauriError::Other(
+            "Unexpected response from server".to_string(),
+        )),
     }
 }
 #[tauri::command]
@@ -160,7 +181,9 @@ pub async fn comm_approve_plan(
     let response = client.request(req).await?;
     match response {
         jcode::protocol::ServerEvent::Ack { .. } => Ok(()),
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
         _ => Ok(()),
     }
 }
@@ -181,7 +204,9 @@ pub async fn comm_reject_plan(
     let response = client.request(req).await?;
     match response {
         jcode::protocol::ServerEvent::Ack { .. } => Ok(()),
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
         _ => Ok(()),
     }
 }
@@ -214,7 +239,9 @@ pub async fn comm_message(
     let response = client.request(req).await?;
     match response {
         jcode::protocol::ServerEvent::Ack { .. } => Ok(()),
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
         _ => Ok(()),
     }
 }
@@ -224,17 +251,18 @@ pub async fn comm_plan_status(
     session_id: String,
 ) -> Result<serde_json::Value, TauriError> {
     let client = get_server_client(&state)?;
-    let req = jcode::protocol::Request::CommPlanStatus {
-        id: 1,
-        session_id,
-    };
+    let req = jcode::protocol::Request::CommPlanStatus { id: 1, session_id };
     let response = client.request(req).await?;
     match response {
         jcode::protocol::ServerEvent::CommPlanStatusResponse { summary, .. } => {
             Ok(serde_json::to_value(summary).map_err(|e| TauriError::from(e.to_string()))?)
         }
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
-        _ => Err(TauriError::Other("Unexpected response from server".to_string())),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
+        _ => Err(TauriError::Other(
+            "Unexpected response from server".to_string(),
+        )),
     }
 }
 #[tauri::command]
@@ -243,15 +271,16 @@ pub async fn comm_list_channels(
     session_id: String,
 ) -> Result<Vec<jcode::protocol::SwarmChannelInfo>, TauriError> {
     let client = get_server_client(&state)?;
-    let req = jcode::protocol::Request::CommListChannels {
-        id: 1,
-        session_id,
-    };
+    let req = jcode::protocol::Request::CommListChannels { id: 1, session_id };
     let response = client.request(req).await?;
     match response {
         jcode::protocol::ServerEvent::CommChannels { channels, .. } => Ok(channels),
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
-        _ => Err(TauriError::Other("Unexpected response from server".to_string())),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
+        _ => Err(TauriError::Other(
+            "Unexpected response from server".to_string(),
+        )),
     }
 }
 #[tauri::command]
@@ -271,7 +300,11 @@ pub async fn comm_read_context(
         jcode::protocol::ServerEvent::CommContext { entries, .. } => {
             Ok(serde_json::to_value(entries).map_err(|e| TauriError::from(e.to_string()))?)
         }
-        jcode::protocol::ServerEvent::Error { message, .. } => Err(TauriError::ServerClient(message)),
-        _ => Err(TauriError::Other("Unexpected response from server".to_string())),
+        jcode::protocol::ServerEvent::Error { message, .. } => {
+            Err(TauriError::ServerClient(message))
+        }
+        _ => Err(TauriError::Other(
+            "Unexpected response from server".to_string(),
+        )),
     }
 }

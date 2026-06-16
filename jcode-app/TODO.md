@@ -81,21 +81,20 @@
 - [x] `pair_revoke` — 撤销配对设备
 
 ### Memory 数据管理
-- [ ] 记忆详情查看（点击记忆条目查看完整内容）
+- [x] 记忆详情查看（点击记忆条目查看完整内容）
 - [x] `memory_clear_test` — 清除测试记忆存储（Activity Panel → Memory → Clear test）
 - [x] `usage` — 显示提供商使用限制
 
 - [x] 配置查看/编辑 UI — SettingsPage 增加了 Config 卡片（配置路径、feature 开关）
 
-- [ ] 环境变量管理
+- [x] 环境变量管理
 
 ## 🟢 低优先级（高级/特殊场景）
 
-### Ambient 模式
-- [ ] `ambient_status` — 查看环境模式状态
-- [ ] `ambient_log` — 查看近期活动日志
-- [ ] `ambient_trigger` — 手动触发环境周期
-- [ ] `ambient_stop` — 停止环境模式
+- [x] `ambient_status` — 查看环境模式状态
+- [x] `ambient_log` — 查看近期活动日志
+- [x] `ambient_trigger` — 手动触发环境周期
+- [x] `ambient_stop` — 停止环境模式
 
 ### 语音输入
 - [ ] `transcript` — 将外部转录文本注入活动会话

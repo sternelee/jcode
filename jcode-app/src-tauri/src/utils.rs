@@ -1120,8 +1120,8 @@ pub fn latest_swarm_plan_summary(value: &Value) -> Option<serde_json::Value> {
 }
 
 pub fn load_session_sidebar_summary(path: &Path) -> Result<Option<serde_json::Value>, TauriError> {
-    let raw =
-        fs::read_to_string(path).map_err(|e| TauriError::Other(format!("failed to read {}: {e}", path.display())))?;
+    let raw = fs::read_to_string(path)
+        .map_err(|e| TauriError::Other(format!("failed to read {}: {e}", path.display())))?;
     let value: Value = serde_json::from_str(&raw)
         .map_err(|e| TauriError::Other(format!("failed to parse {}: {e}", path.display())))?;
 
@@ -1397,7 +1397,9 @@ pub fn live_phase_label(
     "idle"
 }
 
-pub async fn active_runtime(state: &State<'_, AppState>) -> Result<Arc<SessionRuntime>, TauriError> {
+pub async fn active_runtime(
+    state: &State<'_, AppState>,
+) -> Result<Arc<SessionRuntime>, TauriError> {
     let active_session_id = state
         .active_session_id
         .lock()
@@ -1431,8 +1433,11 @@ pub async fn load_session_runtime_silently(
     session_id: &str,
 ) -> Result<Arc<SessionRuntime>, TauriError> {
     eprintln!("[load_silently] loading session={} from disk", session_id);
-    let session = Session::load(session_id)
-        .map_err(|e| TauriError::Other(format!("Session not found and cannot be auto-loaded: {session_id}: {e}")))?;
+    let session = Session::load(session_id).map_err(|e| {
+        TauriError::Other(format!(
+            "Session not found and cannot be auto-loaded: {session_id}: {e}"
+        ))
+    })?;
     let provider = state.get_provider().await?.fork();
     if let Some(ref saved_model) = session.model {
         let model_arg = if let Some(ref pk) = session.provider_key {
@@ -1547,7 +1552,12 @@ pub async fn emit_runtime_snapshot(
     } else {
         let session = Session::load(&session_id)
             .or_else(|_| Session::load_startup_stub(&session_id))
-            .map_err(|e| TauriError::Other(format!("Failed to snapshot busy session {}: {e}", &session_id)))?;
+            .map_err(|e| {
+                TauriError::Other(format!(
+                    "Failed to snapshot busy session {}: {e}",
+                    &session_id
+                ))
+            })?;
         (
             serde_json::to_value(desktop_history_messages(&session))
                 .unwrap_or(serde_json::json!([])),

@@ -170,10 +170,9 @@ impl Tool for SidePanelTool {
                     .page_id
                     .as_deref()
                     .ok_or_else(|| anyhow::anyhow!("page_id is required for write_a2ui"))?;
-                let messages = params
-                    .surface_messages
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("surface_messages is required for write_a2ui"))?;
+                let messages = params.surface_messages.as_ref().ok_or_else(|| {
+                    anyhow::anyhow!("surface_messages is required for write_a2ui")
+                })?;
                 let content = serde_json::to_string(messages)?;
                 crate::side_panel::write_a2ui_page(
                     &ctx.session_id,
@@ -198,14 +197,13 @@ impl Tool for SidePanelTool {
                 if page.format != jcode_side_panel_types::SidePanelPageFormat::A2ui {
                     anyhow::bail!("page {} is not an A2UI page", page_id);
                 }
-                let messages: Vec<Value> = serde_json::from_str(&page.content)
-                    .with_context(|| format!("failed to parse A2UI content for page {}", page_id))?;
+                let messages: Vec<Value> =
+                    serde_json::from_str(&page.content).with_context(|| {
+                        format!("failed to parse A2UI content for page {}", page_id)
+                    })?;
                 crate::a2ui_pages::save_page(&crate::a2ui_pages::SavedA2uiPage {
                     id: page_id.to_string(),
-                    title: params
-                        .title
-                        .clone()
-                        .unwrap_or_else(|| page.title.clone()),
+                    title: params.title.clone().unwrap_or_else(|| page.title.clone()),
                     description: params.description.clone(),
                     icon: None,
                     surface_messages: messages,

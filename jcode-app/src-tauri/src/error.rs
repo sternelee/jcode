@@ -52,7 +52,6 @@ impl From<String> for TauriError {
     }
 }
 
-
 impl From<&str> for TauriError {
     fn from(value: &str) -> Self {
         Self::Other(value.to_string())

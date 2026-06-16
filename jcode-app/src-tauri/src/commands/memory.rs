@@ -17,7 +17,10 @@ pub async fn set_workspace_memory_preference(
         .map_err(|e| TauriError::Other(format!("Failed to save workspace memory preference: {e}")))
 }
 #[tauri::command]
-pub fn get_memory_list(scope: String, tag: Option<String>) -> Result<serde_json::Value, TauriError> {
+pub fn get_memory_list(
+    scope: String,
+    tag: Option<String>,
+) -> Result<serde_json::Value, TauriError> {
     use jcode::memory::MemoryManager;
     let manager = MemoryManager::new();
     let mut all_memories: Vec<serde_json::Value> = Vec::new();
@@ -218,10 +221,10 @@ pub fn import_memories(path: String) -> Result<serde_json::Value, TauriError> {
     use jcode::memory::MemoryManager;
     let manager = MemoryManager::new();
 
-    let content =
-        std::fs::read_to_string(&path).map_err(|e| TauriError::Other(format!("Failed to read import file: {e}")))?;
-    let value: serde_json::Value =
-        serde_json::from_str(&content).map_err(|e| TauriError::Other(format!("Failed to parse import file: {e}")))?;
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| TauriError::Other(format!("Failed to read import file: {e}")))?;
+    let value: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| TauriError::Other(format!("Failed to parse import file: {e}")))?;
 
     let mut project_count = 0usize;
     let mut global_count = 0usize;

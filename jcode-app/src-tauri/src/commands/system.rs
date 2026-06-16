@@ -1,7 +1,7 @@
+use crate::commands::session::send_message;
 use crate::commands::*;
 use crate::error::TauriError;
 use tauri::{AppHandle, Emitter, State};
-use crate::commands::session::send_message;
 #[tauri::command]
 pub async fn list_background_tasks() -> Result<Vec<serde_json::Value>, TauriError> {
     use jcode::background::global;
@@ -52,8 +52,8 @@ pub fn revoke_device(device_id: String) -> Result<(), TauriError> {
 #[tauri::command]
 pub fn get_ambient_status() -> Result<serde_json::Value, TauriError> {
     use jcode::ambient::{AmbientManager, AmbientStatus};
-    let manager =
-        AmbientManager::new().map_err(|e| TauriError::Other(format!("Failed to load ambient manager: {e}")))?;
+    let manager = AmbientManager::new()
+        .map_err(|e| TauriError::Other(format!("Failed to load ambient manager: {e}")))?;
     let state = manager.state();
     let queue = manager.queue();
 
@@ -263,7 +263,9 @@ pub async fn get_browser_status() -> Result<serde_json::Value, TauriError> {
             "missing_actions": status.missing_actions,
             "ready": status.ready,
         })),
-        Err(e) => Err(TauriError::Other(format!("Browser status check failed: {e}"))),
+        Err(e) => Err(TauriError::Other(format!(
+            "Browser status check failed: {e}"
+        ))),
     }
 }
 #[tauri::command]
@@ -274,7 +276,10 @@ pub async fn setup_browser() -> Result<String, TauriError> {
     }
 }
 #[tauri::command]
-pub async fn save_session_state(session_id: String, working_dir: Option<String>) -> Result<(), TauriError> {
+pub async fn save_session_state(
+    session_id: String,
+    working_dir: Option<String>,
+) -> Result<(), TauriError> {
     let state = serde_json::json!({
         "session_id": session_id,
         "working_dir": working_dir,
@@ -298,7 +303,8 @@ pub async fn get_last_session_state() -> Result<Option<serde_json::Value>, Tauri
         return Ok(None);
     }
     let text = std::fs::read_to_string(&path).map_err(|e| TauriError::from(e.to_string()))?;
-    let state: serde_json::Value = serde_json::from_str(&text).map_err(|e| TauriError::from(e.to_string()))?;
+    let state: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| TauriError::from(e.to_string()))?;
     Ok(Some(state))
 }
 #[tauri::command]
@@ -453,7 +459,12 @@ pub async fn git_log(
     let n = count.unwrap_or(20).to_string();
 
     let output = tokio::process::Command::new("git")
-        .args(["log", &format!("--format=%H%x00%h%x00%an%x00%aI%x00%s"), "-n", &n])
+        .args([
+            "log",
+            &format!("--format=%H%x00%h%x00%an%x00%aI%x00%s"),
+            "-n",
+            &n,
+        ])
         .current_dir(dir)
         .output()
         .await

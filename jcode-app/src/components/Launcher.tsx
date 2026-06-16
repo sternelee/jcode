@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Command as CommandPrimitive } from "cmdk";
 import {
 	Command,
@@ -7,6 +7,7 @@ import {
 	CommandList,
 } from "@/components/ui/command";
 import { LauncherCommandItem } from "@/components/LauncherCommandItem";
+import { LauncherChat } from "@/components/LauncherChat";
 import { useLauncher, hideCurrentLauncher } from "@/hooks/useLauncher";
 import { useTheme } from "@/hooks/useTheme";
 import { listen } from "@tauri-apps/api/event";
@@ -21,12 +22,12 @@ import {
 	X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { AppInfo, LauncherItem } from "@/lib/launcherTypes";
+import type { AppInfo, LauncherChatProvider, LauncherItem } from "@/lib/launcherTypes";
 
 const AGENT_HINT = "Type 'ask ' followed by a question to ask JFlow.";
 const AGENT_PREFIX = "ask ";
 
-type SectionLabel = "running" | "applications" | "recent" | "sessions" | "builtin" | "a2ui";
+type SectionLabel = "running" | "applications" | "recent" | "providers" | "sessions" | "builtin" | "a2ui";
 
 type Section = {
 	label: SectionLabel;
@@ -42,6 +43,7 @@ function buildSections(items: LauncherItem[]): Section[] {
 	const sessions: LauncherItem[] = [];
 	const builtin: LauncherItem[] = [];
 	const a2ui: LauncherItem[] = [];
+	const providers: LauncherItem[] = [];
 
 	for (const item of items) {
 		if (item.kind === "agent") continue;
@@ -55,7 +57,8 @@ function buildSections(items: LauncherItem[]): Section[] {
 			(item.kind === "application" ||
 				item.kind === "session" ||
 				item.kind === "builtin" ||
-				item.kind === "a2ui")
+				item.kind === "a2ui" ||
+				item.kind === "chat-provider")
 		) {
 			recent.push(item);
 			continue;
@@ -73,12 +76,16 @@ function buildSections(items: LauncherItem[]): Section[] {
 			case "a2ui":
 				a2ui.push(item);
 				break;
+			case "chat-provider":
+				providers.push(item);
+				break;
 		}
 	}
 
 	const out: Section[] = [];
 	if (running.length) out.push({ label: "running", heading: "Running", items: running });
 	if (recent.length) out.push({ label: "recent", heading: "Recent", items: recent });
+	if (providers.length) out.push({ label: "providers", heading: "AI Providers", items: providers });
 	if (builtin.length) out.push({ label: "builtin", heading: "Pages", items: builtin });
 	if (a2ui.length) out.push({ label: "a2ui", heading: "A2UI Pages", items: a2ui });
 	if (sessions.length) out.push({ label: "sessions", heading: "Sessions", items: sessions });
@@ -103,7 +110,13 @@ export function Launcher() {
 		setError,
 		applications,
 		refreshSessions,
+		chatProviders,
+		recordRecent,
+		recordUsage,
 	} = useLauncher();
+	const [mode, setMode] = useState<"palette" | "chat">("palette");
+	const [chatProvider, setChatProvider] = useState<LauncherChatProvider | null>(null);
+	const [chatInitialQuery, setChatInitialQuery] = useState<string>("");
 	const [inputValue, setInputValue] = useState("");
 
 	// Listen for the global shortcut so the launcher resets state every time
@@ -112,6 +125,9 @@ export function Launcher() {
 	useEffect(() => {
 		let unlisten: (() => void) | null = null;
 		void listen<string>("global-shortcut", () => {
+			setMode("palette");
+			setChatProvider(null);
+			setChatInitialQuery("");
 			setQuery("");
 			setInputValue("");
 			setError(null);
@@ -224,10 +240,37 @@ export function Launcher() {
 		applications.apps.length === 0 &&
 		!error;
 
+	const startChat = useCallback(
+		(provider: LauncherChatProvider, initialQuery = "") => {
+			setChatProvider(provider);
+			setChatInitialQuery(initialQuery);
+			setMode("chat");
+			recordRecent({
+				kind: "chat-provider",
+				id: `provider:${provider.providerKey}`,
+				providerKey: provider.providerKey,
+				displayName: provider.displayName,
+			});
+			recordUsage(`provider:${provider.providerKey}`);
+		},
+		[recordRecent, recordUsage],
+	);
+
 	const handleSelect = (item: LauncherItem) => {
+		if (item.kind === "chat-provider") {
+			startChat(item.provider);
+			return;
+		}
+		if (item.kind === "agent") {
+			const text = item.query.trim();
+			const provider = chatProviders[0];
+			if (provider) {
+				startChat(provider, text);
+			}
+			return;
+		}
 		void selectItem(item);
 	};
-
 	const handleStopApp = (app: AppInfo) => {
 		if (!app.bundleId) {
 			setError(`${app.name} has no bundle id; cannot quit it via osascript.`);
@@ -322,6 +365,21 @@ export function Launcher() {
 		);
 	}
 
+	// Minimal AI chat mode for the launcher window.
+	if (mode === "chat" && chatProvider) {
+		return (
+			<LauncherChat
+				provider={chatProvider}
+				initialQuery={chatInitialQuery}
+				onClose={() => {
+					setMode("palette");
+					setChatProvider(null);
+					setChatInitialQuery("");
+				}}
+			/>
+		);
+	}
+
 	return (
 		<div
 			className="h-screen w-screen flex flex-col text-foreground bg-background p-2"
@@ -339,6 +397,26 @@ export function Launcher() {
 					mode="default"
 					onClear={handleClearQuery}
 				/>
+				{chatProviders.length > 0 && (
+					<div
+						className="px-3 pt-2 flex gap-1.5 overflow-x-auto"
+						style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+					>
+						{chatProviders.map((provider) => (
+							<button
+								key={provider.providerKey}
+								type="button"
+								onClick={() => startChat(provider)}
+								className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 hover:bg-muted/80 px-2.5 py-1 text-[11px] text-foreground transition-colors"
+							>
+								<span className="w-3.5 h-3.5 rounded-full bg-primary/10 flex items-center justify-center text-[8px] font-semibold text-primary">
+									{provider.displayName.charAt(0).toUpperCase()}
+								</span>
+								{provider.displayName}
+							</button>
+						))}
+					</div>
+				)}
 				<CommandList ref={listRef} className="max-h-[320px] p-2">
 					{!hasResults && (
 						<CommandEmpty>
@@ -488,8 +566,10 @@ function getValue(item: LauncherItem): string {
 			return `builtin:${item.title} ${item.keyword} ${item.page}`;
 		case "agent":
 			return `agent:${item.query}`;
+		case "chat-provider":
+			return `provider:${item.provider.providerKey} ${item.provider.displayName}`;
 		case "a2ui":
-			return `a2ui:${item.pageId} ${item.title}`;
+			return `a2ui:${item.title} ${item.pageId}`;
 	}
 }
 

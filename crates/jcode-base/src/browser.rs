@@ -792,26 +792,28 @@ async fn install_extension() -> Result<String> {
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     {
         // Try to open Firefox with the XPI to trigger install prompt
-    let xpi_url = url::Url::from_file_path(&xpi)
-        .map_err(|_| anyhow::anyhow!("Could not convert XPI path to file URL: {}", xpi.display()))?
-        .to_string();
+        let xpi_url = url::Url::from_file_path(&xpi)
+            .map_err(|_| {
+                anyhow::anyhow!("Could not convert XPI path to file URL: {}", xpi.display())
+            })?
+            .to_string();
 
-    #[cfg(target_os = "linux")]
-    {
-        let _ = tokio::process::Command::new("xdg-open")
-            .arg(&xpi_url)
-            .spawn();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = tokio::process::Command::new("open").arg(&xpi_url).spawn();
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = tokio::process::Command::new("cmd")
-            .args(["/C", "start", "", &xpi_url])
-            .spawn();
-    }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = tokio::process::Command::new("xdg-open")
+                .arg(&xpi_url)
+                .spawn();
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = tokio::process::Command::new("open").arg(&xpi_url).spawn();
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = tokio::process::Command::new("cmd")
+                .args(["/C", "start", "", &xpi_url])
+                .spawn();
+        }
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
