@@ -91,7 +91,6 @@ export default function App() {
 	const [lastReadAt, setLastReadAt] = useState<Record<string, number>>({});
 	const [helpOpen, setHelpOpen] = useState(false);
 	const [leftCollapsed, setLeftCollapsed] = useState(false);
-	const [sidebarView, setSidebarView] = useState<"work" | "chat">("work");
 	const [onboardingComplete, setOnboardingComplete] = useState(() => {
 		// Check if user has completed onboarding before
 		return localStorage.getItem("jcode-onboarding-complete") === "true";
@@ -746,8 +745,6 @@ export default function App() {
 					sessions={state.sessions}
 					activeSessionId={state.sessionId}
 					activeWorkspaceId={state.activeWorkspaceId}
-					viewMode={sidebarView}
-					onChangeViewMode={setSidebarView}
 					collapsed={leftCollapsed}
 					onToggleCollapse={() => setLeftCollapsed((c) => !c)}
 					onSelectSession={(s) => {
@@ -829,7 +826,6 @@ export default function App() {
 				workspaces={workspaces}
 				currentWorkingDir={state.workingDir}
 				availableModels={state.availableModels}
-				disableSwarm={sidebarView === "chat"}
 				onCreateNormal={handleCreateNormal}
 				onCreateSwarm={handleCreateSwarm}
 				onAddSwarmMember={handleAddSwarmMember}
@@ -932,8 +928,8 @@ function PlaceholderPage({
 				<h1 className="text-xl font-semibold text-foreground">{title}</h1>
 				<p className="text-sm text-muted-foreground">{description}</p>
 				<p className="text-xs text-muted-foreground/60">
-					This feature is coming soon. Switch to the Chat tab to continue
-					working with AI agents.
+					This feature is coming soon. Use the launcher (⌘K) to start a
+					conversation with an AI agent.
 				</p>
 			</div>
 		</div>
