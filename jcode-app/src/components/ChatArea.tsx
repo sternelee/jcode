@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import {
   SlashCommandPalette,
+  SkillAutocomplete,
   AgentSettingsPopover,
   ModelPickerModal,
   type SlashCommand,
@@ -164,6 +165,7 @@ export function ChatArea({
   const [fileMatches, setFileMatches] = useState<string[]>([]);
   const [slashQuery, setSlashQuery] = useState<string | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
+  const [skillIndex, setSkillIndex] = useState(0);
   const [convening, setConvening] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
@@ -505,23 +507,28 @@ export function ChatArea({
     setText(val);
     detectMention(val, cursor);
     const beforeCursor = val.slice(0, cursor);
-    const slashMatch = beforeCursor.match(/(?:^|\s)(\/\w*)$/);
+    const slashMatch = beforeCursor.match(/(?:^|\s)(\/[\w:]*)$/);
     if (slashMatch) {
       setSlashQuery(slashMatch[1] ?? null);
       setSlashIndex(0);
+      setSkillIndex(0);
     } else setSlashQuery(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const isSkillMode = slashQuery !== null && slashQuery.startsWith("/skills:");
     if (slashQuery !== null) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSlashIndex((i) => i + 1);
+        // skillIndex and slashIndex are capped by their respective palette components
+        if (isSkillMode) setSkillIndex((i) => i + 1);
+        else setSlashIndex((i) => i + 1);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSlashIndex((i) => Math.max(i - 1, 0));
+        if (isSkillMode) setSkillIndex((i) => Math.max(i - 1, 0));
+        else setSlashIndex((i) => Math.max(i - 1, 0));
         return;
       }
       if (e.key === "Escape") {
@@ -565,17 +572,38 @@ export function ChatArea({
   const handleSlashSelect = (cmd: SlashCommand) => {
     const cursor = textareaRef.current?.selectionStart ?? text.length;
     const before = text.slice(0, cursor);
-    const slashMatch = before.match(/(?:^|\s)(\/\w*)$/);
+    const slashMatch = before.match(/(?:^|\s)(\/[\w:]*)$/);
     if (!slashMatch) return;
     const replaceStart = before.length - slashMatch[1].length;
+    // For /skills, insert with colon so user can type skill name
+    const insertText = cmd.name === "/skills" ? "/skills:" : cmd.name + (cmd.args ? " " : "");
     const newText =
       text.slice(0, replaceStart) +
-      cmd.name +
-      (cmd.args ? " " : "") +
+      insertText +
       text.slice(cursor);
     setText(newText);
     setSlashQuery(null);
-    const newCursor = replaceStart + cmd.name.length + (cmd.args ? 1 : 0);
+    const newCursor = replaceStart + insertText.length;
+    setTimeout(() => {
+      textareaRef.current?.focus();
+      if (textareaRef.current) {
+        textareaRef.current.selectionStart = newCursor;
+        textareaRef.current.selectionEnd = newCursor;
+      }
+    }, 0);
+  };
+
+  const handleSkillSelect = (skillName: string) => {
+    const cursor = textareaRef.current?.selectionStart ?? text.length;
+    const before = text.slice(0, cursor);
+    const match = before.match(/\/skills:\w*$/);
+    if (!match) return;
+    const replaceStart = before.length - match[0].length;
+    const insert = `/skills:${skillName} `;
+    const newText = text.slice(0, replaceStart) + insert + text.slice(cursor);
+    setText(newText);
+    setSlashQuery(null);
+    const newCursor = replaceStart + insert.length;
     setTimeout(() => {
       textareaRef.current?.focus();
       if (textareaRef.current) {
@@ -1062,13 +1090,22 @@ export function ChatArea({
         {/* ── Input Area ── */}
         <div className="px-4 pb-3 pt-2 border-t border-border bg-card">
           <div className="max-w-3xl mx-auto relative">
-            {/* Slash command palette */}
-            {slashQuery !== null && (
+            {/* Slash command palette — hidden when in skill mode */}
+            {slashQuery !== null && !slashQuery.startsWith("/skills:") && (
               <SlashCommandPalette
                 query={slashQuery}
                 selectedIndex={slashIndex}
                 onIndexChange={setSlashIndex}
                 onSelect={handleSlashSelect}
+              />
+            )}
+            {/* Skill autocomplete — shown when typing /skills: */}
+            {slashQuery !== null && slashQuery.startsWith("/skills:") && (
+              <SkillAutocomplete
+                query={slashQuery}
+                selectedIndex={skillIndex}
+                onIndexChange={setSkillIndex}
+                onSelect={handleSkillSelect}
               />
             )}
 

@@ -90,21 +90,25 @@ fn scan_skills_from_dir(dir: &std::path::Path) -> Vec<serde_json::Value> {
             };
             if target.exists() {
                 if let Ok(skill) = jcode::skill::SkillRegistry::parse_skill(&target) {
+                    let content = std::fs::read_to_string(&target).unwrap_or_default();
                     out.push(serde_json::json!({
                         "name": skill.name,
                         "description": skill.description,
                         "allowed_tools": skill.allowed_tools,
                         "path": skill.path.to_string_lossy(),
+                        "content": content,
                     }));
                 }
             }
         } else if path.extension().is_some_and(|e| e == "md") {
             if let Ok(skill) = jcode::skill::SkillRegistry::parse_skill(&path) {
+                let content = std::fs::read_to_string(&path).unwrap_or_default();
                 out.push(serde_json::json!({
                     "name": skill.name,
                     "description": skill.description,
                     "allowed_tools": skill.allowed_tools,
                     "path": skill.path.to_string_lossy(),
+                    "content": content,
                 }));
             }
         }

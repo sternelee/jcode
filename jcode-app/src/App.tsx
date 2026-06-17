@@ -17,7 +17,7 @@ import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { parseSlashCommand, profileIdFromDisplayName, profileIdFromRoute } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
-import type { SessionInfo } from "@/types";
+import type { SessionInfo, SkillInfo } from "@/types";
 import type { BuiltinPage } from "@/lib/launcherTypes";
 import {
 	DEFAULT_WORKSPACE_ID,
@@ -422,6 +422,25 @@ export default function App() {
 	) => {
 		let targetSessionId: string | undefined =
 			resolveTargetSessionId() || undefined;
+
+		// ── /skills:xxx frontend injection ────────────────────────────────────
+		const skillMatch = content.trim().match(/^\/skills:(\S+)(?:\s+(.*))?$/s);
+		if (skillMatch) {
+			const skillName = skillMatch[1];
+			try {
+				const skills = await invoke<SkillInfo[]>("list_skills");
+				const skill = skills.find((s) => s.name === skillName);
+				if (skill) {
+					await sendMessage(content.trim(), images, targetSessionId, skill.content);
+				} else {
+					await sendMessage(`Skill "${skillName}" not found.`, images, targetSessionId);
+				}
+			} catch (e) {
+				console.warn("[handleSendMessage] Failed to resolve skill:", e);
+				await sendMessage(content.trim(), images, targetSessionId);
+			}
+			return;
+		}
 
 		// ── Slash command interceptor ─────────────────────────────────────────
 		const slashCmd = parseSlashCommand(content);

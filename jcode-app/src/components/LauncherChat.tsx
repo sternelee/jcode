@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { ArrowUp, X, Loader2, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatSession } from "@/hooks/useChatSession";
@@ -11,6 +12,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import type { LauncherChatProvider } from "@/lib/launcherTypes";
+import type { SkillInfo } from "@/types";
 
 interface LauncherChatProps {
 	provider: LauncherChatProvider;
@@ -29,9 +31,31 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 		});
 	const [input, setInput] = useState(initialQuery || "");
 	const [hasSentInitial, setHasSentInitial] = useState(false);
+	const [skills, setSkills] = useState<SkillInfo[]>([]);
+	const [skillIndex, setSkillIndex] = useState(0);
 	const displayName = provider.displayName || provider.providerKey || "AI";
 	const hasModelSwitcher = provider.models.length > 1;
 	const inputRef = useRef<HTMLTextAreaElement>(null);
+
+	const skillQuery = input.startsWith("/skills:")
+		? input.slice("/skills:".length).toLowerCase()
+		: null;
+	const skillMatches = useMemo(
+		() =>
+			skills.filter(
+				(s) =>
+					!skillQuery ||
+					s.name.toLowerCase().includes(skillQuery) ||
+					s.description.toLowerCase().includes(skillQuery),
+			),
+		[skills, skillQuery],
+	);
+
+	useEffect(() => {
+		if (skillQuery !== null) {
+			invoke<SkillInfo[]>("list_skills").then(setSkills).catch(() => {});
+		}
+	}, [skillQuery]);
 
 	useEffect(() => {
 		if (initialQuery && !hasSentInitial) {
@@ -44,17 +68,60 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 		inputRef.current?.focus();
 	}, []);
 
-	const handleSend = () => {
+	const handleSend = async () => {
 		if (!input.trim() || isProcessing) return;
 		const text = input;
 		setInput("");
+
+		// /skills:xxx resolution
+		const skillMatch = text.trim().match(/^\/skills:(\S+)(?:\s+(.*))?$/s);
+		if (skillMatch) {
+			const skillName = skillMatch[1];
+			try {
+				const list = skills.length > 0 ? skills : await invoke<SkillInfo[]>("list_skills");
+				const skill = list.find((s) => s.name === skillName);
+				if (skill) {
+					await send(text, undefined, skill.content);
+					return;
+				}
+			} catch (e) {
+				console.warn("[LauncherChat] Failed to resolve skill:", e);
+			}
+		}
+
 		void send(text);
 	};
 
 	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+		if (skillQuery !== null && skillMatches.length > 0) {
+			if (e.key === "ArrowDown") {
+				e.preventDefault();
+				setSkillIndex((i) => Math.min(i + 1, skillMatches.length - 1));
+				return;
+			}
+			if (e.key === "ArrowUp") {
+				e.preventDefault();
+				setSkillIndex((i) => Math.max(i - 1, 0));
+				return;
+			}
+			if (e.key === "Enter" && !e.shiftKey) {
+				e.preventDefault();
+				const skill = skillMatches[skillIndex];
+				if (skill) {
+					setInput(`/skills:${skill.name} `);
+					setSkillIndex(0);
+				}
+				return;
+			}
+			if (e.key === "Escape") {
+				e.preventDefault();
+				setInput(input.replace(/\/skills:\S*$/, ""));
+				return;
+			}
+		}
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
-			handleSend();
+			void handleSend();
 		}
 		// Escape is handled by the Launcher parent's document-level
 		// keydown handler so it works regardless of focus.
@@ -122,7 +189,35 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 				/>
 
 				{/* Input */}
-				<div className="p-2 border-t border-border">
+				<div className="p-2 border-t border-border relative">
+					{skillQuery !== null && skillMatches.length > 0 && (
+						<div className="absolute bottom-full left-0 right-0 mb-1 mx-2 bg-card border border-border rounded-lg shadow-lg overflow-hidden z-50 max-h-48 overflow-y-auto">
+							{skillMatches.map((skill, i) => (
+								<button
+									key={skill.name}
+									type="button"
+									onMouseDown={(e) => {
+										e.preventDefault();
+										setInput(`/skills:${skill.name} `);
+										setSkillIndex(0);
+										inputRef.current?.focus();
+									}}
+									onMouseEnter={() => setSkillIndex(i)}
+									className={cn(
+										"w-full text-left px-3 py-1.5 text-[12px] transition-colors",
+										i === skillIndex ? "bg-primary/10" : "hover:bg-muted/50",
+									)}
+								>
+									<span className="font-mono font-medium">{skill.name}</span>
+									{skill.description && (
+										<span className="ml-2 text-muted-foreground truncate">
+											{skill.description}
+										</span>
+									)}
+								</button>
+							))}
+						</div>
+					)}
 					<div className="flex items-end gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2 focus-within:ring-1 focus-within:ring-primary/30">
 						<textarea
 							ref={inputRef}

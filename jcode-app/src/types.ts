@@ -931,6 +931,7 @@ export interface SkillInfo {
 	description: string;
 	allowed_tools?: string[];
 	path: string;
+	content: string;
 }
 
 export interface EnvFileEntry {

@@ -126,6 +126,7 @@ export function useJcodeSession() {
 			content: string,
 			images?: [string, string][],
 			sessionId?: string,
+			systemReminder?: string,
 		) => {
 			if (!content.trim() && (!images || images.length === 0)) return;
 			const imageAttachments = images?.map(([m, d], i) => ({
@@ -145,7 +146,7 @@ export function useJcodeSession() {
 				await invoke("send_message", {
 					content,
 					images: images || null,
-					systemReminder: null,
+					systemReminder: systemReminder || null,
 					sessionId,
 				});
 			} catch (e) {
@@ -228,8 +229,9 @@ export function useJcodeSession() {
 			content: string,
 			images?: [string, string][],
 			sessionId?: string,
+			systemReminder?: string,
 		) => {
-			await performSend(content, images, sessionId);
+			await performSend(content, images, sessionId, systemReminder);
 		},
 		[performSend],
 	);

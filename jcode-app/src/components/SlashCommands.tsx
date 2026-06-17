@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
-import type { ModelRoute, ProviderCatalogEntry } from "@/types";
+import type { ModelRoute, ProviderCatalogEntry, SkillInfo } from "@/types";
 import type { ProviderAuthPrompt, ProviderConfigOption } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -117,6 +117,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 		name: "/convene",
 		description: "Ask all agents to contribute their perspectives",
 	},
+	{
+		name: "/skills",
+		description: "Invoke a skill by name",
+		frontend: true,
+		args: "<skill-name>",
+	},
 ];
 
 /** Parse the slash command from text at or before cursor. Returns null if not a slash prefix. */
@@ -125,7 +131,7 @@ export function parseSlashQuery(
 	cursorPos: number,
 ): string | null {
 	const before = text.slice(0, cursorPos);
-	const match = before.match(/(?:^|\s)(\/\w*)$/);
+	const match = before.match(/(?:^|\s)(\/[\w:]*)$/);
 	if (!match) return null;
 	return match[1] ?? null;
 }
@@ -1444,6 +1450,96 @@ export function AgentSettingsPopover({
 					</span>
 				</button>
 			</div>
+		</div>
+	);
+}
+
+// ── Skill autocomplete component ─────────────────────────────────────────
+
+interface SkillAutocompleteProps {
+	/** The query string, e.g. "/skills:" or "/skills:com" */
+	query: string;
+	onSelect: (skillName: string) => void;
+	selectedIndex: number;
+	onIndexChange: (idx: number) => void;
+}
+
+export function SkillAutocomplete({
+	query,
+	onSelect,
+	selectedIndex,
+	onIndexChange,
+}: SkillAutocompleteProps) {
+	const [skills, setSkills] = useState<SkillInfo[]>([]);
+	const skillQuery = query.startsWith("/skills:")
+		? query.slice("/skills:".length).toLowerCase()
+		: "";
+
+	useEffect(() => {
+		let active = true;
+		invoke<SkillInfo[]>("list_skills")
+			.then((list) => {
+				if (active) setSkills(list);
+			})
+			.catch(() => {});
+		return () => {
+			active = false;
+		};
+	}, []);
+
+	const matches = useMemo(
+		() =>
+			skills.filter(
+				(s) =>
+					!skillQuery ||
+					s.name.toLowerCase().includes(skillQuery) ||
+					s.description.toLowerCase().includes(skillQuery),
+			),
+		[skills, skillQuery],
+	);
+
+	if (matches.length === 0) return null;
+
+	const clampedIndex = Math.min(Math.max(selectedIndex, 0), matches.length - 1);
+
+	return (
+		<div className="absolute bottom-full left-0 right-0 mb-1.5 bg-card border border-border rounded-xl shadow-xl overflow-hidden z-50 max-h-[320px] overflow-y-auto">
+			<div className="px-3 py-1.5 border-b border-border text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+				Skills — ↑↓ navigate · Enter select · Esc close
+			</div>
+			{matches.map((skill, i) => (
+				<button
+					key={skill.name}
+					type="button"
+					onMouseDown={(e) => {
+						e.preventDefault();
+						onSelect(skill.name);
+					}}
+					onMouseEnter={() => onIndexChange(i)}
+					className={cn(
+						"w-full text-left px-3 py-2.5 flex items-center gap-3 text-[13px] transition-colors",
+						i === clampedIndex ? "bg-primary/10" : "hover:bg-muted/50",
+					)}
+				>
+					<div className="flex-1 min-w-0">
+						<div className="flex items-center gap-2">
+							<span
+								className={cn(
+									"font-mono font-semibold text-[12px]",
+									i === clampedIndex ? "text-primary" : "text-foreground",
+								)}
+							>
+								{skill.name}
+							</span>
+						</div>
+						{skill.description && (
+							<p className="text-[11px] text-muted-foreground truncate mt-0.5">
+								{skill.description}
+							</p>
+						)}
+					</div>
+				</button>
+			))}
 		</div>
 	);
 }

@@ -85,7 +85,7 @@ export interface UseChatSessionReturn {
 	isProcessing: boolean;
 	error: string | null;
 	currentModel: string;
-	send: (content: string, images?: [string, string][]) => Promise<void>;
+	send: (content: string, images?: [string, string][], systemReminder?: string) => Promise<void>;
 	cancel: () => Promise<void>;
 	setModel: (model: string) => Promise<void>;
 	reset: () => void;
@@ -138,7 +138,7 @@ export function useChatSession(opts: UseChatSessionOptions): UseChatSessionRetur
 	// ── Actions ────────────────────────────────────────────────────
 
 	const send = useCallback(
-		async (content: string, images?: [string, string][]) => {
+		async (content: string, images?: [string, string][], systemReminder?: string) => {
 			const text = content.trim();
 			if (!text) return;
 
@@ -152,7 +152,7 @@ export function useChatSession(opts: UseChatSessionOptions): UseChatSessionRetur
 					sessionId: sid,
 					content: text,
 					images: images ?? null,
-					systemReminder: null,
+					systemReminder: systemReminder || null,
 				});
 			} catch (e) {
 				setIsProcessing(false);
