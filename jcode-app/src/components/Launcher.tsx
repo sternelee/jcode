@@ -111,6 +111,7 @@ export function Launcher() {
 		applications,
 		refreshSessions,
 		chatProviders,
+		recent,
 		recordRecent,
 		recordUsage,
 	} = useLauncher();
@@ -137,7 +138,11 @@ export function Launcher() {
 		const handler = (e: KeyboardEvent) => {
 			if (e.key === "Tab" && mode === "palette" && chatProviders.length > 0) {
 				e.preventDefault();
-				startChat(chatProviders[0]);
+				// Use the most recently used provider, or fall back to the
+				// first configured provider.
+				const lastProviderKey = recent.find((r) => r.kind === "chat-provider")?.providerKey;
+				const provider = (lastProviderKey && chatProviders.find((p) => p.providerKey === lastProviderKey)) || chatProviders[0];
+				startChat(provider);
 			}
 			if (e.key === "Escape" && mode === "chat") {
 				e.preventDefault();
@@ -155,7 +160,7 @@ export function Launcher() {
 		};
 		document.addEventListener("keydown", handler);
 		return () => document.removeEventListener("keydown", handler);
-	}, [mode, chatProviders, startChat]);
+	}, [mode, chatProviders, recent, startChat]);
 
 	useEffect(() => {
 		let unlisten: (() => void) | null = null;
