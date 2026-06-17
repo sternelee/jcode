@@ -167,6 +167,15 @@ pub async fn list_skills() -> Result<Vec<serde_json::Value>, TauriError> {
         skills_out.extend(scan_skills_from_dir(&claude_skills));
     }
 
+    // Deduplicate by name (first occurrence wins — higher-priority dirs are scanned first)
+    let mut seen = std::collections::HashSet::new();
+    skills_out.retain(|s| {
+        s.get("name")
+            .and_then(|n| n.as_str())
+            .map(|name| seen.insert(name.to_string()))
+            .unwrap_or(true)
+    });
+
     Ok(skills_out)
 }
 #[tauri::command]
