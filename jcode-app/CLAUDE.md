@@ -102,16 +102,29 @@ jcode-app/
 │   ├── src/
 │   │   ├── main.rs             # Entry → jcode_app_lib::run()
 │   │   ├── lib.rs              # Tauri commands, events, sessions (~4k lines)
-│   │   ├── commands.rs         # AppState, SessionRuntime, factories
-│   │   ├── commands/           # Subcommand modules
+│   │   ├── commands.rs         # AppState, SessionRuntime, factories; re-exports modules below
+│   │   ├── commands/
+│   │   │   ├── config.rs       # Config view/edit commands
+│   │   │   ├── env.rs          # Environment variable management
+│   │   │   ├── launcher.rs     # macOS app discovery/launch commands
+│   │   │   ├── memory.rs       # Memory list/search/export/import/stats
+│   │   │   ├── provider.rs     # Provider profiles, auth flows, model listing
+│   │   │   ├── session.rs      # begin/resume/send/cancel/clear/rewind/compact
+│   │   │   ├── swarm.rs        # Swarm status and coordination
+│   │   │   ├── system.rs       # Version info, usage, git status
+│   │   │   └── tools.rs        # Tool registry and MCP tool commands
 │   │   ├── server_client.rs    # Optional jcode server socket client
 │   │   ├── launcher.rs         # macOS app discovery + launch helpers
-│   │   ├── error.rs            # Error types
+│   │   ├── error.rs            # TauriError unified error enum (thiserror-derived)
 │   │   └── utils.rs            # Serialization helpers
 │   ├── Cargo.toml              # Rust deps + workspace link
 │   ├── tauri.conf.json         # Windows, plugins, capabilities, CSP
 │   └── capabilities/default.json
-├── docs/                       # jcode-app-specific design docs and plans
+├── docs/
+│   ├── plans/                  # Design docs (e.g. raycast launcher workbench)
+│   ├── AGENT_TEAM_GUI_REVIEW.md
+│   └── tui-to-desktop-gap.md
+├── SLACK_MODE_REVIEW.md        # Slack-based review workflow
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
@@ -162,6 +175,9 @@ scripts/test_e2e.sh
 
 Commands use `#[tauri::command]` and live in `src-tauri/src/lib.rs`. Snake_case command names in Rust; `#[serde(rename_all = "camelCase")]` for typed request structs.
 
+- Command handlers return `Result<T, TauriError>` (defined in `error.rs`). `TauriError` is `thiserror`-derived and `Serialize`-able; Tauri sends its `Display` string to the frontend.
+- `AppState` and shared types live in `commands.rs`; domain-specific handlers are in `commands/<domain>.rs` submodules (session, provider, memory, etc.).
+
 Major command groups:
 - **Sessions**: `begin_session`, `resume_session`, `send_message`, `cancel`, `send_soft_interrupt`, `clear_chat`, `rewind_chat`, `compact_context`, `set_model`, `set_memory_enabled`, `set_reasoning_effort`
 - **Persistence**: `list_sessions`, `delete_session`, `delete_workspace_sessions`, `rename_session`, `save_session_state`, `get_last_session_state`, `clear_session_state`
@@ -206,6 +222,17 @@ Major command groups:
 ### Streaming Content
 - AI messages rendered with `ai-elements` + `streamdown`.
 - Streamdown plugins for CJK, code blocks, math (KaTeX), mermaid diagrams.
+- Vite bundles streamdown as a separate chunk (`manualChunks` in `vite.config.ts`).
+
+### Vite & Build
+- Uses `@rolldown/plugin-babel` (not `@vitejs/plugin-react`) with `babel-plugin-react-compiler` — React Compiler runs at build time.
+- Bundle analysis: `ANALYZE=1 pnpm build` generates `dist/stats.html`.
+
+### Tauri Plugins
+- `tauri-plugin-dialog` — native file/message dialogs
+- `tauri-plugin-global-shortcut` — system-wide hotkeys
+- `tauri-plugin-shell` — open URLs/paths in default app
+- `protocol-asset` — serve local files via `asset://` protocol (scoped to `/Applications/**`, `$HOME/Applications/**` in `tauri.conf.json`)
 
 ### State & Dependency Injection
 - `AppState` is a Tauri managed state shared across commands.
@@ -217,13 +244,14 @@ Major command groups:
 | Tool | Version / Choice |
 |------|-----------------|
 | Package manager | **pnpm** |
-| Frontend bundler | Vite 7 |
+| Frontend bundler | Vite 7 (rolldown-based) |
 | React | 19 (strict mode) |
 | TypeScript | 5.8 (strict, `noUnusedLocals`, `noUnusedParameters`) |
 | Tailwind | v4 via `@tailwindcss/vite` |
 | UI library | shadcn/ui `base-nova` on `@base-ui/react` |
 | Icons | `lucide-react` |
 | Animations | `motion` |
+| React Compiler | `babel-plugin-react-compiler` via `@rolldown/plugin-babel` |
 | AI rendering | `ai-elements` + `streamdown` |
 | Backend | Tauri v2.11 (Rust 2021) |
 | Rust workspace | Parent `jcode` workspace includes `jcode-app/src-tauri` |
@@ -236,7 +264,7 @@ Major command groups:
 - `jcode-app` has **no JS/TS tests or lint/format scripts** currently. Quality is enforced by TypeScript strict mode via `pnpm build`.
 
 ### Rust
-- `cargo test -p jcode-app --lib --bins` compiles and reports 0 tests; there are no `#[test]` modules in `src-tauri/src/`.
+- `cargo test -p jcode-app --lib --bins` — few tests exist (currently in `error.rs` only). Most backend code has no `#[test]` modules.
 - `cargo check -p jcode-app` and `cargo clippy -p jcode-app -- -D warnings` are the local gates.
 
 ### CI (parent workspace)
@@ -280,5 +308,9 @@ Most budget scripts scan `src/` and `crates/` but not `jcode-app/src-tauri/`, ex
 
 - Parent repo `CLAUDE.md` — workspace-wide guidance, build/test/lint gates, architecture overview
 - Parent repo `AGENTS.md` — full repo guidelines
-- `docs/SERVER_ARCHITECTURE.md` — server design and lifecycle
-- `docs/CRATE_OWNERSHIP_BOUNDARIES.md` — crate dependency rules
+- `docs/plans/` — design docs (raycast launcher workbench, etc.)
+- `docs/tui-to-desktop-gap.md` — feature parity tracking between TUI and desktop
+- `TODO.md` — feature gap analysis and implementation status
+- `SLACK_MODE_REVIEW.md` — Slack-based review workflow
+- `docs/SERVER_ARCHITECTURE.md` — server design and lifecycle (parent repo)
+- `docs/CRATE_OWNERSHIP_BOUNDARIES.md` — crate dependency rules (parent repo)
