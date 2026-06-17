@@ -132,6 +132,31 @@ export function Launcher() {
 		return () => window.removeEventListener("blur", handleBlur);
 	}, [mode]);
 
+	// Tab in palette → switch to chat; Escape in chat → back to palette.
+	useEffect(() => {
+		const handler = (e: KeyboardEvent) => {
+			if (e.key === "Tab" && mode === "palette" && chatProviders.length > 0) {
+				e.preventDefault();
+				startChat(chatProviders[0]);
+			}
+			if (e.key === "Escape" && mode === "chat") {
+				e.preventDefault();
+				setMode("palette");
+				setChatProvider(null);
+				setChatInitialQuery("");
+				// Focus the search input after returning to palette.
+				requestAnimationFrame(() => {
+					const input = document.querySelector<HTMLInputElement>(
+						'[data-slot="command-input"]',
+					);
+					input?.focus();
+				});
+			}
+		};
+		document.addEventListener("keydown", handler);
+		return () => document.removeEventListener("keydown", handler);
+	}, [mode, chatProviders, startChat]);
+
 	useEffect(() => {
 		let unlisten: (() => void) | null = null;
 		void listen<string>("global-shortcut", () => {
@@ -499,6 +524,7 @@ export function Launcher() {
 					dismissError={() => setError(null)}
 					mode="default"
 					onRefreshApps={handleRefreshApps}
+					showTabHint={chatProviders.length > 0}
 				/>
 			</Command>
 		</div>
@@ -599,6 +625,7 @@ interface LauncherFooterProps {
 	dismissError: () => void;
 	mode: "default" | "agent";
 	onRefreshApps: () => void;
+	showTabHint?: boolean;
 }
 
 function LauncherFooter({
@@ -607,6 +634,7 @@ function LauncherFooter({
 	dismissError,
 	mode,
 	onRefreshApps,
+	showTabHint,
 }: LauncherFooterProps) {
 	return (
 		<div className="border-t border-border px-3 py-1.5 flex items-center justify-between text-[11px] text-muted-foreground gap-3">
@@ -655,6 +683,7 @@ function LauncherFooter({
 			<div className="flex items-center gap-2 shrink-0">
 				<KbdHint label="navigate" keys={["↑", "↓"]} />
 				<KbdHint label="select" keys={["↵"]} />
+				{showTabHint && <KbdHint label="chat" keys={["⇥"]} />}
 				<KbdHint label="quick pick" keys={["⌘", "1–9"]} />
 				<KbdHint label="close" keys={["esc"]} />
 			</div>

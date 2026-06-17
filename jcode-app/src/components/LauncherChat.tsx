@@ -88,10 +88,8 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 			e.preventDefault();
 			handleSend();
 		}
-		if (e.key === "Escape" && !isProcessing) {
-			e.preventDefault();
-			onClose();
-		}
+		// Escape is handled by the Launcher parent's document-level
+		// keydown handler so it works regardless of focus.
 	};
 
 	return (
@@ -200,7 +198,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 									Thinking…
 								</span>
 							) : (
-								"Enter to send · Esc to close"
+								"Enter to send · Esc to back"
 							)}
 						</span>
 					</div>
