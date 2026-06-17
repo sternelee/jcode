@@ -13,6 +13,7 @@ import { TeamPage } from "@/components/TeamPage";
 import { MediaPage } from "@/components/MediaPage";
 import { McpPage } from "@/components/McpPage";
 import { SkillsPage } from "@/components/SkillsPage";
+import { ChatArea } from "@/components/ChatArea";
 import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { parseSlashCommand, profileIdFromDisplayName, profileIdFromRoute } from "@/components/SlashCommands";
@@ -65,7 +66,7 @@ export default function App() {
 		setWorkspaceMemoryPreference,
 } = useJcodeSession();
 
-	const [activeNavTab, setActiveNavTab] = useState("tasks");
+	const [activeNavTab, setActiveNavTab] = useState("");
 	const [sessionSwitcherOpen, setSessionSwitcherOpen] = useState(false);
 	const [confirmRemove, setConfirmRemove] = useState<{
 		sessionId: string;
@@ -136,6 +137,7 @@ export default function App() {
 		} else {
 			setWorkspaceMode(workspaceId, "normal");
 		}
+		setActiveNavTab("");
 		setSelectedConvId(`workspace:${workspaceId}`);
 
 		const targetSessionId =
@@ -561,6 +563,7 @@ export default function App() {
 	const handleResume = (session: SessionInfo) => {
 		setActiveWorkspace(workspaceIdFromDir(session.workingDir));
 		setWorkingDir(session.workingDir || null);
+		setActiveNavTab("");
 		setSelectedConvId(session.sessionId);
 		// Mark conversation as read
 		setLastReadAt((prev) => ({ ...prev, [session.sessionId]: Date.now() }));
@@ -638,8 +641,11 @@ export default function App() {
 		return null;
 	}, [selectedConvId, state.sessionData]);
 
-
-
+	// Resolve the active session data for ChatArea
+	const activeSessionId = selectedConvId?.startsWith("workspace:")
+		? findWorkspaceTargetSession(selectedConvId.slice("workspace:".length))?.sessionId
+		: selectedConvId;
+	const activeSessionData = activeSessionId ? state.sessionData[activeSessionId] : null;
 
 	// Launcher → workbench bridge.
 	//
@@ -751,6 +757,7 @@ export default function App() {
 						const wsid = workspaceIdFromDir(s.workingDir);
 						setActiveWorkspace(wsid);
 						setWorkingDir(s.workingDir || null);
+						setActiveNavTab("");
 						if (selectedConvId !== s.sessionId) {
 							setSelectedConvId(s.sessionId);
 						}
@@ -808,12 +815,36 @@ export default function App() {
 							<McpPage />
 						) : activeNavTab === "skills" ? (
 							<SkillsPage />
+						) : activeSessionData ? (
+							<ChatArea
+								messages={activeSessionData.messages}
+								isProcessing={activeSessionData.isProcessing}
+								onSend={(content, images) => void handleSendMessage(content, images)}
+								onCancel={() => void cancel(activeSessionId)}
+								currentModel={activeSessionData.providerModel}
+								totalTokens={activeSessionData.totalTokens}
+								providerName={activeSessionData.providerName}
+								currentProfileId={currentProfileId || undefined}
+								memoryEnabled={activeSessionData.memoryEnabled}
+								reasoningEffort={activeSessionData.reasoningEffort}
+								availableModels={activeSessionData.availableModels}
+								onSetModel={(m, pid) => void setModel(m, pid, activeSessionId)}
+								onSetEffort={(effort) => void setReasoningEffort(effort, activeSessionId)}
+								onToggleMemory={() => void setMemoryEnabled(!activeSessionData.memoryEnabled, activeSessionId)}
+								onCompact={() => void compactContext(activeSessionId)}
+								onClearChat={() => void clearChat(activeSessionId)}
+								onRenameSession={(sid, name) => void renameSession(sid, name)}
+								currentSessionId={activeSessionId}
+								currentWorkingDir={state.workingDir}
+								isLoading={activeSessionData.connectionPhase !== "connected"}
+								connected={state.connected}
+							/>
 						) : (
 							<PlaceholderPage
-								key={activeNavTab}
-								icon={activeNavTab}
-								title={placeholderTitle(activeNavTab)}
-								description={placeholderDesc(activeNavTab)}
+								key={activeNavTab || "empty"}
+								icon={activeNavTab || "tasks"}
+								title={placeholderTitle(activeNavTab || "tasks")}
+								description={placeholderDesc(activeNavTab || "tasks")}
 							/>
 						)}
 					</div>
