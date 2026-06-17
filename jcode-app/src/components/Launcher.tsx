@@ -133,35 +133,6 @@ export function Launcher() {
 		return () => window.removeEventListener("blur", handleBlur);
 	}, [mode]);
 
-	// Tab in palette → switch to chat; Escape in chat → back to palette.
-	useEffect(() => {
-		const handler = (e: KeyboardEvent) => {
-			if (e.key === "Tab" && mode === "palette" && chatProviders.length > 0) {
-				e.preventDefault();
-				// Use the most recently used provider, or fall back to the
-				// first configured provider.
-				const lastProviderKey = recent.find((r) => r.kind === "chat-provider")?.providerKey;
-				const provider = (lastProviderKey && chatProviders.find((p) => p.providerKey === lastProviderKey)) || chatProviders[0];
-				startChat(provider);
-			}
-			if (e.key === "Escape" && mode === "chat") {
-				e.preventDefault();
-				setMode("palette");
-				setChatProvider(null);
-				setChatInitialQuery("");
-				// Focus the search input after returning to palette.
-				requestAnimationFrame(() => {
-					const input = document.querySelector<HTMLInputElement>(
-						'[data-slot="command-input"]',
-					);
-					input?.focus();
-				});
-			}
-		};
-		document.addEventListener("keydown", handler);
-		return () => document.removeEventListener("keydown", handler);
-	}, [mode, chatProviders, recent, startChat]);
-
 	useEffect(() => {
 		let unlisten: (() => void) | null = null;
 		void listen<string>("global-shortcut", () => {
@@ -299,6 +270,35 @@ export function Launcher() {
 		},
 		[recordRecent, recordUsage],
 	);
+
+	// Tab in palette → switch to chat; Escape in chat → back to palette.
+	useEffect(() => {
+		const handler = (e: KeyboardEvent) => {
+			if (e.key === "Tab" && mode === "palette" && chatProviders.length > 0) {
+				e.preventDefault();
+				// Use the most recently used provider, or fall back to the
+				// first configured provider.
+				const lastProviderKey = recent.find((r) => r.kind === "chat-provider")?.providerKey;
+				const provider = (lastProviderKey && chatProviders.find((p) => p.providerKey === lastProviderKey)) || chatProviders[0];
+				startChat(provider);
+			}
+			if (e.key === "Escape" && mode === "chat") {
+				e.preventDefault();
+				setMode("palette");
+				setChatProvider(null);
+				setChatInitialQuery("");
+				// Focus the search input after returning to palette.
+				requestAnimationFrame(() => {
+					const input = document.querySelector<HTMLInputElement>(
+						'[data-slot="command-input"]',
+					);
+					input?.focus();
+				});
+			}
+		};
+		document.addEventListener("keydown", handler);
+		return () => document.removeEventListener("keydown", handler);
+	}, [mode, chatProviders, recent, startChat]);
 
 	const handleSelect = (item: LauncherItem) => {
 		if (item.kind === "chat-provider") {

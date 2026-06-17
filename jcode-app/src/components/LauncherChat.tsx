@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, X, Loader2, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useLauncherChat } from "@/hooks/useLauncherChat";
+import { useChatSession } from "@/hooks/useChatSession";
+import { MessageList } from "@/components/MessageList";
 import {
 	Select,
 	SelectContent,
@@ -10,7 +11,6 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import type { LauncherChatProvider } from "@/lib/launcherTypes";
-import type { ChatMessage } from "@/types";
 
 interface LauncherChatProps {
 	provider: LauncherChatProvider;
@@ -18,45 +18,19 @@ interface LauncherChatProps {
 	initialQuery?: string;
 }
 
-function ChatMessageRow({ message }: { message: ChatMessage }) {
-	const isUser = message.role === "user";
-	return (
-		<div
-			className={cn(
-				"flex w-full",
-				isUser ? "justify-end" : "justify-start",
-			)}
-		>
-			<div
-				className={cn(
-					"max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap",
-					isUser
-						? "bg-primary text-primary-foreground rounded-br-md"
-						: "bg-muted text-foreground rounded-bl-md",
-				)}
-			>
-				{!isUser && message.reasoning && (
-					<div className="text-[12px] italic opacity-60 mb-1 border-l-2 border-current pl-2">
-						{message.reasoning}
-					</div>
-				)}
-				{message.content}
-				{message.isStreaming && (
-					<span className="inline-block w-1.5 h-1.5 rounded-full bg-current opacity-50 animate-pulse ml-1 align-middle" />
-				)}
-			</div>
-		</div>
-	);
-}
-
 export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatProps) {
 	const { messages, isProcessing, error, send, cancel, currentModel, setModel } =
-		useLauncherChat(provider);
+		useChatSession({
+			providerKey: provider.providerKey,
+			model: provider.model,
+			workingDir: null,
+			memoryEnabled: true,
+			forceProvider: true,
+		});
 	const [input, setInput] = useState(initialQuery || "");
 	const [hasSentInitial, setHasSentInitial] = useState(false);
 	const displayName = provider.displayName || provider.providerKey || "AI";
 	const hasModelSwitcher = provider.models.length > 1;
-	const scrollRef = useRef<HTMLDivElement>(null);
 	const inputRef = useRef<HTMLTextAreaElement>(null);
 
 	useEffect(() => {
@@ -65,12 +39,6 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 			void send(initialQuery);
 		}
 	}, [initialQuery, hasSentInitial, send]);
-
-	useEffect(() => {
-		const el = scrollRef.current;
-		if (!el) return;
-		el.scrollTop = el.scrollHeight;
-	}, [messages]);
 
 	useEffect(() => {
 		inputRef.current?.focus();
@@ -140,22 +108,18 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 				</div>
 
 				{/* Messages */}
-				<div
-					ref={scrollRef}
-					className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0"
-				>
-					{messages.length === 0 && !initialQuery && (
-						<div className="h-full flex items-center justify-center text-muted-foreground text-xs">
-							Start a conversation with {displayName}
-						</div>
-					)}
-					{messages.map((msg) => (
-						<ChatMessageRow key={msg.id} message={msg} />
-					))}
-					{error && (
-						<div className="text-[11px] text-destructive px-1">{error}</div>
-					)}
-				</div>
+				<MessageList
+					messages={messages}
+					error={error}
+					variant="compact"
+					emptyState={
+						!initialQuery ? (
+							<div className="text-muted-foreground text-xs">
+								Start a conversation with {displayName}
+							</div>
+						) : undefined
+					}
+				/>
 
 				{/* Input */}
 				<div className="p-2 border-t border-border">
