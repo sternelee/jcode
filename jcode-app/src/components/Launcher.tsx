@@ -119,6 +119,19 @@ export function Launcher() {
 	const [chatInitialQuery, setChatInitialQuery] = useState<string>("");
 	const [inputValue, setInputValue] = useState("");
 
+	// Hide the launcher on blur (click outside) only when in palette mode.
+	// In chat mode the window stays visible so the user can interact with
+	// other windows without losing the conversation.
+	useEffect(() => {
+		const handleBlur = () => {
+			if (mode !== "chat") {
+				void hideCurrentLauncher();
+			}
+		};
+		window.addEventListener("blur", handleBlur);
+		return () => window.removeEventListener("blur", handleBlur);
+	}, [mode]);
+
 	useEffect(() => {
 		let unlisten: (() => void) | null = null;
 		void listen<string>("global-shortcut", () => {
@@ -376,6 +389,12 @@ export function Launcher() {
 					setMode("palette");
 					setChatProvider(null);
 					setChatInitialQuery("");
+					// If the window is unfocused (e.g. user clicked outside
+					// then closed chat via keyboard), hide immediately since
+					// the blur handler won't fire on an already-blurred window.
+					if (!document.hasFocus()) {
+						void hideCurrentLauncher();
+					}
 				}}
 			/>
 		);

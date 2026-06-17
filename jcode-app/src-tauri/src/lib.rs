@@ -131,11 +131,8 @@ pub fn run() {
                 let window_clone = window.clone();
                 let _ = window.on_window_event(move |event| {
                     match event {
-                        // Blurring away from the launcher hides it; this is the
-                        // "click outside to dismiss" affordance.
-                        tauri::WindowEvent::Focused(false) => {
-                            let _ = window_clone.hide();
-                        }
+                        // Blur-to-hide is handled by the frontend
+                        // (Launcher.tsx) so chat mode can suppress it.
                         // Intercept the close button (red traffic light) and
                         // hide the window instead of destroying it; the user
                         // can summon the launcher again with the global
