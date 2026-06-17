@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { SessionInfo } from "@/types";
 import {
@@ -194,6 +194,17 @@ function WorkList({
 		{ text: string; timestamp: number; unread: number }
 	>;
 }) {
+	const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
+
+	const toggleCollapse = (id: string) => {
+		setCollapsedIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	};
+
 	return (
 		<div className="flex flex-col gap-1 px-2 py-2 flex-1 overflow-y-auto min-h-0">
 			<div className="px-2.5 py-1 text-[11px] font-medium text-sidebar-foreground/40 uppercase tracking-wider">
@@ -208,6 +219,7 @@ function WorkList({
 					const isActiveWs =
 						activeWorkspaceId != null &&
 						workspaceIdFromDir(activeWorkspaceId) === group.id;
+					const isCollapsed = collapsedIds.has(group.id);
 					return (
 						<div
 							key={group.id}
@@ -215,7 +227,10 @@ function WorkList({
 						>
 							<button
 								type="button"
-								onClick={() => onSelectWorkspace?.(group.id)}
+								onClick={() => {
+									toggleCollapse(group.id);
+									onSelectWorkspace?.(group.id);
+								}}
 								className={cn(
 									"w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] font-medium transition-all",
 									isActiveWs
@@ -224,13 +239,13 @@ function WorkList({
 								)}
 								title={group.id}
 							>
-								{isActiveWs ? (
-									<ChevronDown
+								{isCollapsed ? (
+									<ChevronRight
 										className="w-3 h-3 shrink-0"
 										strokeWidth={2}
 									/>
 								) : (
-									<ChevronRight
+									<ChevronDown
 										className="w-3 h-3 shrink-0"
 										strokeWidth={2}
 									/>
@@ -246,7 +261,7 @@ function WorkList({
 									{group.sessions.length}
 								</span>
 							</button>
-							<div className="flex flex-col gap-0.5 pl-3 pr-1 py-0.5">
+							{!isCollapsed && <div className="flex flex-col gap-0.5 pl-3 pr-1 py-0.5">
 								{group.sessions.map((session) => {
 									const isActive =
 										session.sessionId === activeSessionId;
@@ -310,7 +325,7 @@ function WorkList({
 											New session here
 										</button>
 									)}
-							</div>
+							</div>}
 						</div>
 					);
 				})
