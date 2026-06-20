@@ -224,7 +224,7 @@ impl App {
             );
         } else {
             self.set_status_notice(
-                "Log in to OpenAI? Yes/No - hl to move, Enter to choose (No picks another provider)",
+                "Log in to OpenAI? Yes/No - hl to move, Enter to choose (No skips for now)",
             );
         }
     }
@@ -333,10 +333,21 @@ impl App {
     /// - `ContinuePrompt`: Y/Enter continues, N/Esc declines.
     /// - `LoginOpenAi`: Left/h -> Yes, Right/l -> No, toggle with
     ///   Up/Down/k/j/Tab; y/n commit directly, Enter/Space commit the
-    ///   highlighted default (Yes -> OpenAI sign-in, No -> provider picker).
+    ///   highlighted default (Yes -> OpenAI sign-in, No -> finish onboarding).
     ///
     /// Returns true if the key was consumed.
     pub(super) fn handle_onboarding_continue_prompt_key(&mut self, code: KeyCode) -> bool {
+        // While a provider login is awaiting typed input (an API key, env var
+        // value, endpoint, etc.) the onboarding flow is still parked in a
+        // `Login`/`LoginOpenAi` phase, but the user is now typing into the
+        // pending-login prompt rather than driving the welcome-screen Yes/No.
+        // If we kept intercepting keys here, Enter would re-open the provider
+        // picker (the reported "pick provider -> enter key -> asks again" loop)
+        // and characters like h/l/j/k/y/n would be eaten as navigation. Let the
+        // normal input path handle everything until the pending entry resolves.
+        if self.pending_login.is_some() || self.pending_account_input.is_some() {
+            return false;
+        }
         match self.onboarding_phase() {
             Some(OnboardingPhase::Login { import }) => {
                 // No detected imports remaining: this is the recovery fallback
@@ -498,7 +509,7 @@ impl App {
     ///   - Left / h  -> highlight "Yes"
     ///   - Right / l -> highlight "No"
     ///   - Up / Down / k / j / Tab -> toggle
-    ///   - y / Y -> log in to OpenAI;  n / N -> open the provider picker
+    ///   - y / Y -> log in to OpenAI;  n / N -> skip and finish onboarding
     ///   - Enter / Space -> commit the highlighted choice
     fn handle_onboarding_login_openai_key(&mut self, code: KeyCode) -> bool {
         let Some(flow) = self.onboarding_flow.as_mut() else {
@@ -545,7 +556,13 @@ impl App {
     }
 
     /// Answer the "Log in to OpenAI?" prompt. Yes starts the OpenAI sign-in;
-    /// No opens the full provider picker so the user can pick another provider.
+    /// No exits onboarding and drops the user on the normal new-session screen
+    /// with a system message telling them to run `/login` when they're ready.
+    ///
+    /// We intentionally do NOT open the inline provider picker on "No": that
+    /// flow has a flaky input widget (typed characters were not echoed), and
+    /// finishing onboarding straight to the usual screen is simpler and more
+    /// robust. The user can pick any provider via `/login` at their own pace.
     pub(super) fn onboarding_answer_login_openai(&mut self, wants_openai: bool) {
         if !matches!(
             self.onboarding_phase(),
@@ -556,7 +573,13 @@ impl App {
         if wants_openai {
             self.onboarding_start_default_login();
         } else {
-            self.show_interactive_login();
+            self.onboarding_finish();
+            self.push_display_message(DisplayMessage::system(
+                "No problem. When you're ready to log in, run /login to pick a provider \
+                 (OpenAI, Anthropic, Gemini, OpenRouter, and more)."
+                    .to_string(),
+            ));
+            self.set_status_notice("Run /login when you're ready to choose a provider");
         }
     }
 
@@ -570,7 +593,7 @@ impl App {
         );
         let choice = if yes { "Yes" } else { "No" };
         self.set_status_notice(format!(
-            "Log in to OpenAI? [{choice}] - hl to move, Enter to choose (No picks another provider)"
+            "Log in to OpenAI? [{choice}] - hl to move, Enter to choose (No skips for now)"
         ));
     }
 

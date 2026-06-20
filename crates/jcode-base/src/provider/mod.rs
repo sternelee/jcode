@@ -13,6 +13,7 @@ mod dispatch;
 mod failover;
 mod fingerprint;
 pub mod gemini;
+mod image_clamp;
 pub mod jcode;
 pub mod models;
 mod multi_provider;
@@ -280,7 +281,8 @@ pub use self::models::{
     model_availability_for_account, model_unavailability_detail_for_account,
     note_openai_model_catalog_refresh_attempt, persist_anthropic_model_catalog,
     persist_openai_model_catalog, populate_account_models, populate_anthropic_models,
-    populate_context_limits, provider_for_model, provider_for_model_with_hint,
+    populate_context_limits, populate_context_limits_from_config, provider_for_model,
+    provider_for_model_with_hint,
     provider_unavailability_detail_for_account, record_model_unavailable_for_account,
     record_provider_unavailable_for_account, refresh_openai_model_catalog_in_background,
     resolve_model_capabilities, should_refresh_anthropic_model_catalog,
@@ -348,6 +350,13 @@ impl MultiProvider {
     ) -> Result<EventStream> {
         self.spawn_anthropic_catalog_refresh_if_needed();
         self.spawn_openai_catalog_refresh_if_needed();
+
+        // Downscale any images whose pixel dimensions exceed provider per-image
+        // limits before they reach the wire. Resuming a session with >20 large
+        // screenshots otherwise trips Anthropic's many-image 2000px cap and the
+        // whole turn is rejected (#381). Only clones when a clamp is required.
+        let clamped_messages = image_clamp::clamp_outbound_images(messages);
+        let messages: &[Message] = clamped_messages.as_deref().unwrap_or(messages);
 
         let detected_active = self.active_provider();
         let runtime_locked = self.active_provider_locked.load(Ordering::Acquire);

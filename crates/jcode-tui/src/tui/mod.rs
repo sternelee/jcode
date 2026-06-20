@@ -11,6 +11,7 @@ pub struct ContextSnapshot {
 pub mod backend;
 pub(crate) mod color_support;
 mod core;
+pub(crate) mod fuzzy;
 // Terminal image display + metadata helpers now live in the dependency-free
 // `jcode-terminal-image` crate (shared with the `read` tool). Re-exported here
 // so existing `crate::tui::image` / `crate::tui::image_metadata` paths keep working.
@@ -721,7 +722,8 @@ pub enum OnboardingWelcomeKind {
     Login { import: Option<LoginImportPrompt> },
     /// Ask the user whether to log in to OpenAI (no detected imports). A
     /// highlightable Yes/No selector; `yes_highlighted` reflects the current
-    /// choice. Yes starts the OpenAI sign-in, No opens the provider picker.
+    /// choice. Yes starts the OpenAI sign-in, No skips login and finishes
+    /// onboarding (the user can run `/login` later).
     LoginOpenAi { yes_highlighted: bool },
     /// "Continue where you left off in <cli>?" with a highlightable Yes/No
     /// selector and a live decision countdown (seconds remaining).
