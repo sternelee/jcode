@@ -6,6 +6,7 @@ import { useApplications } from "./useApplications";
 import type {
 	AppInfo,
 	BuiltinPage,
+	BuiltinTool,
 	LauncherChatProvider,
 	LauncherItem,
 	SavedA2uiPage,
@@ -123,15 +124,59 @@ const BUILTIN_COMMANDS: ReadonlyArray<{
 		iconName: "settings",
 	},
 ];
-/** Best fuzzy score across a builtin's title, keyword, and page name. */
+
+const BUILTIN_TOOLS: ReadonlyArray<{
+	tool: BuiltinTool;
+	title: string;
+	description: string;
+	keyword: string;
+	iconName: string;
+}> = [
+	{
+		tool: "chat",
+		title: "Chat with JFlow",
+		description: "Start a quick chat in the launcher",
+		keyword: "chat ask ai agent",
+		iconName: "message-square-text",
+	},
+	{
+		tool: "search",
+		title: "File Search",
+		description: "Search files by content",
+		keyword: "search files grep find",
+		iconName: "search",
+	},
+	{
+		tool: "todo",
+		title: "Todo Manager",
+		description: "Quick todo list",
+		keyword: "todo tasks checklist",
+		iconName: "list-todo",
+	},
+	{
+		tool: "calc",
+		title: "Calculator",
+		description: "Calculator and scientific functions",
+		keyword: "calc calculator math",
+		iconName: "calculator",
+	},
+	{
+		tool: "clipboard",
+		title: "Clipboard History",
+		description: "Manage clipboard history",
+		keyword: "clipboard copy paste history",
+		iconName: "clipboard",
+	},
+];
+/** Best fuzzy score across a builtin's title, keyword, and page/tool name. */
 function builtinScore(
-	b: { page: BuiltinPage; title: string; keyword: string },
+	b: { title: string; keyword: string; page?: string; tool?: string },
 	query: string,
 ): number {
 	return Math.max(
 		fuzzyScore(b.title, query),
 		fuzzyScore(b.keyword, query),
-		fuzzyScore(b.page, query),
+		fuzzyScore(b.page ?? b.tool ?? "", query),
 	);
 }
 
@@ -147,6 +192,7 @@ const RECENT_LIMIT = 5;
 type RecentEntry =
 	| { kind: "application"; id: string; name: string; appPath: string }
 	| { kind: "builtin"; id: string; page: BuiltinPage; title: string }
+	| { kind: "builtin-tool"; id: string; tool: BuiltinTool; title: string }
 	| { kind: "session"; id: string; sessionId: string; title: string }
 	| { kind: "a2ui"; id: string; pageId: string; title: string }
 	| { kind: "chat-provider"; id: string; providerKey: string; displayName: string };
@@ -394,48 +440,6 @@ export function useLauncher() {
 			}
 		}
 
-		// Applications: the backend has already filtered/scored them, so we
-		// just deduplicate against the Recent list.
-		for (const app of applications.apps) {
-			// Don't re-show recent apps in the main list to avoid duplicates.
-			if (recentIds.has(`app:${app.appPath}`)) continue;
-			out.push({
-				kind: "application",
-				id: `app:${app.appPath}`,
-				app,
-			});
-		}
-
-		// Recent sessions (no query only)
-		const sessionItems: Array<Extract<LauncherItem, { kind: "session" }>> = [];
-		if (!trimmed) {
-			for (const session of sessions.slice(0, 5)) {
-				sessionItems.push({
-					kind: "session",
-					id: `session:${session.sessionId}`,
-					session,
-				});
-			}
-		} else {
-			for (const session of sessions) {
-				if (!matchesSession(session, lower)) continue;
-				sessionItems.push({
-					kind: "session",
-					id: `session:${session.sessionId}`,
-					session,
-				});
-			}
-			sessionItems.sort((a, b) => {
-				const sa = sessionScore(a.session, lower);
-				const sb = sessionScore(b.session, lower);
-				if (sb !== sa) return sb - sa;
-				return (a.session.title ?? "")
-					.toLowerCase()
-					.localeCompare((b.session.title ?? "").toLowerCase());
-			});
-		}
-		out.push(...sessionItems);
-
 		// Configured AI providers for quick chat
 		const providerItems: Array<Extract<LauncherItem, { kind: "chat-provider" }>> = [];
 		for (const provider of chatProviders) {
@@ -497,6 +501,40 @@ export function useLauncher() {
 		}
 		out.push(...builtinItems);
 
+		// Built-in tools
+		const builtinToolItems: Array<Extract<LauncherItem, { kind: "builtin-tool" }>> = [];
+		for (const tool of BUILTIN_TOOLS) {
+			if (
+				trimmed &&
+				!tool.title.toLowerCase().includes(lower) &&
+				!tool.description.toLowerCase().includes(lower) &&
+				!tool.keyword.includes(lower) &&
+				!tool.tool.includes(lower)
+			) {
+				continue;
+			}
+			const recentEntry = recent.find((r) => r.kind === "builtin-tool" && r.tool === tool.tool);
+			builtinToolItems.push({
+				kind: "builtin-tool",
+				id: `builtin-tool:${tool.tool}`,
+				tool: tool.tool,
+				title: tool.title,
+				description: tool.description,
+				keyword: tool.keyword,
+				iconName: tool.iconName,
+				recent: !!recentEntry,
+			});
+		}
+		if (trimmed) {
+			builtinToolItems.sort((a, b) => {
+				const sa = builtinScore(a, lower);
+				const sb = builtinScore(b, lower);
+				if (sb !== sa) return sb - sa;
+				return a.title.toLowerCase().localeCompare(b.title.toLowerCase());
+			});
+		}
+		out.push(...builtinToolItems);
+
 		// A2UI saved pages
 		for (const page of a2uiPages) {
 			if (
@@ -515,15 +553,62 @@ export function useLauncher() {
 			});
 		}
 
+		// Recent sessions (no query only)
+		const sessionItems: Array<Extract<LauncherItem, { kind: "session" }>> = [];
+		if (!trimmed) {
+			for (const session of sessions.slice(0, 5)) {
+				sessionItems.push({
+					kind: "session",
+					id: `session:${session.sessionId}`,
+					session,
+				});
+			}
+		} else {
+			for (const session of sessions) {
+				if (!matchesSession(session, lower)) continue;
+				sessionItems.push({
+					kind: "session",
+					id: `session:${session.sessionId}`,
+					session,
+				});
+			}
+			sessionItems.sort((a, b) => {
+				const sa = sessionScore(a.session, lower);
+				const sb = sessionScore(b.session, lower);
+				if (sb !== sa) return sb - sa;
+				return (a.session.title ?? "")
+					.toLowerCase()
+					.localeCompare((b.session.title ?? "").toLowerCase());
+			});
+		}
+		out.push(...sessionItems);
+
+		// Applications: the backend has already filtered/scored them, so we
+		// just deduplicate against the Recent list. Placed last so smaller
+		// categories are not truncated by the 80-item display cap.
+		for (const app of applications.apps) {
+			// Don't re-show recent apps in the main list to avoid duplicates.
+			if (recentIds.has(`app:${app.appPath}`)) continue;
+			out.push({
+				kind: "application",
+				id: `app:${app.appPath}`,
+				app,
+			});
+		}
+
 		return out;
 	}, [query, applications.apps, sessions, a2uiPages, recent, frequency, chatProviders]);
 
 	const selectItem = useCallback(
 		async (item: LauncherItem) => {
 			setError(null);
-			// Agent prompts and provider chat are handled by the launcher
-			// itself, not sent to the workbench.
-			if (item.kind === "agent" || item.kind === "chat-provider") {
+			// Agent prompts, provider chat, and built-in tools are handled by
+			// the launcher itself, not sent to the workbench.
+			if (
+				item.kind === "agent" ||
+				item.kind === "chat-provider" ||
+				item.kind === "builtin-tool"
+			) {
 				return;
 			}
 			try {
@@ -615,6 +700,7 @@ export function useLauncher() {
 		error,
 		setError,
 		builtinCommands: BUILTIN_COMMANDS,
+		builtinTools: BUILTIN_TOOLS,
 		applications,
 		agentPrompt: AGENT_PREFIX,
 	};

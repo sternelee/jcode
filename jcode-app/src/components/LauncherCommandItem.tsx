@@ -2,11 +2,15 @@ import { useEffect, useState } from "react";
 import { CommandItem } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import {
+	Calculator,
+	Clipboard,
 	Key,
 	Layers,
+	ListTodo,
 	MessageSquare,
 	MessageSquareText,
 	Plug,
+	Search,
 	Settings,
 	Sparkles,
 	Users,
@@ -22,6 +26,11 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 	plug: Plug,
 	settings: Settings,
 	message: MessageSquare,
+	"message-square-text": MessageSquareText,
+	search: Search,
+	"list-todo": ListTodo,
+	calculator: Calculator,
+	clipboard: Clipboard,
 };
 
 function AppIcon({ appPath, name, base64 }: { appPath: string; name: string; base64?: string | null }) {
@@ -100,6 +109,8 @@ function valueOf(item: LauncherItem): string {
 			return `session:${item.session.title} ${item.session.subtitle ?? ""} ${item.session.workingDir ?? ""}`;
 		case "builtin":
 			return `builtin:${item.title} ${item.keyword} ${item.page}`;
+		case "builtin-tool":
+			return `builtin-tool:${item.title} ${item.keyword} ${item.tool}`;
 		case "agent":
 			return `agent:${item.query}`;
 		case "chat-provider":
@@ -330,6 +341,31 @@ function Body({
 						</div>
 					</div>
 					<Badge>Open</Badge>
+				</>
+			);
+		case "builtin-tool":
+			return (
+				<>
+					{quickHint !== undefined && (
+						<QuickHint index={quickHint} />
+					)}
+					<BuiltinIcon name={item.iconName} />
+					<div className="min-w-0 flex-1">
+						<div className="text-[13px] font-medium truncate text-foreground flex items-center gap-2">
+							<span className="truncate">
+								<Highlight text={item.title} query={highlight} />
+							</span>
+							{item.recent && (
+								<span className="text-[9px] uppercase tracking-wider rounded px-1 py-px bg-primary/10 text-primary font-semibold shrink-0">
+									Recent
+								</span>
+							)}
+						</div>
+						<div className="text-[11px] launcher-muted truncate">
+							{item.description}
+						</div>
+					</div>
+					<Badge variant="primary">Open</Badge>
 				</>
 			);
 		case "agent":

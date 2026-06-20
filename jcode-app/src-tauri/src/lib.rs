@@ -3,7 +3,10 @@ extern crate objc;
 pub mod commands;
 pub mod error;
 mod launcher;
+mod open_file;
 mod server_client;
+mod search;
+mod calc;
 
 use commands::AppState;
 use server_client::ServerClient;
@@ -69,6 +72,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_sql::Builder::default().build())
         .manage(AppState::new())
         .setup(|app| {
             // Hide the Dock icon by default. Only show when workbench or
@@ -387,6 +392,10 @@ pub fn run() {
             commands::config::set_config_value,
             commands::env::list_env_files,
             commands::env::set_env_value,
+            search::search_files,
+            calc::evaluate_expression,
+            open_file::open_file,
+            open_file::open_parent_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -23,6 +23,8 @@ export type BuiltinPage =
 	| "mcp"
 	| "settings";
 
+export type BuiltinTool = "chat" | "search" | "todo" | "calc" | "clipboard";
+
 /** Configured AI provider exposed for quick launcher chat. */
 export interface LauncherChatProvider {
 	providerKey: string;
@@ -52,6 +54,16 @@ export type LauncherItem =
 			kind: "builtin";
 			id: string;
 			page: BuiltinPage;
+			title: string;
+			description: string;
+			keyword: string;
+			iconName: string;
+			recent?: boolean;
+    }
+  | {
+			kind: "builtin-tool";
+			id: string;
+			tool: BuiltinTool;
 			title: string;
 			description: string;
 			keyword: string;

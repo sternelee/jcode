@@ -9,10 +9,18 @@ import {
 } from "@/components/ui/command";
 import { LauncherCommandItem } from "@/components/LauncherCommandItem";
 import { LauncherChat } from "@/components/LauncherChat";
+import { ClipboardManager } from "@/components/ClipboardManager";
+import { TodoManager } from "@/components/TodoManager";
+import { FileSearch } from "@/components/FileSearch";
+import { Calculator } from "@/components/Calculator";
 import { useLauncher, hideCurrentLauncher } from "@/hooks/useLauncher";
+import { useClipboard } from "@/hooks/useClipboard";
+import { useTodos } from "@/hooks/useTodos";
+import { useFileSearch } from "@/hooks/useFileSearch";
 import { useTheme } from "@/hooks/useTheme";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { homeDir } from "@tauri-apps/api/path";
 import {
 	AlertCircle,
 	AppWindow,
@@ -28,7 +36,7 @@ import type { AppInfo, LauncherChatProvider, LauncherItem } from "@/lib/launcher
 const AGENT_HINT = "Type 'ask ' followed by a question to ask JFlow.";
 const AGENT_PREFIX = "ask ";
 
-type SectionLabel = "running" | "applications" | "recent" | "providers" | "sessions" | "builtin" | "a2ui";
+type SectionLabel = "running" | "applications" | "recent" | "providers" | "sessions" | "builtin" | "tools" | "a2ui";
 
 type Section = {
 	label: SectionLabel;
@@ -43,6 +51,7 @@ function buildSections(items: LauncherItem[]): Section[] {
 	const recent: LauncherItem[] = [];
 	const sessions: LauncherItem[] = [];
 	const builtin: LauncherItem[] = [];
+	const tools: LauncherItem[] = [];
 	const a2ui: LauncherItem[] = [];
 	const providers: LauncherItem[] = [];
 
@@ -64,6 +73,11 @@ function buildSections(items: LauncherItem[]): Section[] {
 			recent.push(item);
 			continue;
 		}
+		// Built-in tools are always shown in their own section, even when
+		// they also appear in Recent, so the category is discoverable.
+		if ("recent" in item && item.recent && item.kind === "builtin-tool") {
+			recent.push(item);
+		}
 		switch (item.kind) {
 			case "application":
 				applications.push(item);
@@ -73,6 +87,9 @@ function buildSections(items: LauncherItem[]): Section[] {
 				break;
 			case "builtin":
 				builtin.push(item);
+				break;
+			case "builtin-tool":
+				tools.push(item);
 				break;
 			case "a2ui":
 				a2ui.push(item);
@@ -87,9 +104,10 @@ function buildSections(items: LauncherItem[]): Section[] {
 	if (running.length) out.push({ label: "running", heading: "Running", items: running });
 	if (recent.length) out.push({ label: "recent", heading: "Recent", items: recent });
 	if (providers.length) out.push({ label: "providers", heading: "AI Providers", items: providers });
-	if (builtin.length) out.push({ label: "builtin", heading: "Pages", items: builtin });
 	if (a2ui.length) out.push({ label: "a2ui", heading: "A2UI Pages", items: a2ui });
 	if (sessions.length) out.push({ label: "sessions", heading: "Sessions", items: sessions });
+	if (builtin.length) out.push({ label: "builtin", heading: "Built-in Pages", items: builtin });
+	if (tools.length) out.push({ label: "tools", heading: "Built-in Tools", items: tools });
 	if (applications.length) out.push({ label: "applications", heading: "Applications", items: applications });
 
 	return out;
@@ -116,17 +134,65 @@ export function Launcher() {
 		recordRecent,
 		recordUsage,
 	} = useLauncher();
-	const [mode, setMode] = useState<"palette" | "chat">("palette");
+	const [mode, setMode] = useState<
+		"palette" | "chat" | "clipboard" | "todo" | "search" | "calc"
+	>("palette");
 	const [chatProvider, setChatProvider] = useState<LauncherChatProvider | null>(null);
 	const [chatInitialQuery, setChatInitialQuery] = useState<string>("");
 	const [inputValue, setInputValue] = useState("");
+
+	// Built-in tool state
+	const [searchInitialQuery, setSearchInitialQuery] = useState("");
+	const [calcInitialExpression, setCalcInitialExpression] = useState("");
+	const [fileSearchKeyword, setFileSearchKeyword] = useState("");
+	const [fileSearchPath, setFileSearchPath] = useState("");
+	const [clipboardQuery, setClipboardQuery] = useState("");
+	const clipboard = useClipboard();
+	const todos = useTodos();
+	const fileSearch = useFileSearch();
+
+	useEffect(() => {
+		void homeDir().then((dir) => {
+			if (dir) setFileSearchPath(dir);
+		});
+	}, []);
+
+	// Prefix routing: only exact tool prefixes switch modes.
+	useEffect(() => {
+		if (mode !== "palette") return;
+		const trimmed = inputValue.trimStart();
+		if (!trimmed.startsWith("/")) return;
+		const rest = trimmed.slice(1);
+		const match = /^(clip|todo|calc|search)(?:\s+(.*))?$/i.exec(rest);
+		if (!match) return;
+		const tool = match[1].toLowerCase();
+		const arg = (match[2] ?? "").trim();
+		switch (tool) {
+			case "clip":
+				setMode("clipboard");
+				break;
+			case "todo":
+				setMode("todo");
+				break;
+			case "calc":
+				setMode("calc");
+				setCalcInitialExpression(arg);
+				break;
+			case "search":
+				setMode("search");
+				setSearchInitialQuery(arg);
+				break;
+		}
+		setInputValue("");
+		setQuery("");
+	}, [inputValue, mode, setQuery]);
 
 	// Hide the launcher on blur (click outside) only when in palette mode.
 	// In chat mode the window stays visible so the user can interact with
 	// other windows without losing the conversation.
 	useEffect(() => {
 		const handleBlur = () => {
-			if (mode !== "chat") {
+			if (mode === "palette") {
 				void hideCurrentLauncher();
 			}
 		};
@@ -137,30 +203,26 @@ export function Launcher() {
 	useEffect(() => {
 		let unlisten: (() => void) | null = null;
 		void listen<string>("global-shortcut", () => {
-			// Keep an active chat visible when the launcher is re-summoned so
-			// the conversation is not interrupted. Only reset palette state.
-			if (mode !== "chat") {
-				setMode("palette");
+			// Keep active tool/chat windows visible when the launcher is
+			// re-summoned so ongoing work is not interrupted. Only reset
+			// palette state and clear its search input.
+			if (mode === "palette") {
 				setChatProvider(null);
 				setChatInitialQuery("");
+				setQuery("");
+				setInputValue("");
+				setError(null);
+				void refreshSessions();
+				void applications.refreshIfStale();
+				requestAnimationFrame(() => {
+					const input = document.querySelector<HTMLInputElement>(
+						'[data-slot="command-input"]',
+					);
+					input?.focus();
+				});
+			} else {
+				void refreshSessions();
 			}
-			setQuery("");
-			setInputValue("");
-			setError(null);
-			void refreshSessions();
-			// Skip the app-index rescan if we already refreshed within the
-			// cooldown window; the footer refresh button is the user-facing
-			// way to force a fresh scan.
-			void applications.refreshIfStale();
-			// Re-focus the search input on the next frame so the user
-			// can start typing immediately, regardless of which window
-			// had focus when the launcher was summoned.
-			requestAnimationFrame(() => {
-				const input = document.querySelector<HTMLInputElement>(
-					'[data-slot="command-input"]',
-				);
-				input?.focus();
-			});
 		}).then((fn) => {
 			unlisten = fn;
 		});
@@ -194,8 +256,7 @@ export function Launcher() {
 	// items, matching the muscle memory of users coming from Raycast,
 	// Spotlight, Alfred, etc. We attach to `document` so the keydown
 	// fires before the search input consumes the digit.
-	// Cap the rendered list so clearing the query doesn't create a huge DOM.
-	const displayItems = useMemo(() => items.slice(0, 80), [items]);
+	const displayItems = useMemo(() => items, [items]);
 	const sections = useMemo(
 		() => buildSections(displayItems),
 		[displayItems],
@@ -246,7 +307,7 @@ export function Launcher() {
 		[recordRecent, recordUsage],
 	);
 
-	// Tab in palette → switch to chat; Escape in chat → back to palette.
+	// Tab in palette → switch to chat; Escape in tool/chat mode → back to palette.
 	useEffect(() => {
 		const handler = (e: KeyboardEvent) => {
 			if (e.key === "Tab" && mode === "palette" && chatProviders.length > 0) {
@@ -257,11 +318,13 @@ export function Launcher() {
 				const provider = (lastProviderKey && chatProviders.find((p) => p.providerKey === lastProviderKey)) || chatProviders[0];
 				startChat(provider);
 			}
-			if (e.key === "Escape" && mode === "chat") {
+			if (e.key === "Escape" && mode !== "palette") {
 				e.preventDefault();
 				setMode("palette");
 				setChatProvider(null);
 				setChatInitialQuery("");
+				setCalcInitialExpression("");
+				setSearchInitialQuery("");
 				// Focus the search input after returning to palette.
 				requestAnimationFrame(() => {
 					const input = document.querySelector<HTMLInputElement>(
@@ -288,6 +351,23 @@ export function Launcher() {
 			}
 			return;
 		}
+		if (item.kind === "builtin-tool") {
+			const toolId = `builtin-tool:${item.tool}`;
+			recordRecent({
+				kind: "builtin-tool",
+				id: toolId,
+				tool: item.tool,
+				title: item.title,
+			});
+			recordUsage(toolId);
+			if (item.tool === "chat") {
+				const provider = chatProviders[0];
+				if (provider) startChat(provider);
+			} else {
+				setMode(item.tool);
+			}
+			return;
+		}
 		void selectItem(item);
 	};
 	const handleStopApp = (app: AppInfo) => {
@@ -303,6 +383,10 @@ export function Launcher() {
 				setError(`Failed to quit ${app.name}: ${String(e)}`);
 			});
 	};
+
+	const handleFileSearch = useCallback(() => {
+		fileSearch.search(fileSearchKeyword, fileSearchPath);
+	}, [fileSearch.search, fileSearchKeyword, fileSearchPath]);
 
 	const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
 		if (event.key === "Escape") {
@@ -345,7 +429,7 @@ export function Launcher() {
 				onKeyDown={handleKeyDown}
 			>
 				<Command
-					shouldFilter={false}
+					filter={() => 1}
 					className="flex flex-col flex-1 launcher-glass overflow-hidden"
 				>
 					<LauncherInput
@@ -407,6 +491,84 @@ export function Launcher() {
 		);
 	}
 
+	const closeTool = () => {
+		setMode("palette");
+		setInputValue("");
+		setQuery("");
+		setCalcInitialExpression("");
+		setSearchInitialQuery("");
+		setFileSearchKeyword("");
+		requestAnimationFrame(() => {
+			const input = document.querySelector<HTMLInputElement>(
+				'[data-slot="command-input"]',
+			);
+			input?.focus();
+		});
+	};
+
+	if (mode === "clipboard") {
+		return (
+			<ClipboardManager
+				items={clipboard.items}
+				loading={clipboard.loading}
+				error={clipboard.error}
+				query={clipboardQuery}
+				onQueryChange={setClipboardQuery}
+				onCopy={clipboard.copyItem}
+				onDelete={clipboard.deleteItem}
+				onTogglePin={clipboard.togglePin}
+				onClear={clipboard.clearHistory}
+				onClose={closeTool}
+			/>
+		);
+	}
+
+	if (mode === "todo") {
+		return (
+			<TodoManager
+				items={todos.items}
+				loading={todos.loading}
+				error={todos.error}
+				onAdd={todos.addTodo}
+				onToggle={todos.toggleTodo}
+				onDelete={todos.deleteTodo}
+				onClearCompleted={todos.clearCompleted}
+				onClose={closeTool}
+			/>
+		);
+	}
+
+	if (mode === "search") {
+		return (
+			<FileSearch
+				results={fileSearch.results}
+				searching={fileSearch.searching}
+				done={fileSearch.done}
+				error={fileSearch.error}
+				keyword={fileSearchKeyword}
+				path={fileSearchPath}
+				initialQuery={searchInitialQuery}
+				onKeywordChange={setFileSearchKeyword}
+				onPathChange={setFileSearchPath}
+				onSearch={handleFileSearch}
+				onClear={fileSearch.clear}
+				onClose={() => {
+					fileSearch.clear();
+					closeTool();
+				}}
+			/>
+		);
+	}
+
+	if (mode === "calc") {
+		return (
+			<Calculator
+				initialExpression={calcInitialExpression}
+				onClose={closeTool}
+			/>
+		);
+	}
+
 	return (
 		<motion.div
 			initial={{ opacity: 0, scale: 0.98 }}
@@ -416,14 +578,14 @@ export function Launcher() {
 			onKeyDown={handleKeyDown}
 		>
 			<Command
-				shouldFilter={false}
+				filter={() => 1}
 				className="flex flex-col flex-1 launcher-glass overflow-hidden"
 			>
 				<LauncherInput
 					autoFocus
 					value={inputValue}
 					onChange={setInputValue}
-					placeholder="Search apps, sessions, or type 'ask ' to chat…"
+					placeholder="Search apps, sessions, 'ask ' to chat, or /clip /todo /search /calc"
 					mode="default"
 					onClear={handleClearQuery}
 				/>

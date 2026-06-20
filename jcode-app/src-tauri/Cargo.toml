@@ -33,12 +33,19 @@ tauri = { version = "2.11", features = [
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 plist = "1"
 objc = "0.2"
 applications = "0.3.1"
 tauri-icns = "0.1"
 base64 = "0.22"
 window-vibrancy = "0.5"
+ignore = "0.4"
+grep-matcher = "0.1"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+meval = "0.2"
 tokio = { version = "1", features = [
   "io-util",
   "macros",
