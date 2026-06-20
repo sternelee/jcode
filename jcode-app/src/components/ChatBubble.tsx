@@ -78,7 +78,7 @@ function CompactToolLine({ tools }: { tools: ToolExecution[] }) {
 	if (tools.length === 0) return null;
 	const last = tools[tools.length - 1];
 	return (
-		<div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-1">
+		<div className="flex items-center gap-1.5 text-[11px] launcher-muted mt-1">
 			<Wrench className="size-3 shrink-0" />
 			<code className="font-mono">{last.name || "…"}</code>
 			{last.status === "executing" && (
@@ -172,7 +172,7 @@ function CompactBubble({
 	if (message.role === "system") {
 		return (
 			<div className="flex w-full justify-center">
-				<div className="text-[11px] text-muted-foreground/70 px-3 py-1">
+				<div className="text-[11px] launcher-muted/70 px-3 py-1">
 					{message.content}
 				</div>
 			</div>
@@ -191,7 +191,7 @@ function CompactBubble({
 					"max-w-[85%] rounded-2xl px-3 py-2 text-[13px] leading-relaxed",
 					isUser
 						? "bg-primary text-primary-foreground rounded-br-md whitespace-pre-wrap"
-						: "bg-muted text-foreground rounded-bl-md",
+						: "bg-[var(--launcher-input-bg)] border border-[var(--launcher-glass-border)] text-foreground rounded-bl-md backdrop-blur-sm",
 				)}
 			>
 				{!isUser && message.reasoning && (

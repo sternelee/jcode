@@ -128,6 +128,17 @@ pub fn run() {
                 );
             }
             if let Some(window) = app.get_webview_window("launcher") {
+                #[cfg(target_os = "macos")]
+                {
+                    use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+                    let _ = apply_vibrancy(
+                        &window,
+                        NSVisualEffectMaterial::HudWindow,
+                        None,
+                        Some(22.0),
+                    );
+                }
+
                 let window_clone = window.clone();
                 let _ = window.on_window_event(move |event| {
                     match event {

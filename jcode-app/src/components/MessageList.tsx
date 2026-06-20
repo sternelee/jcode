@@ -101,7 +101,12 @@ export function MessageList({
 				<button
 					type="button"
 					onClick={scrollToBottom}
-					className="absolute bottom-3 left-1/2 -translate-x-1/2 size-8 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+					className={cn(
+						"absolute bottom-3 left-1/2 -translate-x-1/2 size-8 rounded-full backdrop-blur-sm border shadow-md flex items-center justify-center hover:text-foreground transition-colors",
+						variant === "compact"
+							? "bg-[var(--launcher-input-bg)] border-[var(--launcher-glass-border)] launcher-muted hover:bg-[var(--launcher-glass)]"
+							: "bg-background/80 border-border text-muted-foreground hover:bg-background",
+					)}
 					aria-label="Scroll to bottom"
 				>
 					<ChevronDown className="size-4" />

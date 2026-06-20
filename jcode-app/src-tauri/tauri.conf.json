@@ -23,6 +23,7 @@
         "closable": true,
         "decorations": false,
         "transparent": true,
+        "shadow": true,
         "alwaysOnTop": true,
         "visible": false,
         "center": true,

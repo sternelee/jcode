@@ -100,6 +100,20 @@
 
 	--selection: #525252;
 	--selection-fg: #ffffff;
+
+	/* Launcher glass (Spotlight-style light mode) */
+	--launcher-glass: rgba(255, 255, 255, 0.45);
+	--launcher-glass-border: rgba(255, 255, 255, 0.45);
+	--launcher-glass-highlight: rgba(255, 255, 255, 0.75);
+	--launcher-input-bg: rgba(255, 255, 255, 0.40);
+	--launcher-input-border: rgba(255, 255, 255, 0.45);
+	--launcher-muted-fg: rgba(0, 0, 0, 0.55);
+	--launcher-selected: rgba(0, 122, 255, 0.18);
+	--launcher-selected-strong: rgba(0, 122, 255, 0.32);
+	--launcher-shadow:
+		0 24px 80px rgba(0, 0, 0, 0.16),
+		0 8px 24px rgba(0, 0, 0, 0.08),
+		inset 0 1px 0 var(--launcher-glass-highlight);
 }
 
 /* ============================================================================
@@ -150,6 +164,20 @@
 
 	--selection: #454545;
 	--selection-fg: #e0e0e0;
+
+	/* Launcher glass (Spotlight-style dark mode) */
+	--launcher-glass: rgba(30, 30, 30, 0.55);
+	--launcher-glass-border: rgba(255, 255, 255, 0.32);
+	--launcher-glass-highlight: rgba(255, 255, 255, 0.28);
+	--launcher-input-bg: rgba(255, 255, 255, 0.14);
+	--launcher-input-border: rgba(255, 255, 255, 0.42);
+	--launcher-muted-fg: rgba(255, 255, 255, 0.62);
+	--launcher-selected: rgba(10, 132, 255, 0.32);
+	--launcher-selected-strong: rgba(10, 132, 255, 0.55);
+	--launcher-shadow:
+		0 24px 80px rgba(0, 0, 0, 0.42),
+		0 8px 24px rgba(0, 0, 0, 0.22),
+		inset 0 1px 0 var(--launcher-glass-highlight);
 }
 
 /* ============================================================================
@@ -191,6 +219,131 @@ body,
 	border-radius: 16px;
 	overflow: hidden;
 	box-shadow: inset 0 0 0 2px var(--border);
+}
+
+/* ============================================================================
+   Launcher window — macOS 26 Spotlight glassmorphism
+   ============================================================================ */
+
+/* The launcher is a transparent, undecorated Tauri window. Make the root
+   surfaces fully transparent so the OS wallpaper shows through; the single
+   floating Command card provides the frosted glass surface. */
+body.launcher-window,
+body.launcher-window #root {
+	background: transparent !important;
+	box-shadow: none !important;
+	border: none !important;
+	outline: none !important;
+	border-radius: 22px !important;
+	overflow: hidden !important;
+}
+
+body.launcher-window {
+	margin: 0;
+}
+
+.launcher-window #root {
+	display: flex;
+}
+
+/* Floating glass panel used by the launcher palette and chat modes.
+   On macOS the actual blur comes from window-vibrancy (NSVisualEffectView);
+   this layer only provides a tint, border, and soft shadow. */
+.launcher-glass {
+	background: var(--launcher-glass);
+	border: 1px solid var(--launcher-glass-border);
+	border-radius: 22px;
+	box-shadow:
+		inset 0 1px 0 var(--launcher-glass-highlight),
+		0 28px 90px rgba(0, 0, 0, 0.20),
+		0 12px 32px rgba(0, 0, 0, 0.14),
+		0 4px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* Larger, more luminous search input. */
+.launcher-input {
+	height: 48px;
+	border-radius: 14px;
+	background: var(--launcher-input-bg);
+	border: 1px solid var(--launcher-input-border);
+	box-shadow:
+		inset 0 1px 1px rgba(255, 255, 255, 0.12),
+		0 1px 1px rgba(0, 0, 0, 0.04);
+	transition:
+		background-color 0.15s ease,
+		border-color 0.15s ease,
+		box-shadow 0.15s ease;
+}
+
+.launcher-input:focus-within,
+.launcher-input[data-focus="true"] {
+	background: var(--launcher-input-bg);
+	border-color: rgba(0, 122, 255, 0.45);
+	box-shadow:
+		0 0 0 3px var(--launcher-selected),
+		inset 0 1px 1px rgba(255, 255, 255, 0.15);
+}
+
+.dark .launcher-input:focus-within,
+.dark .launcher-input[data-focus="true"] {
+	border-color: rgba(10, 132, 255, 0.55);
+	box-shadow:
+		0 0 0 3px var(--launcher-selected),
+		inset 0 1px 1px rgba(255, 255, 255, 0.08);
+}
+
+/* Launcher list items: more rounded, with a vibrant blue selection. */
+.launcher-item {
+	border-radius: 10px;
+	transition: background-color 0.08s ease;
+}
+
+.launcher-item[data-selected="true"],
+.launcher-item[aria-selected="true"] {
+	background: linear-gradient(
+		180deg,
+		var(--launcher-selected-strong) 0%,
+		var(--launcher-selected) 100%
+	);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Section headings get a subtler glass label. */
+.launcher-glass [cmdk-group-heading] {
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--fg);
+	opacity: 0.65;
+}
+
+/* Muted secondary text tuned for vibrancy backgrounds. */
+.launcher-muted {
+	color: var(--launcher-muted-fg);
+}
+
+/* Launcher footer row. */
+.launcher-footer {
+	color: var(--launcher-muted-fg);
+}
+
+/* Footer pills / badges used inside the launcher. */
+.launcher-kbd {
+	border: 1px solid var(--launcher-glass-border);
+	background: var(--launcher-input-bg);
+	box-shadow: inset 0 1px 0 var(--launcher-glass-highlight);
+}
+
+/* Provider chips in the launcher. */
+.launcher-chip {
+	border: 1px solid var(--launcher-glass-border);
+	background: var(--launcher-input-bg);
+	transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.launcher-chip:hover {
+	background: var(--launcher-glass);
 }
 
 /* ============================================================================

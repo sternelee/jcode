@@ -20,6 +20,10 @@ import "./App.css";
  * `getCurrentWebviewWindow().label` synchronously.
  */
 const label = getCurrentWebviewWindow().label;
+if (label === "launcher") {
+	document.documentElement.classList.add("launcher-window");
+	document.body.classList.add("launcher-window");
+}
 const Root =
 	label === "launcher" ? (
 		<Launcher />

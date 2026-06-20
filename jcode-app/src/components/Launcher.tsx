@@ -178,33 +178,7 @@ export function Launcher() {
 		return () => clearTimeout(timer);
 	}, [inputValue, setQuery, applications.search]);
 
-	// Track which item the keyboard cursor is hovering so we can give a
-	// visible hint. `cmdk` handles the actual selection state internally;
-	// we just observe the `data-selected` attribute.
 	const listRef = useRef<HTMLDivElement | null>(null);
-	const [activeId, setActiveId] = useState<string | null>(null);
-
-	useEffect(() => {
-		const list = listRef.current;
-		if (!list) return;
-		const onChange = () => {
-			const selected = list.querySelector(
-				"[data-slot=command-item][data-selected=true]",
-			) as HTMLElement | null;
-			if (selected) {
-				const command = selected as HTMLElement;
-				setActiveId(command.dataset.value ?? null);
-			}
-		};
-		const observer = new MutationObserver(onChange);
-		observer.observe(list, {
-			attributes: true,
-			attributeFilter: ["data-selected"],
-			subtree: true,
-		});
-		onChange();
-		return () => observer.disconnect();
-	}, []);
 
 	// Periodically refresh the session list while the launcher is open so
 	// brand-new sessions appear in the palette.
@@ -363,12 +337,12 @@ export function Launcher() {
 		const item = items[0];
 		return (
 			<div
-				className="h-screen w-screen flex flex-col text-foreground bg-background p-2"
+				className="h-screen w-screen flex flex-col text-foreground"
 				onKeyDown={handleKeyDown}
 			>
 				<Command
 					shouldFilter={false}
-					className="flex-1 rounded-xl! bg-card/95 backdrop-blur-xl border border-primary/40 shadow-2xl overflow-hidden ring-1 ring-primary/20 animate-fade-in"
+					className="flex flex-col flex-1 launcher-glass overflow-hidden animate-fade-in"
 				>
 					<LauncherInput
 						autoFocus
@@ -379,9 +353,9 @@ export function Launcher() {
 						onClear={handleClearAgent}
 						onStripAgent={handleStripAgent}
 					/>
-					<CommandList ref={listRef} className="max-h-[320px] p-2">
+					<CommandList ref={listRef} className="flex-1 min-h-0 p-2 overflow-y-auto">
 						<CommandEmpty>
-							<div className="px-3 py-6 text-center text-xs text-muted-foreground">
+							<div className="px-3 py-6 text-center text-xs launcher-muted">
 								Press Enter to send
 							</div>
 						</CommandEmpty>
@@ -389,7 +363,6 @@ export function Launcher() {
 							{item && (
 								<LauncherCommandItem
 									item={item}
-									active={activeId === getValue(item)}
 									onSelect={handleSelect}
 									disabled={item.kind === "agent" && !item.query.trim()}
 									index={itemIndexById.get(item.id)}
@@ -432,12 +405,12 @@ export function Launcher() {
 
 	return (
 		<div
-			className="h-screen w-screen flex flex-col text-foreground bg-background p-2"
+			className="h-screen w-screen flex flex-col text-foreground"
 			onKeyDown={handleKeyDown}
 		>
 			<Command
 				shouldFilter={false}
-				className="flex-1 rounded-xl! bg-card/95 backdrop-blur-xl border border-border shadow-2xl overflow-hidden animate-fade-in"
+				className="flex flex-col flex-1 launcher-glass overflow-hidden animate-fade-in"
 			>
 				<LauncherInput
 					autoFocus
@@ -457,7 +430,7 @@ export function Launcher() {
 								key={provider.providerKey}
 								type="button"
 								onClick={() => startChat(provider)}
-								className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 hover:bg-muted/80 px-2.5 py-1 text-[11px] text-foreground transition-colors"
+								className="launcher-chip shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] text-foreground"
 							>
 								<span className="w-3.5 h-3.5 rounded-full bg-primary/10 flex items-center justify-center text-[8px] font-semibold text-primary">
 									{(provider.displayName ?? provider.providerKey ?? "?").charAt(0).toUpperCase()}
@@ -467,15 +440,15 @@ export function Launcher() {
 						))}
 					</div>
 				)}
-				<CommandList ref={listRef} className="max-h-[320px] p-2">
+				<CommandList ref={listRef} className="flex-1 min-h-0 p-2 overflow-y-auto">
 					{!hasResults && (
 						<CommandEmpty>
 							{showNoAppsHint ? (
-								<div className="flex flex-col items-center gap-3 py-8 text-muted-foreground">
+								<div className="flex flex-col items-center gap-3 py-8 launcher-muted">
 									<AppWindow className="size-6 opacity-30" />
 									<div className="text-center space-y-1">
 										<div className="text-sm">No applications found</div>
-										<div className="text-[11px] text-muted-foreground/60 max-w-[280px]">
+										<div className="text-[11px] text-[var(--launcher-muted-fg)]/60 max-w-[280px]">
 											Grant Full Disk Access in System Settings, or refresh
 											to rescan.
 										</div>
@@ -490,10 +463,10 @@ export function Launcher() {
 									</button>
 								</div>
 							) : (
-								<div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
+								<div className="flex flex-col items-center gap-2 py-8 launcher-muted">
 									<Sparkles className="size-6 opacity-30" />
 									<span className="text-sm">No matches</span>
-									<span className="text-[11px] text-muted-foreground/60">
+									<span className="text-[11px] text-[var(--launcher-muted-fg)]/60">
 										{AGENT_HINT}
 									</span>
 								</div>
@@ -507,7 +480,6 @@ export function Launcher() {
 								<LauncherCommandItem
 									key={item.id}
 									item={item}
-									active={activeId === getValue(item)}
 									onSelect={handleSelect}
 									highlight={query}
 									onStopApp={
@@ -558,14 +530,13 @@ function LauncherInput({
 	onStripAgent,
 }: LauncherInputProps) {
 	return (
-		<div data-slot="command-input-wrapper" className="p-1 pb-0">
+		<div data-slot="command-input-wrapper" className="p-2 pb-2">
 			<div
 				data-slot="launcher-input-group"
 				className={cn(
-					"flex items-center gap-2 h-10 px-3 rounded-lg border transition-colors",
-					mode === "agent"
-						? "border-primary/30 bg-primary/5 ring-1 ring-primary/15"
-						: "border-input/30 bg-input/30",
+					"launcher-input flex items-center gap-2 px-3",
+					mode === "agent" &&
+						"border-primary/30 bg-primary/[0.07] focus-within:border-primary/50 focus-within:ring-primary/20",
 				)}
 			>
 				{mode === "agent" ? (
@@ -580,7 +551,7 @@ function LauncherInput({
 					</button>
 				) : (
 					<Search
-						className="size-4 shrink-0 text-muted-foreground/60"
+						className="size-4 shrink-0 text-[var(--launcher-muted-fg)]/60"
 						aria-hidden="true"
 					/>
 				)}
@@ -590,13 +561,13 @@ function LauncherInput({
 					value={value}
 					onValueChange={onChange}
 					placeholder={placeholder}
-					className="flex-1 bg-transparent text-sm text-foreground outline-hidden placeholder:text-muted-foreground/60 disabled:cursor-not-allowed disabled:opacity-50"
+					className="flex-1 bg-transparent text-sm text-foreground outline-hidden placeholder:text-[var(--launcher-muted-fg)]/60 disabled:cursor-not-allowed disabled:opacity-50"
 				/>
 				{value && (
 					<button
 						type="button"
 						onClick={onClear}
-						className="size-5 rounded-md flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
+						className="size-5 rounded-md flex items-center justify-center text-[var(--launcher-muted-fg)]/60 hover:text-foreground hover:bg-muted/60 transition-colors shrink-0"
 						aria-label="Clear query"
 					>
 						<X className="size-3" />
@@ -605,23 +576,6 @@ function LauncherInput({
 			</div>
 		</div>
 	);
-}
-
-function getValue(item: LauncherItem): string {
-	switch (item.kind) {
-		case "application":
-			return `app:${item.app.name} ${item.app.bundleId ?? ""} ${item.app.appPath}`;
-		case "session":
-			return `session:${item.session.title} ${item.session.subtitle ?? ""} ${item.session.workingDir ?? ""}`;
-		case "builtin":
-			return `builtin:${item.title} ${item.keyword} ${item.page}`;
-		case "agent":
-			return `agent:${item.query}`;
-		case "chat-provider":
-			return `provider:${item.provider.providerKey ?? ""} ${item.provider.displayName ?? ""}`;
-		case "a2ui":
-			return `a2ui:${item.title} ${item.pageId}`;
-	}
 }
 
 interface LauncherFooterProps {
@@ -642,7 +596,7 @@ function LauncherFooter({
 	showTabHint,
 }: LauncherFooterProps) {
 	return (
-		<div className="border-t border-border px-3 py-1.5 flex items-center justify-between text-[11px] text-muted-foreground gap-3">
+		<div className="launcher-footer border-t border-[var(--launcher-glass-border)] px-3 py-1.5 flex items-center justify-between text-[11px] gap-3">
 			<div className="flex items-center gap-3 min-w-0">
 				{mode === "agent" ? (
 					<span className="flex items-center gap-1.5">
@@ -702,12 +656,12 @@ function KbdHint({ keys, label }: { keys: string[]; label: string }) {
 			{keys.map((key, idx) => (
 				<kbd
 					key={`${key}-${idx}`}
-					className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded border border-border bg-muted/50 text-foreground/80 font-mono text-[10px] leading-none"
+					className="launcher-kbd inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded text-foreground/80 font-mono text-[10px] leading-none"
 				>
 					{key}
 				</kbd>
 			))}
-			<span className="text-muted-foreground/70">{label}</span>
+			<span className="launcher-muted opacity-70">{label}</span>
 		</span>
 	);
 }

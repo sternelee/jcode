@@ -34,7 +34,7 @@ function AppIcon({ appPath, name, base64 }: { appPath: string; name: string; bas
 	if (!url || errored) {
 		return (
 			<div
-				className="size-8 rounded-md bg-muted flex items-center justify-center text-muted-foreground text-[11px] font-semibold uppercase shrink-0 tracking-wider"
+				className="size-8 rounded-md bg-muted/30 flex items-center justify-center launcher-muted text-[11px] font-semibold uppercase shrink-0 tracking-wider"
 				aria-hidden="true"
 			>
 				{initials}
@@ -47,7 +47,7 @@ function AppIcon({ appPath, name, base64 }: { appPath: string; name: string; bas
 			alt=""
 			width={32}
 			height={32}
-			className="size-8 rounded-md object-contain bg-white/5 shrink-0"
+			className="size-8 rounded-md object-contain bg-muted/30 shrink-0"
 			draggable={false}
 			onError={() => setErrored(true)}
 		/>
@@ -81,7 +81,6 @@ function BuiltinIcon({ name }: { name: string }) {
 export interface LauncherCommandItemProps {
 	item: LauncherItem;
 	onSelect: (item: LauncherItem) => void;
-	active: boolean;
 	disabled?: boolean;
 	/** Optional search query used to highlight matched characters in titles. */
 	highlight?: string;
@@ -113,7 +112,6 @@ function valueOf(item: LauncherItem): string {
 export function LauncherCommandItem({
 	item,
 	onSelect,
-	active,
 	disabled,
 	highlight,
 	onStopApp,
@@ -132,8 +130,7 @@ export function LauncherCommandItem({
 			onSelect={handleSelect}
 			disabled={disabled}
 			className={cn(
-				"group/item px-3 py-2 rounded-lg cursor-default flex items-center gap-3",
-				active && "bg-muted/70",
+				"launcher-item group/item px-3 py-2 cursor-default flex items-center gap-3",
 				disabled && "opacity-50",
 			)}
 		>
@@ -239,7 +236,7 @@ function Body({
 								</span>
 							)}
 						</div>
-						<div className="text-[11px] text-muted-foreground truncate">
+						<div className="text-[11px] launcher-muted truncate">
 							{formatAppSubtitle(item.app)}
 						</div>
 					</div>
@@ -301,7 +298,7 @@ function Body({
 								/>
 							)}
 						</div>
-						<div className="text-[11px] text-muted-foreground truncate">
+						<div className="text-[11px] launcher-muted truncate">
 							{formatSessionSubtitle(item.session)}
 						</div>
 					</div>
@@ -328,7 +325,7 @@ function Body({
 								</span>
 							)}
 						</div>
-						<div className="text-[11px] text-muted-foreground truncate">
+						<div className="text-[11px] launcher-muted truncate">
 							{item.description}
 						</div>
 					</div>
@@ -351,7 +348,7 @@ function Body({
 						<div className="text-[13px] font-medium truncate text-foreground">
 							{item.query ? `Ask: ${item.query}` : "Ask JFlow…"}
 						</div>
-						<div className="text-[11px] text-muted-foreground truncate">
+						<div className="text-[11px] launcher-muted truncate">
 							{item.query
 								? "Press Enter to send"
 								: "Type your question, then press Enter"}
@@ -383,7 +380,7 @@ function Body({
 								</span>
 							)}
 						</div>
-						<div className="text-[11px] text-muted-foreground truncate">
+						<div className="text-[11px] launcher-muted truncate">
 							{item.provider.model}
 						</div>
 					</div>
@@ -411,7 +408,7 @@ function Body({
 								</span>
 							)}
 						</div>
-						<div className="text-[11px] text-muted-foreground truncate">
+						<div className="text-[11px] launcher-muted truncate">
 							{item.description ?? "Interactive page"}
 						</div>
 					</div>
@@ -434,7 +431,7 @@ function Badge({
 				"text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 shrink-0",
 				variant === "primary"
 					? "bg-primary text-primary-foreground"
-					: "bg-muted text-muted-foreground",
+					: "bg-muted launcher-muted",
 			)}
 		>
 			{children}
@@ -445,7 +442,7 @@ function Badge({
 function QuickHint({ index }: { index: number }) {
 	return (
 		<span
-			className="inline-flex items-center justify-center min-w-[20px] h-[20px] rounded border border-border bg-muted/40 text-[10px] font-mono text-muted-foreground shrink-0 group-data-[selected=true]/item:bg-primary/20 group-data-[selected=true]/item:text-primary group-data-[selected=true]/item:border-primary/30 transition-colors"
+			className="inline-flex items-center justify-center min-w-[20px] h-[20px] rounded border border-border bg-muted/40 text-[10px] font-mono launcher-muted shrink-0 group-data-[selected=true]/item:bg-primary/20 group-data-[selected=true]/item:text-primary group-data-[selected=true]/item:border-primary/30 transition-colors"
 			aria-hidden="true"
 		>
 			⌘{index}

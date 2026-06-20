@@ -128,10 +128,10 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 	};
 
 	return (
-		<div className="h-screen w-screen flex flex-col bg-background text-foreground p-2">
-			<div className="flex-1 rounded-xl bg-card/95 backdrop-blur-xl border border-border shadow-2xl overflow-hidden flex flex-col animate-fade-in">
+		<div className="h-screen w-screen flex flex-col text-foreground">
+			<div className="flex-1 launcher-glass overflow-hidden flex flex-col animate-fade-in">
 				{/* Header */}
-				<div className="flex items-center justify-between px-3 py-2 border-b border-border">
+				<div className="flex items-center justify-between px-3 py-2 border-b border-[var(--launcher-glass-border)]">
 					<div className="flex items-center gap-2">
 						<div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-medium text-primary">
 							{displayName.charAt(0).toUpperCase()}
@@ -144,7 +144,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 									if (value) void setModel(value);
 								}}
 							>
-								<SelectTrigger className="h-5 border-0 bg-transparent p-0 text-[10px] text-muted-foreground shadow-none hover:text-foreground focus:ring-0 gap-1 w-fit">
+								<SelectTrigger className="h-5 border-0 bg-transparent p-0 text-[10px] launcher-muted shadow-none hover:text-foreground focus:ring-0 gap-1 w-fit">
 									<SelectValue placeholder={currentModel} />
 								</SelectTrigger>
 								<SelectContent
@@ -161,13 +161,13 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 								</SelectContent>
 							</Select>
 						) : (
-							<span className="text-[10px] text-muted-foreground">{currentModel}</span>
+							<span className="text-[10px] launcher-muted">{currentModel}</span>
 						)}
 					</div>
 					<button
 						type="button"
 						onClick={onClose}
-						className="ml-auto size-6 rounded-md flex items-center justify-center text-muted-foreground/60 hover:text-foreground hover:bg-muted/60 transition-colors"
+						className="ml-auto size-6 rounded-md flex items-center justify-center launcher-muted hover:text-foreground hover:bg-muted/60 transition-colors"
 						aria-label="Close chat"
 					>
 						<X className="size-3.5" />
@@ -181,7 +181,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 					variant="compact"
 					emptyState={
 						!initialQuery ? (
-							<div className="text-muted-foreground text-xs">
+							<div className="launcher-muted text-xs">
 								Start a conversation with {displayName}
 							</div>
 						) : undefined
@@ -189,9 +189,9 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 				/>
 
 				{/* Input */}
-				<div className="p-2 border-t border-border relative">
+				<div className="p-2 border-t border-[var(--launcher-glass-border)] relative">
 					{skillQuery !== null && skillMatches.length > 0 && (
-						<div className="absolute bottom-full left-0 right-0 mb-1 mx-2 bg-card border border-border rounded-lg shadow-lg overflow-hidden z-50 max-h-48 overflow-y-auto">
+						<div className="absolute bottom-full left-0 right-0 mb-1 mx-2 launcher-glass z-50 max-h-48 overflow-y-auto">
 							{skillMatches.map((skill, i) => (
 								<button
 									key={skill.name}
@@ -210,7 +210,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 								>
 									<span className="font-mono font-medium">{skill.name}</span>
 									{skill.description && (
-										<span className="ml-2 text-muted-foreground truncate">
+										<span className="ml-2 launcher-muted truncate">
 											{skill.description}
 										</span>
 									)}
@@ -218,7 +218,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 							))}
 						</div>
 					)}
-					<div className="flex items-end gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2 focus-within:ring-1 focus-within:ring-primary/30">
+					<div className="launcher-input !h-auto min-h-12 py-2 flex items-end gap-2 px-3">
 						<textarea
 							ref={inputRef}
 							value={input}
@@ -226,7 +226,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 							onKeyDown={handleKeyDown}
 							rows={1}
 							placeholder={`Ask ${displayName}...`}
-							className="flex-1 bg-transparent resize-none outline-none text-[13px] max-h-24 py-1"
+							className="flex-1 bg-transparent resize-none outline-none text-[13px] max-h-24 py-1 placeholder:text-[var(--launcher-muted-fg)]/60"
 							style={{ minHeight: "24px" }}
 						/>
 						<button
@@ -239,7 +239,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 									? "bg-destructive/10 text-destructive hover:bg-destructive/20"
 									: input.trim()
 										? "bg-primary text-primary-foreground hover:bg-primary/90"
-										: "bg-muted text-muted-foreground",
+										: "bg-muted launcher-muted",
 							)}
 						>
 							{isProcessing ? (
@@ -250,7 +250,7 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 						</button>
 					</div>
 					<div className="flex items-center justify-between px-1 pt-1">
-						<span className="text-[10px] text-muted-foreground">
+						<span className="text-[10px] launcher-muted">
 							{isProcessing ? (
 								<span className="flex items-center gap-1">
 									<Loader2 className="w-3 h-3 animate-spin" />
