@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Command as CommandPrimitive } from "cmdk";
+import { motion, AnimatePresence } from "motion/react";
 import {
 	Command,
 	CommandEmpty,
@@ -336,18 +337,21 @@ export function Launcher() {
 	if (isAgentMode) {
 		const item = items[0];
 		return (
-			<div
+			<motion.div
+				initial={{ opacity: 0, scale: 0.98 }}
+				animate={{ opacity: 1, scale: 1 }}
+				transition={{ duration: 0.18, ease: "easeOut" }}
 				className="h-screen w-screen flex flex-col text-foreground"
 				onKeyDown={handleKeyDown}
 			>
 				<Command
 					shouldFilter={false}
-					className="flex flex-col flex-1 launcher-glass overflow-hidden animate-fade-in"
+					className="flex flex-col flex-1 launcher-glass overflow-hidden"
 				>
 					<LauncherInput
 						autoFocus
-					value={inputValue}
-					onChange={setInputValue}
+						value={inputValue}
+						onChange={setInputValue}
 						placeholder="Ask JFlow anything…"
 						mode="agent"
 						onClear={handleClearAgent}
@@ -359,7 +363,7 @@ export function Launcher() {
 								Press Enter to send
 							</div>
 						</CommandEmpty>
-					<CommandGroup heading="Ask JFlow">
+						<CommandGroup heading="Ask JFlow">
 							{item && (
 								<LauncherCommandItem
 									item={item}
@@ -378,7 +382,7 @@ export function Launcher() {
 						onRefreshApps={handleRefreshApps}
 					/>
 				</Command>
-			</div>
+			</motion.div>
 		);
 	}
 
@@ -404,13 +408,16 @@ export function Launcher() {
 	}
 
 	return (
-		<div
+		<motion.div
+			initial={{ opacity: 0, scale: 0.98 }}
+			animate={{ opacity: 1, scale: 1 }}
+			transition={{ duration: 0.18, ease: "easeOut" }}
 			className="h-screen w-screen flex flex-col text-foreground"
 			onKeyDown={handleKeyDown}
 		>
 			<Command
 				shouldFilter={false}
-				className="flex flex-col flex-1 launcher-glass overflow-hidden animate-fade-in"
+				className="flex flex-col flex-1 launcher-glass overflow-hidden"
 			>
 				<LauncherInput
 					autoFocus
@@ -420,26 +427,37 @@ export function Launcher() {
 					mode="default"
 					onClear={handleClearQuery}
 				/>
-				{chatProviders.length > 0 && (
-					<div
-						className="px-3 pt-2 flex gap-1.5 overflow-x-auto"
-						style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-					>
-						{chatProviders.map((provider) => (
-							<button
-								key={provider.providerKey}
-								type="button"
-								onClick={() => startChat(provider)}
-								className="launcher-chip shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] text-foreground"
-							>
-								<span className="w-3.5 h-3.5 rounded-full bg-primary/10 flex items-center justify-center text-[8px] font-semibold text-primary">
-									{(provider.displayName ?? provider.providerKey ?? "?").charAt(0).toUpperCase()}
-								</span>
-								<span className="truncate">{provider.displayName ?? provider.providerKey}</span>
-							</button>
-						))}
-					</div>
-				)}
+				<AnimatePresence>
+					{chatProviders.length > 0 && (
+						<motion.div
+							initial={{ opacity: 0, y: -6 }}
+							animate={{ opacity: 1, y: 0 }}
+							exit={{ opacity: 0, y: -6 }}
+							transition={{ duration: 0.15 }}
+							className="px-3 pt-2 flex gap-1.5 overflow-x-auto"
+							style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+						>
+							{chatProviders.map((provider, i) => (
+								<motion.button
+									key={provider.providerKey}
+									type="button"
+									initial={{ opacity: 0 }}
+									animate={{ opacity: 1 }}
+									transition={{ delay: Math.min(i * 0.004, 0.04), duration: 0.08 }}
+									whileHover={{ scale: 1.02 }}
+									whileTap={{ scale: 0.98 }}
+									onClick={() => startChat(provider)}
+									className="launcher-chip shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] text-foreground"
+								>
+									<span className="w-3.5 h-3.5 rounded-full bg-primary/10 flex items-center justify-center text-[8px] font-semibold text-primary">
+										{(provider.displayName ?? provider.providerKey ?? "?").charAt(0).toUpperCase()}
+									</span>
+									<span className="truncate">{provider.displayName ?? provider.providerKey}</span>
+								</motion.button>
+							))}
+						</motion.div>
+					)}
+				</AnimatePresence>
 				<CommandList ref={listRef} className="flex-1 min-h-0 p-2 overflow-y-auto">
 					{!hasResults && (
 						<CommandEmpty>
@@ -476,21 +494,27 @@ export function Launcher() {
 
 					{sections.map((section) => (
 						<CommandGroup key={section.label} heading={section.heading}>
-							{section.items.map((item) => (
-								<LauncherCommandItem
+							{section.items.map((item, idx) => (
+								<motion.div
 									key={item.id}
-									item={item}
-									onSelect={handleSelect}
-									highlight={query}
-									onStopApp={
-										section.label === "running" ||
-										section.label === "applications" ||
-										section.label === "recent"
-											? handleStopApp
-											: undefined
-									}
-									index={itemIndexById.get(item.id)}
-								/>
+									initial={{ opacity: 0 }}
+									animate={{ opacity: 1 }}
+									transition={{ delay: Math.min(idx * 0.004, 0.04), duration: 0.08 }}
+								>
+									<LauncherCommandItem
+										item={item}
+										onSelect={handleSelect}
+										highlight={query}
+										onStopApp={
+											section.label === "running" ||
+											section.label === "applications" ||
+											section.label === "recent"
+												? handleStopApp
+												: undefined
+										}
+										index={itemIndexById.get(item.id)}
+									/>
+								</motion.div>
 							))}
 						</CommandGroup>
 					))}
@@ -504,7 +528,7 @@ export function Launcher() {
 					showTabHint={chatProviders.length > 0}
 				/>
 			</Command>
-		</div>
+		</motion.div>
 	);
 }
 
@@ -596,7 +620,12 @@ function LauncherFooter({
 	showTabHint,
 }: LauncherFooterProps) {
 	return (
-		<div className="launcher-footer border-t border-[var(--launcher-glass-border)] px-3 py-1.5 flex items-center justify-between text-[11px] gap-3">
+		<motion.div
+			initial={{ opacity: 0, y: 8 }}
+			animate={{ opacity: 1, y: 0 }}
+			transition={{ duration: 0.18, ease: "easeOut" }}
+			className="launcher-footer border-t border-[var(--launcher-glass-border)] px-3 py-1.5 flex items-center justify-between text-[11px] gap-3"
+		>
 			<div className="flex items-center gap-3 min-w-0">
 				{mode === "agent" ? (
 					<span className="flex items-center gap-1.5">
@@ -646,7 +675,7 @@ function LauncherFooter({
 				<KbdHint label="quick pick" keys={["⌘", "1–9"]} />
 				<KbdHint label="close" keys={["esc"]} />
 			</div>
-		</div>
+		</motion.div>
 	);
 }
 

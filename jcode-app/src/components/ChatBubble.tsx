@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { motion } from "motion/react";
 import {
 	Message,
 	MessageContent,
@@ -171,16 +172,23 @@ function CompactBubble({
 
 	if (message.role === "system") {
 		return (
-			<div className="flex w-full justify-center">
+			<motion.div
+				initial={{ opacity: 0, y: 4 }}
+				animate={{ opacity: 1, y: 0 }}
+				className="flex w-full justify-center"
+			>
 				<div className="text-[11px] launcher-muted/70 px-3 py-1">
 					{message.content}
 				</div>
-			</div>
+			</motion.div>
 		);
 	}
 
 	return (
-		<div
+		<motion.div
+			initial={{ opacity: 0, y: 8, scale: 0.98 }}
+			animate={{ opacity: 1, y: 0, scale: 1 }}
+			transition={{ duration: 0.18, ease: "easeOut" }}
 			className={cn(
 				"flex w-full",
 				isUser ? "justify-end" : "justify-start",
@@ -212,7 +220,7 @@ function CompactBubble({
 				)}
 				{streaming && <StreamingDot />}
 			</div>
-		</div>
+		</motion.div>
 	);
 }
 
@@ -227,16 +235,25 @@ function FullBubble({
 }) {
 	if (message.role === "system") {
 		return (
-			<div className="flex w-full justify-center py-1">
+			<motion.div
+				initial={{ opacity: 0, y: 4 }}
+				animate={{ opacity: 1, y: 0 }}
+				className="flex w-full justify-center py-1"
+			>
 				<div className="text-[11px] text-muted-foreground/70 px-3">
 					{message.content}
 				</div>
-			</div>
+			</motion.div>
 		);
 	}
 
 	return (
-		<Message from={message.role === "user" ? "user" : "assistant"}>
+		<motion.div
+			initial={{ opacity: 0, y: 10 }}
+			animate={{ opacity: 1, y: 0 }}
+			transition={{ duration: 0.2, ease: "easeOut" }}
+		>
+			<Message from={message.role === "user" ? "user" : "assistant"}>
 			<MessageContent>
 				{message.role !== "user" && message.reasoning && (
 					<ReasoningBlock
@@ -258,5 +275,6 @@ function FullBubble({
 				{streaming && <StreamingDot />}
 			</MessageContent>
 		</Message>
+		</motion.div>
 	);
 }

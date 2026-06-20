@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils";
 import {
 	Globe,
@@ -164,13 +165,15 @@ export function PagesApp() {
 						const isActive = activePage === tab.id;
 						const Icon = tab.icon;
 						return (
-							<button
+							<motion.button
 								key={tab.id}
 								type="button"
 								onClick={() => {
 									setActivePage(tab.id);
 									if (tab.id !== "a2ui") setA2uiPageId(undefined);
 								}}
+								whileHover={{ scale: 1.02 }}
+								whileTap={{ scale: 0.97 }}
 								className={cn(
 									"flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-medium transition-all",
 									isActive
@@ -180,24 +183,35 @@ export function PagesApp() {
 							>
 								<Icon className="w-4 h-4" />
 								{tab.label}
-							</button>
+							</motion.button>
 						);
 					})}
 				</div>
 			</div>
 
 			{/* Page content */}
-			<div className="flex-1 overflow-y-auto">
-				{activePage === "settings" && (
-					<SettingsPage
-						theme={effectiveTheme}
-						onThemeChange={setTheme}
-					/>
-				)}
-				{activePage === "providers" && <ProviderConfigPage />}
-				{activePage === "mcp" && <McpPage />}
-				{activePage === "skills" && <SkillsPage />}
-				{activePage === "a2ui" && <A2uiTabPage pageId={a2uiPageId} />}
+			<div className="flex-1 overflow-y-auto relative">
+				<AnimatePresence mode="wait">
+					<motion.div
+						key={activePage}
+						initial={{ opacity: 0, y: 8 }}
+						animate={{ opacity: 1, y: 0 }}
+						exit={{ opacity: 0, y: -8 }}
+						transition={{ duration: 0.15, ease: "easeOut" }}
+						className="h-full"
+					>
+						{activePage === "settings" && (
+							<SettingsPage
+								theme={effectiveTheme}
+								onThemeChange={setTheme}
+							/>
+						)}
+						{activePage === "providers" && <ProviderConfigPage />}
+						{activePage === "mcp" && <McpPage />}
+						{activePage === "skills" && <SkillsPage />}
+						{activePage === "a2ui" && <A2uiTabPage pageId={a2uiPageId} />}
+					</motion.div>
+				</AnimatePresence>
 			</div>
 		</div>
 	);

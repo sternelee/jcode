@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { motion } from "motion/react";
 import { ArrowUp, X, Loader2, Square } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useChatSession } from "@/hooks/useChatSession";
@@ -128,8 +129,13 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 	};
 
 	return (
-		<div className="h-screen w-screen flex flex-col text-foreground">
-			<div className="flex-1 launcher-glass overflow-hidden flex flex-col animate-fade-in">
+		<motion.div
+			initial={{ opacity: 0, scale: 0.98 }}
+			animate={{ opacity: 1, scale: 1 }}
+			transition={{ duration: 0.18, ease: "easeOut" }}
+			className="h-screen w-screen flex flex-col text-foreground"
+		>
+			<div className="flex-1 launcher-glass overflow-hidden flex flex-col">
 				{/* Header */}
 				<div className="flex items-center justify-between px-3 py-2 border-b border-[var(--launcher-glass-border)]">
 					<div className="flex items-center gap-2">
@@ -263,6 +269,6 @@ export function LauncherChat({ provider, onClose, initialQuery }: LauncherChatPr
 					</div>
 				</div>
 			</div>
-		</div>
+		</motion.div>
 	);
 }

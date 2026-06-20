@@ -2,6 +2,7 @@ import type { ToolExecution } from "@/types";
 import { cn } from "@/lib/utils";
 import { Loader2, Check, X } from "lucide-react";
 import { useState, useEffect } from "react";
+import { motion } from "motion/react";
 import { DiffView, looksLikeDiff } from "./DiffView";
 
 interface ToolCardProps {
@@ -10,7 +11,10 @@ interface ToolCardProps {
 
 export function ToolCard({ tool }: ToolCardProps) {
 	return (
-		<div
+		<motion.div
+			initial={{ opacity: 0, y: 6 }}
+			animate={{ opacity: 1, y: 0 }}
+			transition={{ duration: 0.15, ease: "easeOut" }}
 			className={cn(
 				"border rounded-lg p-3 text-xs",
 				tool.status === "done" && "border-primary/30 bg-primary/5",
@@ -60,7 +64,7 @@ export function ToolCard({ tool }: ToolCardProps) {
 			{tool.error && (
 				<p className="mt-2 text-destructive text-[11px]">{tool.error}</p>
 			)}
-		</div>
+		</motion.div>
 	);
 }
 

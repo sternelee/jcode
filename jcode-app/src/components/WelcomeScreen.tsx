@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
 	ExternalAuthCandidate,
@@ -125,10 +126,17 @@ export function WelcomeScreen({
 
 	return (
 		<div className="flex items-center justify-center h-full bg-background p-6">
-			<div className="w-full max-w-lg">
-				{/* Welcome Phase */}
-				{phase === "welcome" && (
-					<div className="space-y-6 text-center">
+			<div className="w-full max-w-lg relative">
+				<AnimatePresence mode="wait">
+					{phase === "welcome" && (
+						<motion.div
+							key="welcome"
+							initial={{ opacity: 0, y: 12 }}
+							animate={{ opacity: 1, y: 0 }}
+							exit={{ opacity: 0, y: -12 }}
+							transition={{ duration: 0.18, ease: "easeOut" }}
+							className="space-y-6 text-center"
+						>
 						<div className="space-y-2">
 							<div className="w-16 h-16 mx-auto rounded-2xl bg-primary/10 flex items-center justify-center">
 								<Bot className="w-8 h-8 text-primary" />
@@ -179,12 +187,18 @@ export function WelcomeScreen({
 							Get Started
 							<ArrowRight className="w-4 h-4 ml-2" />
 						</Button>
-					</div>
+					</motion.div>
 				)}
 
-				{/* Import Phase */}
 				{phase === "import" && (
-					<div className="space-y-6">
+					<motion.div
+						key="import"
+						initial={{ opacity: 0, y: 12 }}
+						animate={{ opacity: 1, y: 0 }}
+						exit={{ opacity: 0, y: -12 }}
+						transition={{ duration: 0.18, ease: "easeOut" }}
+						className="space-y-6"
+					>
 						<div className="space-y-2 text-center">
 							<div className="w-12 h-12 mx-auto rounded-xl bg-emerald-500/10 flex items-center justify-center">
 								<ShieldCheck className="w-6 h-6 text-emerald-500" />
@@ -260,12 +274,18 @@ export function WelcomeScreen({
 								<ArrowRight className="w-4 h-4 ml-2" />
 							</Button>
 						</div>
-					</div>
+					</motion.div>
 				)}
 
-				{/* Model Selection Phase */}
 				{phase === "model" && (
-					<div className="space-y-6">
+					<motion.div
+						key="model"
+						initial={{ opacity: 0, y: 12 }}
+						animate={{ opacity: 1, y: 0 }}
+						exit={{ opacity: 0, y: -12 }}
+						transition={{ duration: 0.18, ease: "easeOut" }}
+						className="space-y-6"
+					>
 						<div className="space-y-2 text-center">
 							<h2 className="text-xl font-bold text-foreground">
 								Choose a Model
@@ -322,12 +342,18 @@ export function WelcomeScreen({
 						>
 							Skip for now
 						</Button>
-					</div>
+					</motion.div>
 				)}
 
-				{/* Ready Phase */}
 				{phase === "ready" && (
-					<div className="space-y-6 text-center">
+					<motion.div
+						key="ready"
+						initial={{ opacity: 0, y: 12 }}
+						animate={{ opacity: 1, y: 0 }}
+						exit={{ opacity: 0, y: -12 }}
+						transition={{ duration: 0.18, ease: "easeOut" }}
+						className="space-y-6 text-center"
+					>
 						<div className="space-y-2">
 							<div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/10 flex items-center justify-center">
 								<CheckCircle2 className="w-8 h-8 text-emerald-500" />
@@ -344,8 +370,9 @@ export function WelcomeScreen({
 							Start Coding
 							<ArrowRight className="w-4 h-4 ml-2" />
 						</Button>
-					</div>
+					</motion.div>
 				)}
+			</AnimatePresence>
 			</div>
 		</div>
 	);

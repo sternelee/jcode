@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils";
 import type { SessionInfo } from "@/types";
 import {
@@ -58,20 +59,25 @@ export function LeftSidebar({
 		[sessions],
 	);
 
-	if (collapsed) {
-		return (
-			<CollapsedRail
-				activeTab={activeTab}
-				onOpenPage={onOpenPage}
-				onNewTask={onNewTask}
-				onOpenLauncher={onOpenLauncher}
-				onToggleCollapse={onToggleCollapse}
-			/>
-		);
-	}
-
 	return (
-		<nav className="w-[260px] min-w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col select-none overflow-hidden">
+		<AnimatePresence mode="wait">
+			{collapsed ? (
+				<CollapsedRail
+					activeTab={activeTab}
+					onOpenPage={onOpenPage}
+					onNewTask={onNewTask}
+					onOpenLauncher={onOpenLauncher}
+					onToggleCollapse={onToggleCollapse}
+				/>
+			) : (
+				<motion.nav
+					key="expanded"
+					initial={{ opacity: 0, x: -10 }}
+					animate={{ opacity: 1, x: 0 }}
+					exit={{ opacity: 0, x: -10 }}
+					transition={{ duration: 0.15, ease: "easeOut" }}
+					className="w-[260px] min-w-[260px] bg-sidebar border-r border-sidebar-border flex flex-col select-none overflow-hidden"
+				>
 			{/* Header: logo + launcher search + collapse */}
 			<div className="flex items-center gap-2 px-3 py-3 border-b border-sidebar-border">
 				<div className="w-7 h-7 rounded-lg bg-foreground/90 flex items-center justify-center shrink-0">
@@ -166,7 +172,9 @@ export function LeftSidebar({
 				onNewTaskInWorkspace={onNewTaskInWorkspace}
 				sessionPreviewMap={sessionPreviewMap}
 			/>
-		</nav>
+		</motion.nav>
+	)}
+</AnimatePresence>
 	);
 }
 
@@ -357,7 +365,13 @@ function CollapsedRail({
 		"text-sidebar-foreground/45 hover:text-sidebar-foreground hover:bg-sidebar-accent/40";
 
 	return (
-		<nav className="w-[52px] min-w-[52px] bg-sidebar border-r border-sidebar-border flex flex-col items-center select-none overflow-hidden">
+		<motion.nav
+			initial={{ opacity: 0, x: -10 }}
+			animate={{ opacity: 1, x: 0 }}
+			exit={{ opacity: 0, x: -10 }}
+			transition={{ duration: 0.15, ease: "easeOut" }}
+			className="w-[52px] min-w-[52px] bg-sidebar border-r border-sidebar-border flex flex-col items-center select-none overflow-hidden"
+		>
 			{/* Logo */}
 			<div className="w-9 h-9 rounded-lg bg-foreground/90 flex items-center justify-center mt-3 shrink-0">
 				<span className="text-background text-[12px] font-semibold">J</span>
@@ -432,6 +446,6 @@ function CollapsedRail({
 					<PanelLeftOpen className="w-4 h-4" />
 				</button>
 			</div>
-		</nav>
+		</motion.nav>
 	);
 }

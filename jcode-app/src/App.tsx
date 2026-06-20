@@ -29,6 +29,8 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useState, useEffect, useRef, useMemo } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { PlayIcon, ListTodo, Monitor, Users } from "lucide-react";
 
 export default function App() {
 	const {
@@ -773,8 +775,15 @@ export default function App() {
 					sessionPreviewMap={sessionPreviewMap}
 				/>
 
-				{
-					<div key={activeNavTab} className="animate-fade-in flex-1 flex min-w-0">
+				<AnimatePresence mode="wait">
+					<motion.div
+							key={activeNavTab}
+							initial={{ opacity: 0, x: 8 }}
+							animate={{ opacity: 1, x: 0 }}
+							exit={{ opacity: 0, x: -8 }}
+							transition={{ duration: 0.15, ease: "easeOut" }}
+							className="flex-1 flex min-w-0"
+						>
 						{activeNavTab === "settings" ? (
 							<SettingsPage
 								theme={effectiveTheme}
@@ -847,8 +856,8 @@ export default function App() {
 								description={placeholderDesc(activeNavTab || "tasks")}
 							/>
 						)}
-					</div>
-				}
+					</motion.div>
+				</AnimatePresence>
 			</div>
 
 			<CreateSessionDialog
@@ -949,7 +958,12 @@ function PlaceholderPage({
 						: null;
 
 	return (
-		<div className="flex-1 flex flex-col items-center justify-center bg-background">
+		<motion.div
+			initial={{ opacity: 0, y: 12 }}
+			animate={{ opacity: 1, y: 0 }}
+			transition={{ duration: 0.2, ease: "easeOut" }}
+			className="flex-1 flex flex-col items-center justify-center bg-background"
+		>
 			<div className="flex flex-col items-center gap-4 max-w-md text-center px-6">
 				<div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center">
 					{IconComponent && (
@@ -963,8 +977,6 @@ function PlaceholderPage({
 					conversation with an AI agent.
 				</p>
 			</div>
-		</div>
+		</motion.div>
 	);
 }
-
-import { PlayIcon, ListTodo, Monitor, Users } from "lucide-react";
