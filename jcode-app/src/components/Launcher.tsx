@@ -27,6 +27,7 @@ import {
 	Loader2,
 	RefreshCw,
 	Search,
+	Settings,
 	Sparkles,
 	X,
 } from "lucide-react";
@@ -789,6 +790,18 @@ function LauncherFooter({
 			className="launcher-footer border-t border-[var(--launcher-glass-border)] px-3 py-1.5 flex items-center justify-between text-[11px] gap-3"
 		>
 			<div className="flex items-center gap-3 min-w-0">
+				<button
+					type="button"
+					onClick={() => {
+						void invoke("open_pages_window", { page: "settings" });
+						void hideCurrentLauncher();
+					}}
+					className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+					title="Open settings"
+				>
+					<Settings className="size-3" />
+					Settings
+				</button>
 				{mode === "agent" ? (
 					<span className="flex items-center gap-1.5">
 						<Sparkles className="size-3" />

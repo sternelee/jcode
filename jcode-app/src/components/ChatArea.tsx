@@ -23,6 +23,7 @@ import {
   FileText,
   Shield,
   Circle,
+  Zap,
 } from "lucide-react";
 import {
   SlashCommandPalette,
@@ -179,7 +180,6 @@ export function ChatArea({
     Array<{ id: string; mediaType: string; base64: string; name: string }>
   >([]);
   const [dictating, setDictating] = useState(false);
-  const [softInterruptMode, setSoftInterruptMode] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
 
   const feedRef = useRef<HTMLDivElement>(null);
@@ -200,6 +200,14 @@ export function ChatArea({
     return () => window.removeEventListener("jcode:prefill-input", handler);
   }, []);
 
+  // Auto-resize textarea as the user types.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+  }, [text]);
+
   const channelMembers = useMemo(() => {
     if (_channelMembers) return _channelMembers;
     return workspaceSessions
@@ -214,6 +222,13 @@ export function ChatArea({
     }
     return map;
   }, [workspaceSessions]);
+
+  const inputPlaceholder = useMemo(() => {
+    if (channelMembers.length > 0) {
+      return "Ask @agent or type / for commands, ! for shell…";
+    }
+    return "Ask anything, type / for commands, ! for shell, or paste images…";
+  }, [channelMembers.length]);
 
   // ── @mention ──────────────────────────────────────────────────────────
   const mentionAgentMatches = useMemo(() => {
@@ -376,27 +391,10 @@ export function ChatArea({
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
 
-  // Reset soft-interrupt toggle when the agent finishes responding so the
-  // next message is sent normally rather than as another interrupt.
-  const wasProcessingRef = useRef(isProcessing);
-  useEffect(() => {
-    if (wasProcessingRef.current && !isProcessing) {
-      setSoftInterruptMode(false);
-    }
-    wasProcessingRef.current = isProcessing;
-  }, [isProcessing]);
-
   // ── Input handlers ────────────────────────────────────────────────────
   const handleSend = () => {
     const content = text.trim();
     if (!content && attachedImages.length === 0) return;
-    if (softInterruptMode && onSendSoftInterrupt) {
-      onSendSoftInterrupt(content);
-      setText("");
-      setMentionQuery(null);
-      setAttachedImages([]);
-      return;
-    }
     // Handle `!` shell commands like TUI
     if (content.startsWith('!') && onExecuteShellCommand) {
       const command = content.slice(1).trim();
@@ -1040,6 +1038,27 @@ export function ChatArea({
               );
             })}
 
+            {/* ── Thinking indicator (non-swarm) ── */}
+            {isProcessing &&
+              respondingRoles.length === 0 &&
+              !messages.some(
+                (m) => m.role === "assistant" && m.isStreaming,
+              ) && (
+                <div className="flex items-center gap-3 pl-1 message-enter">
+                  <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-medium text-foreground">
+                      JFlow is thinking…
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      Preparing a response
+                    </span>
+                  </div>
+                </div>
+              )}
+
             {/* ── Typing indicator ── */}
             {respondingRoles.length > 0 && (
               <div className="flex flex-col gap-2 pl-1">
@@ -1243,7 +1262,7 @@ export function ChatArea({
                 value={text}
                 onChange={handleChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Follow up here…"
+                placeholder={inputPlaceholder}
                 rows={1}
                 className="w-full px-4 pt-3 pb-2 text-[14px] text-foreground placeholder-muted-foreground/50 outline-none resize-none bg-transparent"
                 style={{ minHeight: 44, maxHeight: 120 }}
@@ -1308,15 +1327,17 @@ export function ChatArea({
                   {isProcessing && onSendSoftInterrupt && (
                     <button
                       type="button"
-                      onClick={() => setSoftInterruptMode((m) => !m)}
-                      className={cn(
-                        "px-2 py-1 rounded-lg text-[11px] font-medium transition-all border",
-                        softInterruptMode
-                          ? "bg-amber-500/10 text-amber-600 border-amber-500/30"
-                          : "text-muted-foreground border-border hover:text-foreground hover:bg-muted",
-                      )}
+                      onClick={() => {
+                        const content = text.trim() || "continue";
+                        void onSendSoftInterrupt(content);
+                        setText("");
+                        setMentionQuery(null);
+                      }}
+                      className="px-2 py-1 rounded-lg text-[11px] font-medium transition-all border text-muted-foreground border-border hover:text-foreground hover:bg-muted inline-flex items-center gap-1"
+                      title="Send a soft interrupt to the agent"
                     >
-                      {softInterruptMode ? "Interrupt" : "Send"}
+                      <Zap className="w-3 h-3" />
+                      Nudge
                     </button>
                   )}
                   {isProcessing ? (

@@ -66,6 +66,9 @@ export default function App() {
 		getUsageInfo,
 		getWorkspaceMemoryPreferences,
 		setWorkspaceMemoryPreference,
+		runDictation,
+		sendSoftInterrupt,
+		executeShellCommandAndDisplay,
 } = useJcodeSession();
 
 	const [activeNavTab, setActiveNavTab] = useState("");
@@ -258,9 +261,10 @@ export default function App() {
 				event.preventDefault();
 				setHelpOpen(true);
 			}
-			if (event.key.toLowerCase() === "o" && !event.metaKey && !event.ctrlKey) {
+			if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "n") {
 				event.preventDefault();
-				// sidebar toggle removed in RightSidebar migration
+				setCreateDialogInitMode("normal");
+				setCreateDialogOpen(true);
 			}
 		};
 		window.addEventListener("keydown", onKeyDown);
@@ -847,6 +851,15 @@ export default function App() {
 								currentWorkingDir={state.workingDir}
 								isLoading={activeSessionData.connectionPhase !== "connected"}
 								connected={state.connected}
+								onNewSession={() => {
+									setCreateDialogInitMode("normal");
+									setCreateDialogOpen(true);
+								}}
+								onRunDictation={runDictation}
+								onSendSoftInterrupt={async (content) =>
+									await sendSoftInterrupt(content, activeSessionId || undefined)
+								}
+								onExecuteShellCommand={executeShellCommandAndDisplay}
 							/>
 						) : (
 							<PlaceholderPage

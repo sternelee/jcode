@@ -8,6 +8,7 @@ import type {
 	MemoryStats,
 	MemoryGraphSnapshot,
 	WorkspaceMemoryPreferences,
+	ProviderCatalogEntry,
 } from "@/types";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -35,8 +36,11 @@ import {
 	ChevronRight,
 	Bot,
 	FileKey,
+	Wifi,
+	Users,
 } from "lucide-react";
 import { EnvVariablesCard } from "./EnvVariablesCard";
+import { RolePresetsPanel } from "./RolePresetsPanel";
 
 interface SettingsPageProps {
 	theme: "light" | "dark";
@@ -114,6 +118,11 @@ export function SettingsPage({
 	const [configPath, setConfigPath] = useState<string>("");
 	const [configData, setConfigData] = useState<Record<string, unknown> | null>(null);
 	const [configLoading, setConfigLoading] = useState(false);
+	const [providers, setProviders] = useState<ProviderCatalogEntry[]>([]);
+	const [providersLoading, setProvidersLoading] = useState(false);
+	const [apiKeyInputs, setApiKeyInputs] = useState<Record<string, string>>({});
+	const [savingProviderId, setSavingProviderId] = useState<string | null>(null);
+	const [providerMessage, setProviderMessage] = useState<{ text: string; type: "ok" | "error" } | null>(null);
 
 
 	useEffect(() => {
@@ -191,6 +200,49 @@ export function SettingsPage({
 			.then(setAuthStatus)
 			.catch(() => {});
 	}, []);
+
+	const loadProviders = useCallback(async () => {
+		setProvidersLoading(true);
+		try {
+			const result = await invoke<{ providers: ProviderCatalogEntry[] }>(
+				"get_provider_profiles",
+			);
+			setProviders(result.providers || []);
+		} catch {
+			setProviders([]);
+		} finally {
+			setProvidersLoading(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		void loadProviders();
+	}, [loadProviders]);
+
+	const handleSaveApiKey = useCallback(
+		async (providerId: string) => {
+			const key = apiKeyInputs[providerId]?.trim();
+			if (!key) return;
+			setSavingProviderId(providerId);
+			setProviderMessage(null);
+			try {
+				await invoke("save_provider_api_key", {
+					providerId,
+					apiKey: key,
+					region: null,
+					apiBase: null,
+				});
+				setProviderMessage({ text: `API key saved for ${providerId}`, type: "ok" });
+				setApiKeyInputs((prev) => ({ ...prev, [providerId]: "" }));
+				void loadProviders();
+			} catch (e) {
+				setProviderMessage({ text: String(e), type: "error" });
+			} finally {
+				setSavingProviderId(null);
+			}
+		},
+		[apiKeyInputs, loadProviders],
+	);
 
 	useEffect(() => {
 		invoke<string>("get_config_path")
@@ -335,6 +387,93 @@ export function SettingsPage({
 							</div>
 						)}
 					</SettingsCard>
+
+				{/* Providers */}
+				<SettingsCard
+					icon={<Wifi className="w-4 h-4" />}
+					title="Providers"
+					action={
+						<button
+							type="button"
+							onClick={() => void invoke("open_pages_window", { page: "providers" })}
+							className="text-[11px] px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+						>
+							Manage
+						</button>
+					}
+				>
+					<div className="space-y-3">
+						{providerMessage && (
+							<div
+								className={cn(
+									"flex items-center gap-2 px-3 py-2 rounded-lg text-[12px]",
+									providerMessage.type === "error"
+										? "bg-destructive/5 border border-destructive/20 text-destructive"
+										: "bg-emerald-500/5 border border-emerald-500/20 text-emerald-600",
+								)}
+							>
+								{providerMessage.text}
+							</div>
+						)}
+						{providersLoading && (
+							<div className="text-[13px] text-muted-foreground text-center py-4">Loading…</div>
+						)}
+						{!providersLoading && providers.length === 0 && (
+							<div className="text-[13px] text-muted-foreground text-center py-4">
+								No providers discovered.
+							</div>
+						)}
+						<div className="space-y-2">
+							{providers.map((provider) => {
+								const apiKeyOption = provider.options.find((o) => o.kind === "api_key");
+								if (!apiKeyOption) return null;
+								return (
+									<div
+										key={provider.provider_key}
+										className="rounded-lg border border-border bg-muted/20 p-3 space-y-2"
+									>
+										<div className="flex items-center justify-between">
+											<span className="text-[13px] font-medium text-foreground">
+												{provider.display_name}
+											</span>
+											<Badge
+												variant={provider.configured ? "secondary" : "outline"}
+												className="text-[9px] h-[18px]"
+											>
+												{provider.configured ? "configured" : provider.status}
+											</Badge>
+										</div>
+										<div className="flex items-center gap-2">
+											<input
+												type="password"
+												value={apiKeyInputs[provider.provider_key] ?? ""}
+												onChange={(e) =>
+													setApiKeyInputs((prev) => ({
+														...prev,
+														[provider.provider_key]: e.target.value,
+													}))
+												}
+												placeholder={`${apiKeyOption.label || "API key"} for ${provider.display_name}`}
+												className="flex-1 h-8 px-3 rounded-lg bg-muted/30 border border-border text-[12px] text-foreground placeholder-muted-foreground outline-none focus:border-primary/50 min-w-0"
+											/>
+											<button
+												type="button"
+												onClick={() => void handleSaveApiKey(provider.provider_key)}
+												disabled={
+													savingProviderId === provider.provider_key ||
+													!apiKeyInputs[provider.provider_key]?.trim()
+												}
+												className="shrink-0 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-[12px] font-medium hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+											>
+												{savingProviderId === provider.provider_key ? "Saving…" : "Save"}
+											</button>
+										</div>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				</SettingsCard>
 
 				{/* Memory */}
 				{(onExportMemories || onImportMemories) && (
@@ -885,6 +1024,19 @@ export function SettingsPage({
 							</div>
 						)}
 					</div>
+				</SettingsCard>
+
+				{/* Swarm Roles */}
+				<SettingsCard
+					icon={<Users className="w-4 h-4" />}
+					title="Swarm Roles"
+					action={
+						<span className="text-[11px] text-muted-foreground">
+							Default + custom presets
+						</span>
+					}
+				>
+					<RolePresetsPanel availableModels={availableModels} />
 				</SettingsCard>
 
 				{/* Environment variables */}
