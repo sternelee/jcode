@@ -4,9 +4,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { cn } from "@/lib/utils";
 import type { SessionInfo } from "@/types";
 import {
-	BookOpen,
 	AlarmClock,
-	Grid3X3,
 	Folder,
 	Plus,
 	Search,
@@ -128,19 +126,6 @@ export function LeftSidebar({
 				</button>
 				<button
 					type="button"
-					onClick={() => onOpenPage?.("skills")}
-					className={cn(
-						"flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-all",
-						activeTab === "skills"
-							? "bg-sidebar-accent text-sidebar-primary"
-							: "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/60",
-					)}
-				>
-					<BookOpen className="w-4 h-4" strokeWidth={1.5} />
-					Skills
-				</button>
-				<button
-					type="button"
 					onClick={() => onOpenPage?.("tasks")}
 					className={cn(
 						"flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-all",
@@ -151,19 +136,6 @@ export function LeftSidebar({
 				>
 					<AlarmClock className="w-4 h-4" strokeWidth={1.5} />
 					Scheduled Tasks
-				</button>
-				<button
-					type="button"
-					onClick={() => onOpenPage?.("mcp")}
-					className={cn(
-						"flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-all",
-						activeTab === "mcp"
-							? "bg-sidebar-accent text-sidebar-primary"
-							: "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/60",
-					)}
-				>
-					<Grid3X3 className="w-4 h-4" strokeWidth={1.5} />
-					WebBridge
 				</button>
 			</div>
 
@@ -456,17 +428,6 @@ function CollapsedRail({
 				</button>
 				<button
 					type="button"
-					onClick={() => onOpenPage?.("skills")}
-					className={cn(
-						railBtn,
-						activeTab === "skills" ? railBtnActive : railBtnInactive,
-					)}
-					title="Skills"
-				>
-					<BookOpen className="w-4 h-4" />
-				</button>
-				<button
-					type="button"
 					onClick={() => onOpenPage?.("tasks")}
 					className={cn(
 						railBtn,
@@ -475,17 +436,6 @@ function CollapsedRail({
 					title="Scheduled Tasks"
 				>
 					<AlarmClock className="w-4 h-4" />
-				</button>
-				<button
-					type="button"
-					onClick={() => onOpenPage?.("mcp")}
-					className={cn(
-						railBtn,
-						activeTab === "mcp" ? railBtnActive : railBtnInactive,
-					)}
-					title="WebBridge"
-				>
-					<Grid3X3 className="w-4 h-4" />
 				</button>
 				<button
 					type="button"

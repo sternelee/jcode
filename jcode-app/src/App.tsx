@@ -838,6 +838,7 @@ export default function App() {
 								onSetModel={(m, pid) =>
 									void setModel(m, pid, state.sessionId || undefined)
 								}
+								onNavigate={(page) => setActiveNavTab(page)}
 							/>
 						) : activeNavTab === "network" ? (
 							<ProviderConfigPage

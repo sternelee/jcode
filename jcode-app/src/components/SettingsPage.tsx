@@ -38,6 +38,8 @@ import {
 	FileKey,
 	Wifi,
 	Users,
+	BookOpen,
+	Grid3X3,
 } from "lucide-react";
 import { EnvVariablesCard } from "./EnvVariablesCard";
 import { RolePresetsPanel } from "./RolePresetsPanel";
@@ -68,6 +70,7 @@ interface SettingsPageProps {
 	currentModel?: string;
 	currentProfileId?: string;
 	onSetModel?: (model: string, profileId?: string) => void;
+	onNavigate?: (page: string) => void;
 }
 
 
@@ -86,6 +89,7 @@ export function SettingsPage({
 	currentModel,
 	currentProfileId,
 	onSetModel,
+	onNavigate,
 }: SettingsPageProps) {
 	const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
 	const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
@@ -343,7 +347,29 @@ export function SettingsPage({
 						</p>
 					</SettingsCard>
 
-					{/* Auth */}
+				{/* Quick Links */}
+				<SettingsCard icon={<BookOpen className="w-4 h-4" />} title="Plugins">
+					<div className="flex gap-2">
+						<button
+							type="button"
+							onClick={() => onNavigate?.("skills")}
+							className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-[13px] font-medium text-foreground hover:bg-muted transition-colors"
+						>
+							<BookOpen className="w-4 h-4 text-primary" strokeWidth={1.5} />
+							Skills
+						</button>
+						<button
+							type="button"
+							onClick={() => onNavigate?.("mcp")}
+							className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-[13px] font-medium text-foreground hover:bg-muted transition-colors"
+						>
+							<Grid3X3 className="w-4 h-4 text-primary" strokeWidth={1.5} />
+							WebBridge
+						</button>
+					</div>
+				</SettingsCard>
+
+				{/* Auth */}
 					<SettingsCard
 						icon={<Key className="w-4 h-4" />}
 						title="Authentication"
