@@ -12,7 +12,11 @@ import { Minus, Square, X } from "lucide-react";
  * The button container stops pointer-down propagation so a click on a
  * traffic light never starts a window drag.
  */
-export function TitleBar() {
+interface TitleBarProps {
+	context?: string | null;
+}
+
+export function TitleBar({ context }: TitleBarProps) {
 	const [maximized, setMaximized] = useState(false);
 
 	useEffect(() => {
@@ -96,7 +100,7 @@ export function TitleBar() {
 			</div>
 			{/* Centered window title, non-interactive. */}
 			<div className="pointer-events-none absolute inset-0 z-[5] flex h-7 items-center justify-center text-[12px] font-medium text-muted-foreground/80">
-        JFlow
+				{context ?? "JFlow"}
 			</div>
 		</div>
 	);

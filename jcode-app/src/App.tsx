@@ -13,12 +13,14 @@ import { TeamPage } from "@/components/TeamPage";
 import { MediaPage } from "@/components/MediaPage";
 import { McpPage } from "@/components/McpPage";
 import { SkillsPage } from "@/components/SkillsPage";
+import { RightSidebar } from "@/components/RightSidebar";
+import { PermissionDialog } from "@/components/PermissionDialog";
 import { ChatArea } from "@/components/ChatArea";
 import { ShortcutsHelpModal } from "@/components/ShortcutsHelpModal";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { parseSlashCommand, profileIdFromDisplayName, profileIdFromRoute } from "@/components/SlashCommands";
 import { useTheme } from "@/hooks/useTheme";
-import type { SessionInfo, SkillInfo } from "@/types";
+import type { SessionInfo, SkillInfo, PermissionRequest } from "@/types";
 import type { BuiltinPage } from "@/lib/launcherTypes";
 import {
 	DEFAULT_WORKSPACE_ID,
@@ -69,6 +71,9 @@ export default function App() {
 		runDictation,
 		sendSoftInterrupt,
 		executeShellCommandAndDisplay,
+		sendA2uiAction,
+		getPermissionRequests,
+		respondToPermission,
 } = useJcodeSession();
 
 	const [activeNavTab, setActiveNavTab] = useState("");
@@ -97,6 +102,8 @@ export default function App() {
 	const [lastReadAt, setLastReadAt] = useState<Record<string, number>>({});
 	const [helpOpen, setHelpOpen] = useState(false);
 	const [leftCollapsed, setLeftCollapsed] = useState(false);
+	const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
+	const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>([]);
 	const [onboardingComplete, setOnboardingComplete] = useState(() => {
 		// Check if user has completed onboarding before
 		return localStorage.getItem("jcode-onboarding-complete") === "true";
@@ -218,6 +225,21 @@ export default function App() {
 		}
 	}, [state.connected, listSessions]);
 
+
+
+	// Poll permission requests
+	useEffect(() => {
+		if (!state.connected) return;
+		const interval = setInterval(async () => {
+			try {
+				const result = await getPermissionRequests();
+				setPermissionRequests(result);
+			} catch {
+				/* ignore */
+			}
+		}, 4000);
+		return () => clearInterval(interval);
+	}, [state.connected, getPermissionRequests]);
 
 	// Cmd+P keyboard shortcut
 	useEffect(() => {
@@ -727,7 +749,7 @@ export default function App() {
 
 	return (
 		<div className="h-screen bg-background flex flex-col overflow-hidden">
-			<TitleBar />
+			<TitleBar context={state.workingDir ? workspaceLabel(workspaceIdFromDir(state.workingDir)) : null} />
 			<div className="flex flex-1 overflow-hidden min-w-0">
 				<LeftSidebar
 					activeTab={activeNavTab}
@@ -871,6 +893,15 @@ export default function App() {
 						)}
 					</motion.div>
 				</AnimatePresence>
+				<RightSidebar
+					snapshot={activeSessionData?.sidePanel ?? null}
+					open={rightSidebarOpen}
+					onToggle={() => setRightSidebarOpen((o) => !o)}
+					mode="work"
+					workingDir={state.workingDir}
+					theme={effectiveTheme}
+					onA2uiAction={(action) => void sendA2uiAction(action)}
+				/>
 			</div>
 
 			<CreateSessionDialog
@@ -915,6 +946,13 @@ export default function App() {
 				activeSessionId={state.sessionId}
 				onOpenChange={setSessionSwitcherOpen}
 				onSelectSession={handleResume}
+			/>
+			<PermissionDialog
+				requests={permissionRequests}
+				onRespond={(requestId, approved, message) => {
+					void respondToPermission(requestId, approved, message);
+					setPermissionRequests((prev) => prev.filter((r) => r.id !== requestId));
+				}}
 			/>
 			<ConfirmDialog
 				open={confirmRemove !== null}
