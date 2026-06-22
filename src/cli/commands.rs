@@ -13,7 +13,7 @@ use crate::{browser, gateway, memory, session, storage, tui};
 use super::terminal::init_tui_runtime;
 
 mod menubar;
-mod provider_setup;
+pub mod provider_setup;
 mod report_info;
 mod restart;
 
