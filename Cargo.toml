@@ -1,6 +1,6 @@
 [package]
 name = "jcode"
-version = "0.30.2"
+version = "0.31.2"
 description = "Possibly the greatest coding agent ever built — blazing-fast TUI, multi-model, swarm coordination, 30+ tools"
 edition = "2024"
 autobins = false
@@ -28,15 +28,16 @@ members = [
   "crates/jcode-logging",
   "crates/jcode-memory-types",
   "crates/jcode-message-types",
-  "crates/jcode-mobile-core",
-  "crates/jcode-mobile-sim",
   "crates/jcode-notify-email",
   "crates/jcode-overnight-core",
   "crates/jcode-pdf",
   "crates/jcode-plan",
   "crates/jcode-productivity-core",
   "crates/jcode-protocol",
+  "crates/jcode-provider-anthropic",
+  "crates/jcode-provider-antigravity",
   "crates/jcode-provider-bedrock",
+  "crates/jcode-provider-copilot",
   "crates/jcode-provider-core",
   "crates/jcode-provider-env",
   "crates/jcode-provider-gemini",
@@ -46,10 +47,12 @@ members = [
   "crates/jcode-render-core",
   "crates/jcode-selfdev-types",
   "crates/jcode-session-types",
+  "crates/jcode-setup-hints",
   "crates/jcode-side-panel-types",
   "crates/jcode-storage",
   "crates/jcode-swarm-core",
   "crates/jcode-task-types",
+  "crates/jcode-telemetry-core",
   "crates/jcode-terminal-image",
   "crates/jcode-terminal-launch",
   "crates/jcode-tool-core",
@@ -61,6 +64,7 @@ members = [
   "crates/jcode-tui-markdown",
   "crates/jcode-tui-mermaid",
   "crates/jcode-tui-messages",
+  "crates/jcode-tui-permissions",
   "crates/jcode-tui-render",
   "crates/jcode-tui-session-picker",
   "crates/jcode-tui-style",
@@ -267,7 +271,12 @@ jcode-task-types = { path = "crates/jcode-task-types" }
 jcode-tool-core = { path = "crates/jcode-tool-core" }
 jcode-tool-types = { path = "crates/jcode-tool-types" }
 
-agentgrep = { git = "https://github.com/1jehuang/agentgrep.git", tag = "v0.1.2" }
+# Archive extraction (for auto-update)
+flate2 = "1"
+tar = "0.4"
+tempfile = "3"
+agentgrep = { git = "https://github.com/1jehuang/agentgrep.git", tag = "v0.1.3" }
+qrcode = { version = "0.14.1", default-features = false }
 aws-config = "1.8.16"
 aws-credential-types = "1.2.14"
 aws-sdk-bedrock = "1.141.0"
@@ -275,22 +284,8 @@ aws-sdk-bedrockruntime = "1.130.0"
 aws-sdk-sts = "1.103.0"
 aws-smithy-types = "1.4.7"
 aws-types = "1.3.15"
-# Archive extraction (for auto-update)
-flate2 = "1"
-qrcode = { version = "0.14.1", default-features = false }
-tar = "0.4"
-tempfile = "3"
 
 [build-dependencies]
-
-[target.'cfg(target_os = "macos")'.dependencies]
-global-hotkey = "0.7"
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
-  "Win32_Foundation",
-  "Win32_System_Threading",
-] }
 
 [features]
 # Include local ONNX/tokenizer embeddings in default builds so memory recall,
@@ -317,18 +312,67 @@ embeddings = ["dep:jcode-embedding", "jcode-tui/embeddings"]
 mmdr-size-api = ["jcode-tui/mmdr-size-api"]
 pdf = ["dep:jcode-pdf", "jcode-tui/pdf"]
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+global-hotkey = "0.7"
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", features = [
+    "NSString",
+    "NSThread",
+    "NSRunLoop",
+    "NSDate",
+    "NSTimer",
+    "NSUserDefaults",
+    "NSValue",
+    "NSAttributedString",
+    "NSDictionary",
+    "block2",
+] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSApplication",
+    "NSResponder",
+    "NSStatusBar",
+    "NSStatusItem",
+    "NSStatusBarButton",
+    "NSButton",
+    "NSCell",
+    "NSColor",
+    "NSControl",
+    "NSFont",
+    "NSFontDescriptor",
+    "NSImage",
+    "NSAttributedString",
+    "NSMenu",
+    "NSMenuItem",
+    "NSRunningApplication",
+] }
+
+[profile.release]
+opt-level = 1
+debug = 0
+codegen-units = 256
+incremental = true
+
+[profile.selfdev]
+inherits = "release"
+opt-level = 0
+
+# Full LTO release for stable/distribution builds
+[profile.release-lto]
+inherits = "release"
+lto = "thin"
+codegen-units = 16
+incremental = false
+
 [profile.dev]
 debug = 0
 incremental = true
 
 [profile.dev.package."*"]
 opt-level = 0
-
-[profile.release]
-opt-level = 1
-debug = 0
-incremental = true
-codegen-units = 256
 
 # Keep the idle-animation math kernels fully optimized even in debug-style
 # builds. This crate is pure, dependency-free numeric code (the trig-heavy 3D
@@ -461,13 +505,3 @@ async-stream = "0.3"
 # never to a normal `cargo build`/release binary.
 jcode-tui = { path = "crates/jcode-tui", features = ["test-support"] }
 
-# Full LTO release for stable/distribution builds
-[profile.release-lto]
-inherits = "release"
-lto = "thin"
-incremental = false
-codegen-units = 16
-
-[profile.selfdev]
-inherits = "release"
-opt-level = 0

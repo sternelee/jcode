@@ -74,6 +74,12 @@ pub struct SetupHintsState {
     /// never nagged about the same conflicts on every launch.
     #[serde(default)]
     pub keymap_conflict_signature: String,
+    /// Whether we've shown the one-time "glyph-safe mode is active" disclosure
+    /// for fragile-glyph terminals (macOS VS Code integrated terminal / Apple
+    /// Terminal). We surface the tradeoff once per install so the user knows
+    /// colors are quantized to 256 to avoid the terminal's glyph corruption.
+    #[serde(default)]
+    pub glyph_safe_notice_shown: bool,
 }
 
 /// Current macOS hotkey listener implementation version.
@@ -231,6 +237,61 @@ fn mac_hotkey_launch_agent_plist(
     )
 }
 
+/// Launch a new jcode window in the user's preferred macOS terminal, passing
+/// `extra_args` (e.g. `["--resume", "<session-id>"]`) to the jcode invocation.
+///
+/// This reuses the same terminal detection as the global Cmd+; hotkey, but
+/// deliberately avoids AppleScript automation: callers like the menu bar
+/// helper run as background processes that cannot present the "control
+/// Terminal" TCC prompt, so `osascript` would fail. Terminals that support
+/// `open -na <App> --args ...` are launched directly; for the rest we write
+/// the launch command to an executable `.command` file and `open` it, which
+/// Terminal/iTerm run in a new window without any automation permission.
+#[cfg(target_os = "macos")]
+pub fn launch_jcode_in_macos_terminal(extra_args: &[String]) -> Result<()> {
+    let terminal = effective_macos_terminal();
+    let exe = std::env::current_exe()?;
+    let exe_path = exe.to_string_lossy().into_owned();
+    let shell_command = macos_terminal::paused_jcode_shell_command_with_args(&exe_path, extra_args);
+
+    let command = match macos_terminal::no_automation_launch(terminal, &shell_command) {
+        macos_terminal::NoAutomationLaunch::Shell(command) => command,
+        macos_terminal::NoAutomationLaunch::CommandFile { app } => {
+            let dir = storage::jcode_dir()?.join("launcher");
+            std::fs::create_dir_all(&dir)?;
+            let script_path = dir.join("open_session.command");
+            std::fs::write(
+                &script_path,
+                format!("#!/bin/bash\nclear\n{shell_command}\n"),
+            )?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o755))?;
+            }
+            let target =
+                macos_terminal::escape_shell_single_quotes(script_path.to_string_lossy().as_ref());
+            match app {
+                Some(app) => format!("/usr/bin/open -a {app} '{target}'"),
+                None => format!("/usr/bin/open '{target}'"),
+            }
+        }
+    };
+
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&command)
+        .status()
+        .context("failed to launch terminal for jcode")?;
+    if !status.success() {
+        anyhow::bail!(
+            "terminal launch command exited with status {:?}",
+            status.code()
+        );
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 fn install_macos_hotkey_listener(
     preferred_terminal: Option<MacTerminalKind>,
@@ -291,7 +352,7 @@ fn startup_hints_for_launch(state: &SetupHintsState) -> Option<StartupHints> {
         None
     } else {
         Some(format!(
-            "Cmd+; launches a new jcode from anywhere, system-wide (opens in {}).",
+            "Cmd+; launches a new jcode from anywhere, system-wide (opens in {}). Inside jcode, Cmd+Shift+; spawns a new session in the current directory.",
             effective_macos_terminal().label()
         ))
     };
@@ -425,6 +486,9 @@ pub fn run_setup_hotkey(_listen_macos_hotkey: bool) -> Result<()> {
                 eprintln!(
                     "  Press \x1b[1mCmd+;\x1b[0m anywhere, system-wide, to launch a new jcode in {}.",
                     installed_terminal.label()
+                );
+                eprintln!(
+                    "  Inside jcode, press \x1b[1mCmd+Shift+;\x1b[0m to spawn a new session in the current directory."
                 );
                 return Ok(());
             }
@@ -819,6 +883,75 @@ pub(crate) fn keymap_conflict_hint_for(
             (hint, true)
         }
     }
+}
+
+/// Whether the current terminal triggers jcode's glyph-safe color quantization
+/// (macOS VS Code integrated terminal / Apple Terminal). Mirrors the detection
+/// in `jcode-tui-style`'s color module and `jcode-app-core::perf` so the
+/// disclosure fires exactly when the behavior is active. Overridable with
+/// `JCODE_GLYPH_SAFE_MODE=on|off`.
+fn glyph_safe_mode_active() -> bool {
+    if let Ok(raw) = std::env::var("JCODE_GLYPH_SAFE_MODE") {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "1" | "true" | "yes" | "on" => return true,
+            "0" | "false" | "no" | "off" => return false,
+            _ => {}
+        }
+    }
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
+    match std::env::var("TERM_PROGRAM") {
+        Ok(tp) => {
+            let tp = tp.to_ascii_lowercase();
+            tp == "vscode" || tp == "apple_terminal"
+        }
+        Err(_) => false,
+    }
+}
+
+/// One-time disclosure that glyph-safe mode (256-color quantization) is active,
+/// shown the first time jcode launches in a fragile-glyph terminal. Discloses
+/// the tradeoff (slightly reduced color fidelity) and how to opt out.
+pub fn maybe_show_glyph_safe_notice() -> Option<StartupHints> {
+    if !io::stdin().is_terminal() || !io::stderr().is_terminal() {
+        return None;
+    }
+    let mut state = SetupHintsState::load();
+    let (hint, changed) = glyph_safe_notice_for(glyph_safe_mode_active(), &mut state);
+    if changed {
+        let _ = state.save();
+    }
+    hint
+}
+
+/// Core of [`maybe_show_glyph_safe_notice`], split out for unit testing.
+/// Returns the optional notice and whether `state` was mutated.
+pub(crate) fn glyph_safe_notice_for(
+    active: bool,
+    state: &mut SetupHintsState,
+) -> (Option<StartupHints>, bool) {
+    if !active || state.glyph_safe_notice_shown {
+        return (None, false);
+    }
+    state.glyph_safe_notice_shown = true;
+    let status =
+        "Glyph-safe mode: colors quantized to 256 to avoid this terminal's glyph corruption."
+            .to_string();
+    let display = "This terminal (VS Code integrated terminal / Apple Terminal on macOS) corrupts \
+its glyph cache under jcode's full-color animations, rendering letters as boxes. \
+jcode automatically quantizes colors to the 256-palette here to keep text readable; \
+the only tradeoff is slightly reduced color fidelity. Animations still run. \
+For full color, use Ghostty, iTerm2, kitty, or WezTerm, or set JCODE_GLYPH_SAFE_MODE=off."
+        .to_string();
+    (
+        Some(StartupHints::with_status_and_display(
+            status,
+            "Display",
+            display,
+        )),
+        true,
+    )
 }
 
 /// Manual `jcode setup-launcher` command.
