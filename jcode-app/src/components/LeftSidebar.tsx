@@ -14,6 +14,7 @@ import {
 	PanelLeftOpen,
 	ChevronDown,
 	ChevronRight,
+	X,
 } from "lucide-react";
 import {
 	groupSessionsByWorkspace,
@@ -31,6 +32,7 @@ interface LeftSidebarProps {
 	activeSessionId: string | null;
 	activeWorkspaceId?: string | null;
 	onSelectSession: (session: SessionInfo) => void;
+	onDeleteSession?: (sessionId: string) => void;
 	sessionPreviewMap: Record<
 		string,
 		{ text: string; timestamp: number; unread: number }
@@ -50,6 +52,7 @@ export function LeftSidebar({
 	activeSessionId,
 	activeWorkspaceId,
 	onSelectSession,
+	onDeleteSession,
 	sessionPreviewMap,
 	collapsed,
 	onToggleCollapse,
@@ -169,6 +172,7 @@ export function LeftSidebar({
 				activeSessionId={activeSessionId}
 				activeWorkspaceId={activeWorkspaceId}
 				onSelectSession={onSelectSession}
+				onDeleteSession={onDeleteSession}
 				onSelectWorkspace={onSelectWorkspace}
 				onNewTaskInWorkspace={onNewTaskInWorkspace}
 				sessionPreviewMap={sessionPreviewMap}
@@ -188,6 +192,7 @@ function WorkList({
 	activeSessionId,
 	activeWorkspaceId,
 	onSelectSession,
+	onDeleteSession,
 	onSelectWorkspace,
 	onNewTaskInWorkspace,
 	sessionPreviewMap,
@@ -196,6 +201,7 @@ function WorkList({
 	activeSessionId: string | null;
 	activeWorkspaceId?: string | null;
 	onSelectSession: (s: SessionInfo) => void;
+	onDeleteSession?: (sessionId: string) => void;
 	onSelectWorkspace?: (workspaceId: string) => void;
 	onNewTaskInWorkspace?: (workingDir: string) => void;
 	sessionPreviewMap: Record<
@@ -291,7 +297,7 @@ function WorkList({
 												onSelectSession(session)
 											}
 											className={cn(
-												"relative flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] transition-all",
+												"relative flex items-center gap-2 rounded-md px-2 py-1.5 text-[12px] transition-all group/btn",
 												isActive
 													? "bg-sidebar-accent text-sidebar-primary"
 													: "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/40",
@@ -316,6 +322,19 @@ function WorkList({
 												<span className="text-[10px] text-primary font-medium">
 													{preview.unread}
 												</span>
+											)}
+											{onDeleteSession && (
+												<button
+													type="button"
+													onClick={(e) => {
+														e.stopPropagation();
+														onDeleteSession(session.sessionId);
+													}}
+													className="ml-1 w-4 h-4 rounded flex items-center justify-center text-sidebar-foreground/20 hover:text-destructive hover:bg-destructive/10 transition-all opacity-0 group-hover/btn:opacity-100 shrink-0"
+													title="Delete session"
+												>
+													<X className="w-3 h-3" />
+												</button>
 											)}
 										</button>
 									);

@@ -798,6 +798,12 @@ export default function App() {
 							void resumeSession(s.sessionId, s.workingDir || null);
 						}
 					}}
+					onDeleteSession={(sessionId) => {
+						setConfirmRemove({
+							sessionId,
+							name: state.sessions.find((s) => s.sessionId === sessionId)?.title || sessionId.slice(0, 8),
+						});
+					}}
 					sessionPreviewMap={sessionPreviewMap}
 				/>
 
