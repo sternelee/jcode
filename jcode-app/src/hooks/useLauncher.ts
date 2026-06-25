@@ -589,6 +589,10 @@ export function useLauncher() {
 		for (const app of applications.apps) {
 			// Don't re-show recent apps in the main list to avoid duplicates.
 			if (recentIds.has(`app:${app.appPath}`)) continue;
+			// Don't re-show running apps in the empty-query main list; they
+			// already live in the Running section above. With a search query,
+			// keep matching running apps visible in Applications results.
+			if (!trimmed && app.running) continue;
 			out.push({
 				kind: "application",
 				id: `app:${app.appPath}`,

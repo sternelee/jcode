@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CommandItem } from "@/components/ui/command";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { cn } from "@/lib/utils";
 import {
 	Calculator,
@@ -99,14 +99,17 @@ export interface LauncherCommandItemProps {
 	/** Zero-based position in the flat item list, used to render a
 	 * `⌘n` quick-select hint for the first nine items. */
 	index?: number;
+	/** Click selects without executing; parent controls visual + cmdk value. */
+	onClickSelect?: (item: LauncherItem) => void;
+	selected?: boolean;
 }
 
-function valueOf(item: LauncherItem): string {
+export function launcherItemValue(item: LauncherItem): string {
 	switch (item.kind) {
 		case "application":
 			return `app:${item.app.name} ${item.app.bundleId ?? ""} ${item.app.appPath}`;
 		case "session":
-			return `session:${item.session.title} ${item.session.subtitle ?? ""} ${item.session.workingDir ?? ""}`;
+			return `session:${item.session.sessionId}`;
 		case "builtin":
 			return `builtin:${item.title} ${item.keyword} ${item.page}`;
 		case "builtin-tool":
@@ -127,23 +130,41 @@ export function LauncherCommandItem({
 	highlight,
 	onStopApp,
 	index,
+	onClickSelect,
+	selected,
 }: LauncherCommandItemProps) {
-	const handleSelect = () => {
+	const handleSelect = (event?: ReactMouseEvent<HTMLDivElement>) => {
 		if (disabled) return;
+		event?.preventDefault();
+		event?.stopPropagation();
 		onSelect(item);
 	};
-	const value = valueOf(item);
+	const value = launcherItemValue(item);
 	const showQuickHint = index !== undefined && index >= 0 && index < 9;
+	const isRunningApp = item.kind === "application" && item.app.running;
+	const itemClassName = cn(
+		"launcher-item group/item cursor-default flex items-center gap-3",
+		selected && "launcher-item-selected",
+		disabled && "opacity-50",
+	);
+
+	const selectOnly = (event: ReactMouseEvent<HTMLDivElement>) => {
+		event.preventDefault();
+		event.stopPropagation();
+		onClickSelect?.(item);
+	};
 
 	return (
-		<CommandItem
-			value={value}
-			onSelect={handleSelect}
-			disabled={disabled}
-			className={cn(
-				"launcher-item group/item px-3 py-2 cursor-default flex items-center gap-3",
-				disabled && "opacity-50",
-			)}
+		<div
+			role="option"
+			aria-selected={selected}
+			aria-disabled={disabled}
+			data-value={value}
+			data-index={index}
+			className={itemClassName}
+			onPointerDown={isRunningApp ? undefined : selectOnly}
+			onMouseDown={isRunningApp ? undefined : selectOnly}
+			onClick={isRunningApp ? handleSelect : selectOnly}
 		>
 			<Body
 				item={item}
@@ -151,7 +172,7 @@ export function LauncherCommandItem({
 				onStopApp={onStopApp}
 				quickHint={showQuickHint ? index! + 1 : undefined}
 			/>
-		</CommandItem>
+		</div>
 	);
 }
 
@@ -219,9 +240,6 @@ function Body({
 		case "application":
 			return (
 				<>
-					{quickHint !== undefined && (
-						<QuickHint index={quickHint} />
-					)}
 					<div className="relative shrink-0">
 						<AppIcon
 							appPath={item.app.iconPath ?? item.app.appPath}
@@ -254,6 +272,10 @@ function Body({
 					{item.app.running && onStopApp ? (
 						<button
 							type="button"
+							onPointerDown={(event) => {
+								event.preventDefault();
+								event.stopPropagation();
+							}}
 							onMouseDown={(event) => {
 								// Prevent cmdk from treating the click as a
 								// list-item selection.
@@ -273,14 +295,14 @@ function Body({
 					) : (
 						<Badge>Open</Badge>
 					)}
+					{quickHint !== undefined && (
+						<QuickHint index={quickHint} />
+					)}
 				</>
 			);
 		case "session":
 			return (
 				<>
-					{quickHint !== undefined && (
-						<QuickHint index={quickHint} />
-					)}
 					<div
 						className={cn(
 							"size-8 rounded-md flex items-center justify-center shrink-0",
@@ -316,14 +338,14 @@ function Body({
 					<Badge variant={item.session.isActive ? "primary" : "default"}>
 						{item.session.isActive ? "Active" : "Resume"}
 					</Badge>
+					{quickHint !== undefined && (
+						<QuickHint index={quickHint} />
+					)}
 				</>
 			);
 		case "builtin":
 			return (
 				<>
-					{quickHint !== undefined && (
-						<QuickHint index={quickHint} />
-					)}
 					<BuiltinIcon name={item.iconName} />
 					<div className="min-w-0 flex-1">
 						<div className="text-[13px] font-medium truncate text-foreground flex items-center gap-2">
@@ -341,14 +363,14 @@ function Body({
 						</div>
 					</div>
 					<Badge>Open</Badge>
+					{quickHint !== undefined && (
+						<QuickHint index={quickHint} />
+					)}
 				</>
 			);
 		case "builtin-tool":
 			return (
 				<>
-					{quickHint !== undefined && (
-						<QuickHint index={quickHint} />
-					)}
 					<BuiltinIcon name={item.iconName} />
 					<div className="min-w-0 flex-1">
 						<div className="text-[13px] font-medium truncate text-foreground flex items-center gap-2">
@@ -366,14 +388,14 @@ function Body({
 						</div>
 					</div>
 					<Badge variant="primary">Open</Badge>
+					{quickHint !== undefined && (
+						<QuickHint index={quickHint} />
+					)}
 				</>
 			);
 		case "agent":
 			return (
 				<>
-					{quickHint !== undefined && (
-						<QuickHint index={quickHint} />
-					)}
 					<div
 						className="size-8 rounded-md bg-primary text-primary-foreground flex items-center justify-center shrink-0"
 						aria-hidden="true"
@@ -391,12 +413,14 @@ function Body({
 						</div>
 					</div>
 					<Badge variant="primary">Send</Badge>
+					{quickHint !== undefined && (
+						<QuickHint index={quickHint} />
+					)}
 				</>
 			);
 		case "chat-provider":
 			return (
 				<>
-					{quickHint !== undefined && <QuickHint index={quickHint} />}
 					<div
 						className="size-8 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0"
 						aria-hidden="true"
@@ -421,12 +445,12 @@ function Body({
 						</div>
 					</div>
 					<Badge variant="primary">Chat</Badge>
+					{quickHint !== undefined && <QuickHint index={quickHint} />}
 				</>
 			);
 		case "a2ui":
 			return (
 				<>
-					{quickHint !== undefined && <QuickHint index={quickHint} />}
 					<div
 						className="size-8 rounded-md bg-primary/10 text-primary flex items-center justify-center shrink-0"
 						aria-hidden="true"
@@ -449,6 +473,7 @@ function Body({
 						</div>
 					</div>
 					<Badge>Open</Badge>
+					{quickHint !== undefined && <QuickHint index={quickHint} />}
 				</>
 			);
 	}
@@ -464,10 +489,10 @@ function Badge({
 	return (
 		<span
 			className={cn(
-				"text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 shrink-0",
+				"text-[10px] font-medium rounded-md px-2 py-0.5 shrink-0",
 				variant === "primary"
-					? "bg-primary text-primary-foreground"
-					: "bg-muted launcher-muted",
+					? "bg-primary/15 text-primary"
+					: "bg-muted/60 text-[var(--launcher-muted-fg)]",
 			)}
 		>
 			{children}
@@ -478,7 +503,7 @@ function Badge({
 function QuickHint({ index }: { index: number }) {
 	return (
 		<span
-			className="inline-flex items-center justify-center min-w-[20px] h-[20px] rounded border border-border bg-muted/40 text-[10px] font-mono launcher-muted shrink-0 group-data-[selected=true]/item:bg-primary/20 group-data-[selected=true]/item:text-primary group-data-[selected=true]/item:border-primary/30 transition-colors"
+			className="inline-flex items-center justify-center min-w-[20px] h-[20px] rounded border border-transparent bg-muted/50 text-[10px] font-medium text-[var(--launcher-muted-fg)] shrink-0 opacity-0 group-hover/item:opacity-100 group-data-[selected=true]/item:opacity-100 transition-opacity"
 			aria-hidden="true"
 		>
 			⌘{index}
