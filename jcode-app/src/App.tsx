@@ -755,7 +755,7 @@ export default function App() {
 					activeTab={activeNavTab}
 					onOpenLauncher={() => void invoke("show_launcher")}
 					onOpenPage={(page) => {
-						const inline = ["skills", "tasks", "mcp", "monitor", "team", "media", "settings"];
+						const inline = ["skills", "tasks", "mcp", "monitor", "team", "media"];
 						if (inline.includes(page)) {
 							setActiveNavTab(page);
 						} else {

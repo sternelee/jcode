@@ -127,6 +127,7 @@ export function RightSidebar({
 					)}
 
 					{/* Tab content */}
+					<div className="flex-1 min-h-0">
 					{(!isWork || activeTab === "progress") && (
 						<ProgressSection items={progressItems} />
 					)}
@@ -139,6 +140,7 @@ export function RightSidebar({
 					{isWork && activeTab === "a2ui" && a2uiPages.length > 0 && (
 						<A2uiSection pages={a2uiPages} onAction={onA2uiAction} />
 					)}
+				</div>
 				</div>
 			)}
 		</div>
