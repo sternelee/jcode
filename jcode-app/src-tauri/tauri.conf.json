@@ -18,7 +18,6 @@
         "width": 720,
         "height": 420,
         "resizable": false,
-        "maximizable": false,
         "minimizable": false,
         "closable": true,
         "decorations": false,

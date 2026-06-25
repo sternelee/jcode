@@ -789,31 +789,44 @@ async fn install_extension() -> Result<String> {
         return Err(anyhow::anyhow!("XPI file not found at {}", xpi.display()));
     }
 
-    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
-    {
-        // Try to open Firefox with the XPI to trigger install prompt
-        let xpi_url = url::Url::from_file_path(&xpi)
-            .map_err(|_| {
-                anyhow::anyhow!("Could not convert XPI path to file URL: {}", xpi.display())
-            })?
-            .to_string();
+    // Try to open Firefox with the XPI to trigger install prompt
+    let xpi_url = url::Url::from_file_path(&xpi)
+        .map_err(|_| {
+            anyhow::anyhow!("Could not convert XPI path to file URL: {}", xpi.display())
+        })?
+        .to_string();
 
-        #[cfg(target_os = "linux")]
-        {
-            let _ = tokio::process::Command::new("xdg-open")
-                .arg(&xpi_url)
-                .spawn();
+    #[cfg(target_os = "linux")]
+    {
+        let _ = tokio::process::Command::new("xdg-open")
+            .arg(&xpi_url)
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let opened = tokio::process::Command::new("open")
+            .args(["-a", "Firefox", &xpi_url])
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !opened {
+            let opened_by_id = tokio::process::Command::new("open")
+                .args(["-b", "org.mozilla.firefox", &xpi_url])
+                .status()
+                .await
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if !opened_by_id {
+                let _ = tokio::process::Command::new("open").arg(&xpi_url).spawn();
+            }
         }
-        #[cfg(target_os = "macos")]
-        {
-            let _ = tokio::process::Command::new("open").arg(&xpi_url).spawn();
-        }
-        #[cfg(target_os = "windows")]
-        {
-            let _ = tokio::process::Command::new("cmd")
-                .args(["/C", "start", "", &xpi_url])
-                .spawn();
-        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = tokio::process::Command::new("cmd")
+            .args(["/C", "start", "", &xpi_url])
+            .spawn();
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
