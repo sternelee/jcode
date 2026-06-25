@@ -339,6 +339,7 @@ pub fn run() {
             commands::system::trigger_ambient,
             commands::system::stop_ambient,
             commands::provider::add_provider_profile,
+            commands::provider::delete_provider_profile,
             commands::system::get_browser_status,
             commands::system::setup_browser,
             commands::system::send_transcript,

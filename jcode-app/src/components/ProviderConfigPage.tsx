@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
 	ModelRoute,
@@ -15,8 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import {
-	Key,
+import { Key,
 	Globe,
 	CheckCircle2,
 	AlertCircle,
@@ -30,7 +29,9 @@ import {
 	Bot,
 	Cloud,
 	BarChart3,
+	Trash2,
 } from "lucide-react";
+import { Toaster, toast } from "sonner";
 import type { UsageInfo } from "@/types";
 
 interface ProviderConfigPageProps {
@@ -90,24 +91,67 @@ function ProviderIcon({
 	return <Globe className={className} />;
 }
 
+const CACHE_KEY = "jcode:provider_profiles_cache";
+
+interface CachedData {
+	providers: ProviderCatalogEntry[];
+	routes: ModelRoute[];
+	ts: number;
+}
+
+function loadCached(): { providers: ProviderCatalogEntry[]; routes: ModelRoute[] } | null {
+	try {
+		const raw = sessionStorage.getItem(CACHE_KEY);
+		if (!raw) return null;
+		const data: CachedData = JSON.parse(raw);
+		// ponytail: 5 min staleness is fine for UI cache
+		if (Date.now() - data.ts > 5 * 60_000) return null;
+		return { providers: data.providers, routes: data.routes };
+	} catch {
+		return null;
+	}
+}
+
+function saveCached(providers: ProviderCatalogEntry[], routes: ModelRoute[]) {
+	try {
+		sessionStorage.setItem(CACHE_KEY, JSON.stringify({ providers, routes, ts: Date.now() }));
+	} catch { /* quota */ }
+}
+
 export function ProviderConfigPage({
 	onAuthStatusChange,
 	onGetUsageInfo,
 }: ProviderConfigPageProps) {
-	const [providers, setProviders] = useState<ProviderCatalogEntry[]>([]);
-	const [modelRoutes, setModelRoutes] = useState<ModelRoute[]>([]);
+	const cached = loadCached();
+	const [providers, setProviders] = useState<ProviderCatalogEntry[]>(cached?.providers ?? []);
+	const [modelRoutes, setModelRoutes] = useState<ModelRoute[]>(cached?.routes ?? []);
 	const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
 	const [authPrompt, setAuthPrompt] = useState<ProviderAuthPrompt | null>(null);
 	const [authInput, setAuthInput] = useState("");
 	const [authInputKind, setAuthInputKind] = useState<string>("");
 	const [authBusy, setAuthBusy] = useState(false);
-	const [authMessage, setAuthMessage] = useState<{
-		text: string;
-		type: "ok" | "error";
-	} | null>(null);
 	const [doctorReport, setDoctorReport] = useState<AuthDoctorReport | null>(
 		null,
 	);
+	const containerRef = useRef<HTMLDivElement>(null);
+	const authFlowRef = useRef<HTMLDivElement>(null);
+
+	// Auto-scroll to top when auth flow panel appears
+	useEffect(() => {
+		if (authPrompt) {
+			requestAnimationFrame(() => {
+				// Find the PagesApp outer scroll container
+				const outer = document.querySelector<HTMLElement>(
+					".flex-1.overflow-y-auto.relative"
+				);
+				if (outer) outer.scrollTo({ top: 0, behavior: "smooth" });
+				// Scroll inner container to top
+				if (containerRef.current) {
+					containerRef.current.scrollTo({ top: 0, behavior: "smooth" });
+				}
+			});
+		}
+	}, [authPrompt]);
 	const [doctorBusy, setDoctorBusy] = useState(false);
 	const [addProfileOpen, setAddProfileOpen] = useState(false);
 	const [profileForm, setProfileForm] = useState({
@@ -130,20 +174,21 @@ export function ProviderConfigPage({
 	const [providerDoctorBusy, setProviderDoctorBusy] = useState<string | null>(
 		null,
 	);
-	const [connectionTests, setConnectionTests] = useState<
-		Record<string, ProviderConnectionTest>
-	>({});
 	const [connectionTestBusy, setConnectionTestBusy] = useState<
 		Record<string, boolean>
 	>({});
+	const [deleteBusy, setDeleteBusy] = useState<string | null>(null);
 
 	const refresh = useCallback(async () => {
+		let newRoutes: ModelRoute[] | null = null;
+		let newProviders: ProviderCatalogEntry[] | null = null;
 		try {
 			const result = await invoke<{
 				routes: ModelRoute[];
 				providers: ProviderCatalogEntry[];
 				current: string;
 			}>("get_models");
+			newRoutes = result.routes;
 			setModelRoutes(result.routes);
 		} catch {
 			/* ignore */
@@ -153,10 +198,12 @@ export function ProviderConfigPage({
 				providers: ProviderCatalogEntry[];
 				current: string;
 			}>("get_provider_profiles");
+			newProviders = result.providers;
 			setProviders(result.providers);
 		} catch {
 			/* ignore */
 		}
+		if (newProviders && newRoutes) saveCached(newProviders, newRoutes);
 	}, []);
 
 	const loadUsage = useCallback(async () => {
@@ -202,14 +249,11 @@ export function ProviderConfigPage({
 					provider: string;
 					detail: string;
 				}>("approve_external_auth_candidate", { index });
-				setAuthMessage({
-					text: `Imported ${result.provider}: ${result.detail}`,
-					type: "ok",
-				});
+				toast.success(`Imported ${result.provider}: ${result.detail}`);
 				void refresh();
 				void loadExternalAuth();
 			} catch (e) {
-				setAuthMessage({ text: String(e), type: "error" });
+				toast.error(String(e));
 			} finally {
 				setImportBusy(null);
 			}
@@ -226,21 +270,20 @@ export function ProviderConfigPage({
 					providerId,
 				},
 			);
-			setConnectionTests((prev) => ({ ...prev, [providerId]: result }));
+			if (result.success) {
+				toast.success("Connection OK", {
+					description: `${result.model_count} models · ${result.elapsed_ms}ms`,
+				});
+			} else {
+				toast.error("Connection failed");
+			}
 		} catch (e) {
-			setAuthMessage({ text: String(e), type: "error" });
+			toast.error(String(e));
 		} finally {
 			setConnectionTestBusy((prev) => ({ ...prev, [providerId]: false }));
 		}
 	}, []);
 
-	const dismissConnectionTest = useCallback((providerId: string) => {
-		setConnectionTests((prev) => {
-			const next = { ...prev };
-			delete next[providerId];
-			return next;
-		});
-	}, []);
 
 	const dismissProviderDoctorReport = useCallback((providerId: string) => {
 		setProviderDoctorReports((prev) => {
@@ -272,7 +315,7 @@ export function ProviderConfigPage({
 					[providerId]: report,
 				}));
 			} catch (e) {
-				setAuthMessage({ text: String(e), type: "error" });
+				toast.error(String(e));
 			} finally {
 				setProviderDoctorBusy(null);
 			}
@@ -283,7 +326,6 @@ export function ProviderConfigPage({
 	const startAuthFlow = useCallback(async (providerId: string) => {
 		setAuthBusy(true);
 		setAuthPrompt(null);
-		setAuthMessage(null);
 		try {
 			const prompt = await invoke<ProviderAuthPrompt>(
 				"start_provider_auth_flow",
@@ -293,7 +335,7 @@ export function ProviderConfigPage({
 			setSelectedProvider(providerId);
 			setAuthInputKind(prompt.input_kind);
 		} catch (e) {
-			setAuthMessage({ text: String(e), type: "error" });
+			toast.error(String(e));
 		} finally {
 			setAuthBusy(false);
 		}
@@ -302,7 +344,6 @@ export function ProviderConfigPage({
 	const completeAuthFlow = useCallback(async () => {
 		if (!selectedProvider || !authPrompt) return;
 		setAuthBusy(true);
-		setAuthMessage(null);
 		try {
 			const result = await invoke<{ status: string; provider: string }>(
 				"complete_provider_auth_flow",
@@ -312,13 +353,13 @@ export function ProviderConfigPage({
 					input: authInput || null,
 				},
 			);
-			setAuthMessage({ text: `Authenticated: ${result.provider}`, type: "ok" });
+			toast.success(`Authenticated: ${result.provider}`);
 			setAuthPrompt(null);
 			setAuthInput("");
 			onAuthStatusChange?.();
 			void refresh();
 		} catch (e) {
-			setAuthMessage({ text: String(e), type: "error" });
+			toast.error(String(e));
 		} finally {
 			setAuthBusy(false);
 		}
@@ -334,7 +375,6 @@ export function ProviderConfigPage({
 	const saveApiKey = useCallback(
 		async (providerId: string) => {
 			setAuthBusy(true);
-			setAuthMessage(null);
 			try {
 				await invoke("save_provider_api_key", {
 					providerId,
@@ -342,12 +382,12 @@ export function ProviderConfigPage({
 					region: null,
 					apiBase: null,
 				});
-				setAuthMessage({ text: `API key saved for ${providerId}`, type: "ok" });
+				toast.success(`API key saved for ${providerId}`);
 				setAuthInput("");
 				onAuthStatusChange?.();
 				void refresh();
 			} catch (e) {
-				setAuthMessage({ text: String(e), type: "error" });
+				toast.error(String(e));
 			} finally {
 				setAuthBusy(false);
 			}
@@ -360,7 +400,7 @@ export function ProviderConfigPage({
 		try {
 			setDoctorReport(await invoke<AuthDoctorReport>("run_auth_doctor"));
 		} catch (e) {
-			setAuthMessage({ text: String(e), type: "error" });
+			toast.error(String(e));
 		} finally {
 			setDoctorBusy(false);
 		}
@@ -368,7 +408,6 @@ export function ProviderConfigPage({
 
 	const addProfile = useCallback(async () => {
 		setAuthBusy(true);
-		setAuthMessage(null);
 		try {
 			const result = await invoke<{
 				profile: string;
@@ -379,7 +418,7 @@ export function ProviderConfigPage({
 				auth: string;
 				default_set: boolean;
 			}>("add_provider_profile", profileForm);
-			setAuthMessage({ text: `Profile "${result.profile}" added`, type: "ok" });
+			toast.success(`Profile "${result.profile}" added`);
 			setAddProfileOpen(false);
 			setProfileForm({
 				name: "",
@@ -390,17 +429,35 @@ export function ProviderConfigPage({
 			});
 			void refresh();
 		} catch (e) {
-			setAuthMessage({ text: String(e), type: "error" });
+			toast.error(String(e));
 		} finally {
 			setAuthBusy(false);
 		}
 	}, [profileForm, refresh]);
+
+	const deleteProfile = useCallback(
+		async (providerId: string) => {
+			if (!confirm(`Delete provider profile "${providerId}"?`)) return;
+			setDeleteBusy(providerId);
+			try {
+				await invoke("delete_provider_profile", { providerId });
+				toast.success(`Profile "${providerId}" deleted`);
+				void refresh();
+			} catch (e) {
+				toast.error(String(e));
+			} finally {
+				setDeleteBusy(null);
+			}
+		},
+		[refresh],
+	);
 
 	const configuredProviders = providers.filter((p) => p.configured);
 	const unconfiguredProviders = providers.filter((p) => !p.configured);
 
 	return (
 		<div className="flex flex-col min-w-0 min-h-0 flex-1 w-full bg-background overflow-x-hidden">
+			<Toaster position="bottom-right" toastOptions={{ style: { fontSize: "13px" } }} />
 			{/* Header */}
 			<div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-border shrink-0 gap-2">
 				<div className="flex items-center gap-2 md:gap-3 min-w-0">
@@ -450,23 +507,8 @@ export function ProviderConfigPage({
 				</div>
 			</div>
 
-			<div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 min-w-0">
+			<div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 min-w-0">
 				<div className="p-4 md:p-6 space-y-4 md:space-y-5">
-					{/* Message */}
-					{authMessage && (
-						<div
-							className={cn(
-								"flex items-center gap-2 px-4 py-3 rounded-xl border text-[13px]",
-								authMessage.type === "error"
-									? "bg-destructive/5 border-destructive/20 text-destructive"
-									: "bg-emerald-500/5 border-emerald-500/20 text-emerald-600",
-							)}
-						>
-							<AlertCircle className="w-4 h-4 shrink-0" />
-							{authMessage.text}
-						</div>
-					)}
-
 					{/* Auth Doctor */}
 					{doctorReport && (
 						<div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -536,7 +578,7 @@ export function ProviderConfigPage({
 
 					{/* Auth Flow */}
 					{authPrompt && (
-						<div className="rounded-xl border border-border bg-card overflow-hidden">
+						<div ref={authFlowRef} className="rounded-xl border border-border bg-card overflow-hidden">
 							<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
 								<span className="text-[14px] font-semibold text-foreground">
 									Configure {selectedProvider}
@@ -811,6 +853,20 @@ export function ProviderConfigPage({
 												)}
 												Test
 											</Button>
+											<Button
+												variant="outline"
+												size="sm"
+												className="text-[10px] h-6 gap-1 text-destructive hover:text-destructive"
+												onClick={() => deleteProfile(p.provider_key)}
+												disabled={deleteBusy === p.provider_key}
+											>
+												{deleteBusy === p.provider_key ? (
+													<Loader2 className="w-3 h-3 animate-spin" />
+												) : (
+													<Trash2 className="w-3 h-3" />
+												)}
+												Delete
+											</Button>
 										</div>
 									))}
 								</div>
@@ -891,59 +947,6 @@ export function ProviderConfigPage({
 						</div>
 					))}
 
-					{/* Connection Test Results */}
-					{Object.entries(connectionTests).map(([providerId, test]) => (
-						<div
-							key={providerId}
-							className="rounded-xl border border-border bg-card overflow-hidden"
-						>
-							<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
-								<div className="flex items-center gap-2">
-									<Wifi className="w-4 h-4 text-emerald-500" />
-									<span className="text-[14px] font-semibold text-foreground">
-										Connection Test: {providerId}
-									</span>
-									<Badge
-										variant={test.success ? "default" : "destructive"}
-										className="text-[9px]"
-									>
-										{test.success ? "OK" : "FAILED"}
-									</Badge>
-								</div>
-								<Button
-									variant="ghost"
-									size="sm"
-									className="text-[11px] h-7"
-									onClick={() => dismissConnectionTest(providerId)}
-								>
-									Dismiss
-								</Button>
-							</div>
-							<div className="p-4 space-y-2">
-								<div className="text-[12px] text-muted-foreground">
-									{test.model_count} models available · {test.elapsed_ms}ms
-								</div>
-								{test.models.length > 0 && (
-									<div className="flex flex-wrap gap-1.5">
-										{test.models.map((model) => (
-											<Badge
-												key={model}
-												variant="secondary"
-												className="text-[10px]"
-											>
-												{model}
-											</Badge>
-										))}
-										{test.model_count > 10 && (
-											<Badge variant="outline" className="text-[10px]">
-												+{test.model_count - 10} more
-											</Badge>
-										)}
-									</div>
-								)}
-							</div>
-						</div>
-					))}
 					<div className="rounded-xl border border-border bg-card overflow-hidden">
 						<div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/20">
 							<div className="flex items-center gap-2">

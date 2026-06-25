@@ -301,27 +301,121 @@ pub async fn test_provider_connection(
 
     // Try to find by id first, then by display_name (case-insensitive)
     let provider_id_lower = provider_id.to_ascii_lowercase();
-    let profile = provider_catalog::openai_compatible_profiles()
+
+    if let Some(profile) = provider_catalog::openai_compatible_profiles()
         .iter()
         .find(|p| {
             p.id == provider_id
                 || p.display_name.to_ascii_lowercase() == provider_id_lower
                 || p.id == provider_id_lower
         })
-        .ok_or_else(|| format!("Provider '{provider_id}' not found or not OpenAI-compatible"))?;
+    {
+        let api_key = provider_catalog::load_api_key_from_env_or_config(
+            profile.api_key_env,
+            profile.env_file,
+        );
+        let api_key = api_key
+            .filter(|k| !k.trim().is_empty())
+            .ok_or_else(|| format!("No API key found for '{provider_id}'"))?;
 
-    let api_key =
-        provider_catalog::load_api_key_from_env_or_config(profile.api_key_env, profile.env_file);
+        let start = std::time::Instant::now();
+        let models = fetch_live_openai_compatible_models(*profile, &api_key)
+            .await
+            .map_err(|e| TauriError::Other(format!("Connection test failed: {e}")))?;
+        let elapsed = start.elapsed();
 
-    let api_key = api_key
-        .filter(|k| !k.trim().is_empty())
-        .ok_or_else(|| format!("No API key found for '{provider_id}'"))?;
+        return Ok(serde_json::json!({
+            "provider_id": provider_id,
+            "model_count": models.len(),
+            "models": models.iter().take(10).collect::<Vec<_>>(),
+            "elapsed_ms": elapsed.as_millis() as u64,
+            "success": true,
+        }));
+    }
+
+    // Fallback: check user-configured named providers
+    let cfg = jcode::config::Config::load();
+    let named = cfg.providers.get(&provider_id).or_else(|| {
+        cfg.providers.iter().find(|(name, _)| {
+            name.to_ascii_lowercase() == provider_id_lower
+        }).map(|(_, p)| p)
+    }).cloned().ok_or_else(|| {
+        format!("Provider '{provider_id}' not found or not OpenAI-compatible")
+    })?;
+
+    let env_file = named
+        .env_file
+        .clone()
+        .unwrap_or_else(|| format!("{provider_id}.env"));
+    let api_key_env = named
+        .api_key_env
+        .clone()
+        .unwrap_or_else(|| format!("{}_API_KEY", provider_id.to_uppercase()));
+
+    let api_key = named.api_key.clone().or_else(|| {
+        // Try loading from env var
+        std::env::var(&api_key_env).ok()
+    }).or_else(|| {
+        // Try loading from env file
+        jcode::config::Config::path().and_then(|config_path| {
+            let parent = config_path.parent()?;
+            let path = parent.join(&env_file);
+            let content = std::fs::read_to_string(&path).ok()?;
+            content.lines().find_map(|line| {
+                let parts: Vec<&str> = line.splitn(2, '=').collect();
+                if parts.len() == 2 && parts[0].trim() == api_key_env.as_str() {
+                    Some(parts[1].trim().to_string())
+                } else {
+                    None
+                }
+            })
+        })
+    }).filter(|k| !k.trim().is_empty())
+    .ok_or_else(|| format!("No API key found for '{provider_id}'"))?;
+
+    let base_url = named.base_url.trim_end_matches('/').to_string();
+    let url = format!("{base_url}/models");
+
+    let client = jcode::provider::shared_http_client();
+    let request = client.get(&url);
+    let request = if let Some(ref header_value) = named.auth_header {
+        request.header("Authorization", header_value)
+    } else {
+        match named.auth {
+            jcode::config::NamedProviderAuth::Bearer => request.bearer_auth(&api_key),
+            _ => request,
+        }
+    };
 
     let start = std::time::Instant::now();
-    let models = fetch_live_openai_compatible_models(*profile, &api_key)
-        .await
-        .map_err(|e| TauriError::Other(format!("Connection test failed: {e}")))?;
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        request.send(),
+    )
+    .await
+    .map_err(|_| format!("Connection test timed out for '{provider_id}'"))?
+    .map_err(|e| format!("Connection test failed: {e}"))?;
     let elapsed = start.elapsed();
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(TauriError::Other(format!(
+            "Connection test failed for '{}' (HTTP {}): {}",
+            provider_id,
+            status,
+            body.trim()
+        )));
+    }
+
+    let parsed: serde_json::Value = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
+    let models: Vec<String> = parsed["data"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|m| {
+            m["id"].as_str().map(String::from)
+        }).collect())
+        .unwrap_or_default();
 
     Ok(serde_json::json!({
         "provider_id": provider_id,
@@ -617,29 +711,54 @@ pub async fn save_provider_api_key(
         }
         provider_id => {
             // Generic handler for OpenAI-compatible providers (deepseek, togetherai, etc.)
-            let descriptor = jcode::provider_catalog::resolve_login_provider(provider_id)
-                .ok_or_else(|| {
+            if let Some(descriptor) =
+                jcode::provider_catalog::resolve_login_provider(provider_id)
+            {
+                if let jcode::provider_catalog::LoginProviderTarget::OpenAiCompatible(profile) =
+                    descriptor.target
+                {
+                    let resolved =
+                        jcode::provider_catalog::resolve_openai_compatible_profile(profile);
+                    jcode::cli::provider_init::save_named_api_key(
+                        &resolved.env_file,
+                        &resolved.api_key_env,
+                        trimmed_key,
+                    )
+                    .map_err(|e| {
+                        TauriError::Other(format!(
+                            "Failed to save {} API key: {e}",
+                            resolved.display_name
+                        ))
+                    })?;
+                } else {
+                    return Err(TauriError::Other(format!(
+                        "Inline API key save is not supported for provider `{provider_id}`"
+                    )));
+                }
+            } else {
+                // Check custom named providers (Config::providers)
+                let cfg = jcode::config::Config::load();
+                let named = cfg.providers.get(provider_id).ok_or_else(|| {
                     format!("Inline API key save is not supported for provider `{provider_id}`")
                 })?;
-            if let jcode::provider_catalog::LoginProviderTarget::OpenAiCompatible(profile) =
-                descriptor.target
-            {
-                let resolved = jcode::provider_catalog::resolve_openai_compatible_profile(profile);
+                let env_file = named
+                    .env_file
+                    .clone()
+                    .unwrap_or_else(|| format!("{provider_id}.env"));
+                let api_key_env = named
+                    .api_key_env
+                    .clone()
+                    .unwrap_or_else(|| format!("{}_API_KEY", provider_id.to_uppercase()));
                 jcode::cli::provider_init::save_named_api_key(
-                    &resolved.env_file,
-                    &resolved.api_key_env,
+                    &env_file,
+                    &api_key_env,
                     trimmed_key,
                 )
                 .map_err(|e| {
                     TauriError::Other(format!(
-                        "Failed to save {} API key: {e}",
-                        resolved.display_name
+                        "Failed to save {provider_id} API key: {e}"
                     ))
                 })?;
-            } else {
-                return Err(TauriError::Other(format!(
-                    "Inline API key save is not supported for provider `{provider_id}`"
-                )));
             }
         }
     }
@@ -733,7 +852,7 @@ pub async fn complete_provider_auth_flow(
     refresh_active_runtime_auth(&app_handle, &state, session_id.as_deref()).await?;
     serde_json::to_value(success).map_err(|e| TauriError::from(e.to_string()))
 }
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 pub async fn add_provider_profile(
     name: String,
     base_url: String,
@@ -776,4 +895,30 @@ pub async fn add_provider_profile(
         "auth": report.auth,
         "default_set": report.default_set,
     }))
+}
+
+#[tauri::command]
+pub async fn delete_provider_profile(
+    provider_id: String,
+) -> Result<(), TauriError> {
+    use jcode::config::Config;
+
+    // ponytail: direct config read-modify-save, no new abstraction needed
+    let mut cfg = Config::load();
+    if cfg.providers.remove(&provider_id).is_none() {
+        // Also try case-insensitive match
+        let key = cfg.providers.keys().find(|k| k.eq_ignore_ascii_case(&provider_id)).cloned();
+        match key {
+            Some(k) => { cfg.providers.remove(&k); }
+            None => return Err(TauriError::Other(format!(
+                "Provider '{provider_id}' not found in config"
+            ))),
+        }
+    }
+    cfg.save().map_err(|e| TauriError::Other(format!(
+        "Failed to save config after deleting '{provider_id}': {e}"
+    )))?;
+
+    jcode::auth::AuthStatus::invalidate_cache();
+    Ok(())
 }
