@@ -38,10 +38,9 @@ fn member(session_id: &str, status: &str) -> SwarmMember {
         last_status_change: Instant::now(),
         is_headless: false,
         output_tail: None,
-
         model: None,
-
         provider_key: None,
+        todo_progress: None,
     }
 }
 

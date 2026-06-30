@@ -227,6 +227,10 @@ pub struct SwarmMember {
     pub model: Option<String>,
     /// Optional provider key for this member.
     pub provider_key: Option<String>,
+    /// Aggregate todo progress (completed, total) for this member's session,
+    /// updated from `TodoUpdated` bus events. Surfaced on the inline swarm
+    /// strip; not persisted.
+    pub todo_progress: Option<(u32, u32)>,
 }
 
 impl SwarmMember {
@@ -281,6 +285,7 @@ impl SwarmMember {
             output_tail: None,
             model: record.model,
             provider_key: record.provider_key,
+            todo_progress: None,
         }
     }
 }

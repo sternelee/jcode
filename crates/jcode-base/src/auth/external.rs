@@ -309,8 +309,8 @@ fn load_auth_map(source: ExternalAuthSource) -> Result<HashMap<String, Value>> {
     let path = crate::storage::validate_external_auth_file(&source.path()?)?;
     let raw = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read {}", path.display()))?;
-    let value: Value =
-        serde_json::from_str(&raw).with_context(|| format!("Failed to parse {}", path.display()))?;
+    let value: Value = serde_json::from_str(&raw)
+        .with_context(|| format!("Failed to parse {}", path.display()))?;
     match source {
         ExternalAuthSource::OpenCode | ExternalAuthSource::Pi | ExternalAuthSource::OpenClaw => {
             // Flat `provider -> credential` maps.
@@ -488,10 +488,10 @@ fn hermes_expires_at_ms(object: &serde_json::Map<String, Value>) -> Option<i64> 
     if let Some(ms) = object.get("expires_at_ms").and_then(Value::as_i64) {
         return Some(ms);
     }
-    if let Some(text) = object.get("expires_at").and_then(Value::as_str) {
-        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(text.trim()) {
-            return Some(parsed.timestamp_millis());
-        }
+    if let Some(text) = object.get("expires_at").and_then(Value::as_str)
+        && let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(text.trim())
+    {
+        return Some(parsed.timestamp_millis());
     }
     None
 }

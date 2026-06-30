@@ -82,6 +82,7 @@ impl Client {
             client_instance_id: None,
             client_has_local_history,
             allow_session_takeover,
+            terminal_env: crate::terminal_launch::snapshot_client_terminal_env(),
         };
         let json = serde_json::to_string(&request)? + "\n";
         self.writer.write_all(json.as_bytes()).await?;
@@ -411,6 +412,10 @@ impl Client {
             Request::CommResyncPlan { id, .. } => *id,
             Request::CommAssignNext { id, .. } => *id,
             Request::ResumeAllSessions { id } => *id,
+            Request::CommSeedGraph { id, .. } => *id,
+            Request::CommExpandNode { id, .. } => *id,
+            Request::CommCompleteNode { id, .. } => *id,
+            Request::CommInjectGap { id, .. } => *id,
         };
         let json = serde_json::to_string(&request)? + "\n";
         self.writer.write_all(json.as_bytes()).await?;

@@ -330,10 +330,9 @@ fn handle_reload_queues_signal_for_canary_session() -> Result<()> {
                     last_status_change: now,
                     is_headless: false,
                     output_tail: None,
-
                     model: None,
-
                     provider_key: None,
+                    todo_progress: None,
                 },
             ),
             (
@@ -355,10 +354,9 @@ fn handle_reload_queues_signal_for_canary_session() -> Result<()> {
                     last_status_change: now,
                     is_headless: false,
                     output_tail: None,
-
                     model: None,
-
                     provider_key: None,
+                    todo_progress: None,
                 },
             ),
         ])));

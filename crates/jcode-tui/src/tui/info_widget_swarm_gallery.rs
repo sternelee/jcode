@@ -8,7 +8,10 @@
 //! [`GalleryMember`] (label + body lines).
 
 use crate::protocol::SwarmMemberStatus;
-use jcode_tui_render::swarm_gallery::{GalleryMember, humanize_age, render_gallery};
+use jcode_tui_render::swarm_gallery::{
+    humanize_age, render_gallery, render_swarm_panel, render_swarm_strip, GalleryMember,
+    SwarmStripHint,
+};
 use ratatui::prelude::*;
 
 fn member_label(member: &SwarmMemberStatus) -> String {
@@ -50,11 +53,13 @@ fn members_to_gallery(members: &[SwarmMemberStatus]) -> Vec<GalleryMember> {
             role: member.role.clone(),
             body: member_body(member),
             sort_key: member.session_id.clone(),
+            todo: member.todo_progress,
         })
         .collect()
 }
 
 /// Render the inline swarm gallery for the given members into `area`-width lines.
+#[allow(dead_code)]
 pub(crate) fn render_swarm_gallery_lines(
     members: &[SwarmMemberStatus],
     width: usize,
@@ -64,6 +69,95 @@ pub(crate) fn render_swarm_gallery_lines(
         return Vec::new();
     }
     render_gallery(&members_to_gallery(members), width, max_height)
+}
+
+/// Render the list+detail swarm panel: a compact list of managed agents plus a
+/// detail viewport for the `selected` one. `focused` adds an interaction hint.
+#[allow(dead_code)]
+pub(crate) fn render_swarm_panel_lines(
+    members: &[SwarmMemberStatus],
+    selected: usize,
+    focused: bool,
+    width: usize,
+    max_height: usize,
+) -> Vec<Line<'static>> {
+    if members.is_empty() {
+        return Vec::new();
+    }
+    render_swarm_panel(
+        &members_to_gallery(members),
+        selected,
+        focused,
+        width,
+        max_height,
+    )
+}
+
+/// Render the compact swarm strip (agent chips + status glyphs + todo counts)
+/// shown directly above the status line.
+///
+/// `focus_key` is the configured chord to enter the controls (e.g. "ctrl+t"),
+/// used both for the unfocused enter-hint and as the first focused hint.
+/// `spinner_frame` animates active agents' glyphs.
+pub(crate) fn render_swarm_strip_lines(
+    members: &[SwarmMemberStatus],
+    selected: usize,
+    focused: bool,
+    focus_key: &str,
+    spinner_frame: usize,
+    width: usize,
+) -> Vec<Line<'static>> {
+    if members.is_empty() {
+        return Vec::new();
+    }
+    let enter_hint = format!("{focus_key} controls");
+    let hints = vec![
+        SwarmStripHint {
+            key: "↑/↓".into(),
+            label: "select".into(),
+        },
+        SwarmStripHint {
+            key: "enter".into(),
+            label: "pop out".into(),
+        },
+        SwarmStripHint {
+            key: "esc".into(),
+            label: "exit".into(),
+        },
+    ];
+    render_swarm_strip(
+        &members_to_gallery(members),
+        selected,
+        focused,
+        &hints,
+        if focused {
+            None
+        } else {
+            Some(enter_hint.as_str())
+        },
+        spinner_frame,
+        width,
+    )
+}
+
+/// Session ids of `members` in the same order the panel/gallery displays them
+/// (coordinator first, then worktree manager, then by session id). Lets the TUI
+/// map a selected panel index back to a concrete session for pop-out.
+pub(crate) fn members_display_order(members: &[SwarmMemberStatus]) -> Vec<String> {
+    fn role_rank(role: Option<&str>) -> u8 {
+        match role {
+            Some("coordinator") => 0,
+            Some("worktree_manager") => 1,
+            _ => 2,
+        }
+    }
+    let mut idx: Vec<&SwarmMemberStatus> = members.iter().collect();
+    idx.sort_by(|a, b| {
+        role_rank(a.role.as_deref())
+            .cmp(&role_rank(b.role.as_deref()))
+            .then_with(|| a.session_id.cmp(&b.session_id))
+    });
+    idx.into_iter().map(|m| m.session_id.clone()).collect()
 }
 
 #[cfg(test)]
@@ -87,6 +181,8 @@ mod tests {
             live_attachments: None,
             status_age_secs: Some(3),
             output_tail: None,
+            report_back_to_session_id: None,
+            todo_progress: None,
         }
     }
 

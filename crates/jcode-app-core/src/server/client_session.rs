@@ -353,10 +353,9 @@ async fn ensure_client_swarm_member(
                     last_status_change: now,
                     is_headless: false,
                     output_tail: None,
-
                     model: None,
-
                     provider_key: None,
+                    todo_progress: None,
                 },
             );
             inserted = true;

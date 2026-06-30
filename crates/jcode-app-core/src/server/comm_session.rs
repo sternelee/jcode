@@ -1,3 +1,4 @@
+use super::ClientConnectionInfo;
 use super::client_lifecycle::process_message_streaming_mpsc;
 use super::swarm_mutation_state::{
     PersistedSwarmMutationResponse, SwarmMutationRuntime, begin_or_replay, finish_request,
@@ -25,6 +26,24 @@ use tokio::sync::{Mutex, RwLock, broadcast, mpsc};
 
 type SessionAgents = Arc<RwLock<HashMap<String, Arc<Mutex<Agent>>>>>;
 type ChannelSubscriptions = Arc<RwLock<HashMap<String, HashMap<String, HashSet<String>>>>>;
+type ClientConnections = Arc<RwLock<HashMap<String, ClientConnectionInfo>>>;
+
+/// Look up the most recent terminal env snapshot for the live client connection
+/// driving `session_id`, so spawn hooks target that client's terminal instead
+/// of the long-lived server's stale startup env (#405). Prefers the most
+/// recently seen connection when a session has more than one client attached.
+async fn client_terminal_env_for_session(
+    session_id: &str,
+    client_connections: &ClientConnections,
+) -> Vec<(String, String)> {
+    let connections = client_connections.read().await;
+    connections
+        .values()
+        .filter(|info| info.session_id == session_id && !info.terminal_env.is_empty())
+        .max_by_key(|info| info.last_seen)
+        .map(|info| info.terminal_env.clone())
+        .unwrap_or_default()
+}
 
 fn create_visible_spawn_session(
     working_dir: Option<&str>,
@@ -447,6 +466,7 @@ async fn register_visible_spawned_member(
                 output_tail: None,
                 model,
                 provider_key,
+                todo_progress: None,
             },
         );
     }
@@ -503,11 +523,17 @@ pub(super) async fn spawn_swarm_agent(
     swarm_event_tx: &broadcast::Sender<SwarmEvent>,
     mcp_pool: &Arc<crate::mcp::SharedMcpPool>,
     soft_interrupt_queues: &SessionInterruptQueues,
+    client_connections: &ClientConnections,
 ) -> anyhow::Result<String> {
     let resolved_working_dir =
         resolve_spawn_working_dir(working_dir, req_session_id, sessions, swarm_members).await;
     let coordinator = resolve_coordinator_spawn_identity(req_session_id, sessions).await;
     let coordinator_is_canary = coordinator.is_canary;
+    // Capture the requesting client's terminal env so spawn hooks place the new
+    // window in the terminal the user is attached to, not the server's stale
+    // startup env (#405).
+    let client_terminal_env =
+        client_terminal_env_for_session(req_session_id, client_connections).await;
     let agents_config = &crate::config::config().agents;
 
     // When the coordinator passes an explicit per-worker override, it wins
@@ -572,7 +598,8 @@ pub(super) async fn spawn_swarm_agent(
                 // and terminals can identify and reroute it (JCODE_SPAWN_*).
                 let context = crate::session_launch::SessionSpawnContext::kind("swarm-agent")
                     .env("JCODE_SPAWN_SWARM_ID", swarm_id)
-                    .env("JCODE_SPAWN_COORDINATOR_SESSION_ID", req_session_id);
+                    .env("JCODE_SPAWN_COORDINATOR_SESSION_ID", req_session_id)
+                    .with_client_terminal_env(client_terminal_env.clone());
                 spawn_visible_session_window_with_context(
                     session_id,
                     cwd,
@@ -778,6 +805,7 @@ pub(super) async fn handle_comm_spawn(
     mcp_pool: &Arc<crate::mcp::SharedMcpPool>,
     soft_interrupt_queues: &SessionInterruptQueues,
     swarm_mutation_runtime: &SwarmMutationRuntime,
+    client_connections: &ClientConnections,
 ) {
     let swarm_id = match ensure_spawn_coordinator_swarm(
         id,
@@ -841,6 +869,7 @@ pub(super) async fn handle_comm_spawn(
         swarm_event_tx,
         mcp_pool,
         soft_interrupt_queues,
+        client_connections,
     )
     .await
     {
@@ -1120,7 +1149,7 @@ async fn ensure_spawn_coordinator_swarm(
     // tests; recursive spawning no longer rejects non-coordinators, so it is only
     // referenced defensively below.
     let _ = permission_error;
-    let (swarm_id, from_name, depth, is_root, coordinator_id, coordinator_is_stale) = {
+    let (swarm_id, from_name, is_root, coordinator_id, coordinator_is_stale, swarm_size) = {
         let members = swarm_members.read().await;
         let swarm_id = members
             .get(req_session_id)
@@ -1128,13 +1157,22 @@ async fn ensure_spawn_coordinator_swarm(
         let from_name = members
             .get(req_session_id)
             .and_then(|member| member.friendly_name.clone());
-        // Depth in the spawn tree (root coordinators are depth 0). A session is a
-        // "root" when it has no spawner/owner above it.
-        let depth = super::swarm_spawn_depth(&members, req_session_id);
+        // A session is a "root" when it has no spawner/owner above it.
         let is_root = members
             .get(req_session_id)
             .and_then(|member| member.report_back_to_session_id.clone())
             .is_none();
+        // Total live members in this swarm. Used for the breadth-side runaway cap
+        // (`MAX_SWARM_MEMBERS`) so a wide fan-out cannot create unbounded agents.
+        let swarm_size = swarm_id
+            .as_ref()
+            .map(|swarm_id| {
+                members
+                    .values()
+                    .filter(|member| member.swarm_id.as_deref() == Some(swarm_id.as_str()))
+                    .count()
+            })
+            .unwrap_or(0);
         let coordinator_id = if let Some(ref swarm_id) = swarm_id {
             let coordinators = swarm_coordinators.read().await;
             coordinators.get(swarm_id).cloned()
@@ -1150,10 +1188,10 @@ async fn ensure_spawn_coordinator_swarm(
         (
             swarm_id,
             from_name,
-            depth,
             is_root,
             coordinator_id,
             coordinator_is_stale,
+            swarm_size,
         )
     };
 
@@ -1166,14 +1204,16 @@ async fn ensure_spawn_coordinator_swarm(
         return None;
     };
 
-    // Enforce the recursive spawn depth cap. An agent at depth `d` may only spawn
-    // a child (which lands at depth `d + 1`) while `d < MAX_SWARM_SPAWN_DEPTH`.
-    if depth >= super::MAX_SWARM_SPAWN_DEPTH {
+    // Runaway prevention for the task-graph model is a single total-member cap.
+    // There is no depth or per-node breadth limit: the spawn tree may nest and
+    // fan out freely until the swarm reaches `MAX_SWARM_MEMBERS` live members, at
+    // which point further spawns are refused.
+    if swarm_size >= super::MAX_SWARM_MEMBERS {
         let _ = client_event_tx.send(ServerEvent::Error {
             id,
             message: format!(
-                "Swarm spawn depth limit reached (max {}). This agent is at depth {depth}; it cannot spawn further nested agents. Ask a higher-level agent to take on additional parallel work, or have an existing agent finish before nesting deeper.",
-                super::MAX_SWARM_SPAWN_DEPTH
+                "Swarm member limit reached (max {}). This swarm already has {swarm_size} agents; it cannot spawn more. Let existing agents finish and free up capacity, or narrow the task decomposition before spawning further.",
+                super::MAX_SWARM_MEMBERS
             ),
             retry_after_secs: None,
         });

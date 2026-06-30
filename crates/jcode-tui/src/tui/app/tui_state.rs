@@ -1,4 +1,5 @@
 use super::*;
+use crate::tui::TuiState as _;
 use std::cell::RefCell;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -633,6 +634,14 @@ impl crate::tui::TuiState for App {
         }
     }
 
+    fn connection_phase_elapsed(&self) -> Option<std::time::Duration> {
+        // Fall back to the whole-turn elapsed only if we somehow entered a
+        // connecting status without recording a phase start.
+        self.connection_phase_started
+            .map(|t| t.elapsed())
+            .or_else(|| self.elapsed())
+    }
+
     fn command_suggestions(&self) -> Vec<(String, &'static str)> {
         App::command_suggestions(self)
     }
@@ -1240,6 +1249,8 @@ impl crate::tui::TuiState for App {
                         live_attachments: Some(1),
                         status_age_secs: Some(0),
                         output_tail: None,
+                        report_back_to_session_id: None,
+                        todo_progress: None,
                     });
                 }
                 (
@@ -1474,7 +1485,33 @@ impl crate::tui::TuiState for App {
         if !self.swarm_enabled {
             return Vec::new();
         }
-        self.remote_swarm_members.clone()
+        // Scope the inline gallery to the subtree this session actually spawned.
+        // Other sessions can share the same swarm (e.g. same repo) without this
+        // session having spawned them; showing those would be noise. The spawn
+        // tree is reconstructed from each member's `report_back_to_session_id`
+        // parent edge.
+        let self_id = if self.is_remote {
+            self.remote_session_id.as_deref()
+        } else {
+            Some(self.session.id.as_str())
+        };
+        match self_id {
+            Some(self_id) => filter_inline_swarm_subtree(&self.remote_swarm_members, self_id),
+            None => self.remote_swarm_members.clone(),
+        }
+    }
+
+    fn swarm_panel_selected(&self) -> usize {
+        let count = self.inline_swarm_members().len();
+        if count == 0 {
+            0
+        } else {
+            self.swarm_panel_selected.min(count - 1)
+        }
+    }
+
+    fn swarm_panel_focused(&self) -> bool {
+        self.swarm_panel_focused
     }
 
     fn diagram_focus(&self) -> bool {
@@ -1695,5 +1732,275 @@ impl crate::tui::TuiState for App {
             is_cold: remaining == 0,
             cached_tokens: self.last_turn_input_tokens,
         })
+    }
+}
+
+impl App {
+    /// Toggle keyboard focus on the inline swarm panel. Returns the new state.
+    /// Focus is only meaningful while the panel is actually visible.
+    pub(crate) fn toggle_swarm_panel_focus(&mut self) -> bool {
+        if !self.inline_swarm_gallery_active() {
+            self.swarm_panel_focused = false;
+            return false;
+        }
+        self.swarm_panel_focused = !self.swarm_panel_focused;
+        if self.swarm_panel_focused {
+            // Clamp selection on entry.
+            let count = self.inline_swarm_members().len();
+            if count > 0 {
+                self.swarm_panel_selected = self.swarm_panel_selected.min(count - 1);
+            }
+        }
+        self.swarm_panel_focused
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn set_swarm_panel_focus(&mut self, focused: bool) {
+        self.swarm_panel_focused = focused && self.inline_swarm_gallery_active();
+    }
+
+    /// Move the swarm panel selection by `delta` (e.g. +1 for next, -1 for
+    /// previous), saturating at the ends.
+    pub(crate) fn move_swarm_panel_selection(&mut self, delta: isize) {
+        let count = self.inline_swarm_members().len();
+        if count == 0 {
+            return;
+        }
+        let cur = self.swarm_panel_selected.min(count - 1) as isize;
+        let next = (cur + delta).clamp(0, count as isize - 1);
+        self.swarm_panel_selected = next as usize;
+    }
+
+    /// Handle a key while the swarm panel is focused. Returns true if the key was
+    /// consumed.
+    pub(crate) fn handle_swarm_panel_key(
+        &mut self,
+        code: crossterm::event::KeyCode,
+        modifiers: crossterm::event::KeyModifiers,
+    ) -> bool {
+        use crossterm::event::KeyCode;
+        if !self.swarm_panel_focused || !self.inline_swarm_gallery_active() {
+            return false;
+        }
+        if modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+            return false;
+        }
+        match code {
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.move_swarm_panel_selection(1);
+                true
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.move_swarm_panel_selection(-1);
+                true
+            }
+            KeyCode::Char('g') | KeyCode::Home => {
+                self.swarm_panel_selected = 0;
+                true
+            }
+            KeyCode::Char('G') | KeyCode::End => {
+                let count = self.inline_swarm_members().len();
+                self.swarm_panel_selected = count.saturating_sub(1);
+                true
+            }
+            KeyCode::Char('o') | KeyCode::Enter => {
+                self.pop_out_selected_swarm_agent();
+                true
+            }
+            KeyCode::Esc => {
+                self.swarm_panel_focused = false;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Open the currently selected swarm agent's session in a new terminal
+    /// window (pop-out), reusing the resume-in-new-terminal launcher.
+    pub(crate) fn pop_out_selected_swarm_agent(&mut self) {
+        let members = self.inline_swarm_members();
+        if members.is_empty() {
+            self.set_status_notice("No swarm agents to open");
+            return;
+        }
+        let order = crate::tui::info_widget::swarm_gallery::members_display_order(&members);
+        let idx = self.swarm_panel_selected.min(order.len().saturating_sub(1));
+        let Some(session_id) = order.get(idx).cloned() else {
+            self.set_status_notice("No swarm agent selected");
+            return;
+        };
+        let label = members
+            .iter()
+            .find(|m| m.session_id == session_id)
+            .and_then(|m| m.friendly_name.clone())
+            .unwrap_or_else(|| session_id.chars().take(8).collect());
+
+        let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("jcode"));
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        match jcode_app_core::session_launch::spawn_resume_in_new_terminal(&exe, &session_id, &cwd)
+        {
+            Ok(true) => self.set_status_notice(format!("Opened {label} in a new window")),
+            Ok(false) => self.set_status_notice(format!(
+                "Could not open a terminal for {label} (no emulator found)"
+            )),
+            Err(e) => self.set_status_notice(format!("Failed to open {label}: {e}")),
+        }
+    }
+}
+
+/// Restrict swarm members to the descendants `self_id` actually spawned: every
+/// member whose `report_back_to_session_id` chain reaches `self_id`, *excluding*
+/// `self_id` itself.
+///
+/// This keeps the inline swarm strip scoped to the agents a session manages,
+/// without listing the viewing session as one of "its" agents and without
+/// showing unrelated members that merely share the swarm (e.g. other sessions in
+/// the same repository).
+///
+/// Returns empty when the session has not spawned anyone, which the caller uses
+/// to hide the strip entirely.
+pub(crate) fn filter_inline_swarm_subtree(
+    members: &[crate::protocol::SwarmMemberStatus],
+    self_id: &str,
+) -> Vec<crate::protocol::SwarmMemberStatus> {
+    use std::collections::{HashMap, HashSet};
+
+    let parent_of: HashMap<&str, Option<&str>> = members
+        .iter()
+        .map(|m| {
+            (
+                m.session_id.as_str(),
+                m.report_back_to_session_id.as_deref(),
+            )
+        })
+        .collect();
+
+    // A member is a descendant of `self_id` if walking its parent chain reaches
+    // `self_id`. The member itself (start == self_id) is intentionally excluded:
+    // the viewing agent should not appear as one of the agents it manages.
+    let is_descendant = |start: &str| -> bool {
+        if start == self_id {
+            return false;
+        }
+        let mut visited: HashSet<&str> = HashSet::new();
+        let mut current = start;
+        while let Some(Some(parent)) = parent_of.get(current) {
+            if !visited.insert(current) {
+                break; // cycle guard
+            }
+            if *parent == self_id {
+                return true;
+            }
+            current = parent;
+        }
+        false
+    };
+
+    members
+        .iter()
+        .filter(|m| is_descendant(m.session_id.as_str()))
+        .cloned()
+        .collect()
+}
+
+#[cfg(test)]
+mod inline_swarm_subtree_tests {
+    use super::filter_inline_swarm_subtree;
+    use crate::protocol::SwarmMemberStatus;
+
+    fn member(id: &str, parent: Option<&str>) -> SwarmMemberStatus {
+        SwarmMemberStatus {
+            session_id: id.to_string(),
+            friendly_name: Some(id.to_string()),
+            status: "running".to_string(),
+            detail: None,
+            role: None,
+            is_headless: Some(true),
+            live_attachments: None,
+            status_age_secs: Some(1),
+            output_tail: None,
+            report_back_to_session_id: parent.map(str::to_string),
+            todo_progress: None,
+        }
+    }
+
+    fn ids(members: Vec<SwarmMemberStatus>) -> Vec<String> {
+        let mut v: Vec<String> = members.into_iter().map(|m| m.session_id).collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn includes_direct_children_but_not_self() {
+        let members = vec![
+            member("me", None),
+            member("child_a", Some("me")),
+            member("child_b", Some("me")),
+            member("stranger", None),
+        ];
+        // The viewing session ("me") is excluded; only its spawned children show.
+        assert_eq!(
+            ids(filter_inline_swarm_subtree(&members, "me")),
+            vec!["child_a", "child_b"]
+        );
+    }
+
+    #[test]
+    fn includes_transitive_descendants() {
+        let members = vec![
+            member("me", None),
+            member("child", Some("me")),
+            member("grandchild", Some("child")),
+        ];
+        assert_eq!(
+            ids(filter_inline_swarm_subtree(&members, "me")),
+            vec!["child", "grandchild"]
+        );
+    }
+
+    #[test]
+    fn excludes_siblings_and_unrelated_sessions() {
+        // Two coordinators sharing one swarm. Each should only see its own kids.
+        let members = vec![
+            member("coord_a", None),
+            member("a_child", Some("coord_a")),
+            member("coord_b", None),
+            member("b_child", Some("coord_b")),
+        ];
+        assert_eq!(
+            ids(filter_inline_swarm_subtree(&members, "coord_a")),
+            vec!["a_child"]
+        );
+        assert_eq!(
+            ids(filter_inline_swarm_subtree(&members, "coord_b")),
+            vec!["b_child"]
+        );
+    }
+
+    #[test]
+    fn session_with_no_children_shows_nothing() {
+        // A session that spawned no one (even if it is itself a swarm member)
+        // produces an empty list so the strip is hidden entirely.
+        let members = vec![
+            member("me", None),
+            member("stranger", None),
+            member("other", None),
+        ];
+        assert!(filter_inline_swarm_subtree(&members, "me").is_empty());
+    }
+
+    #[test]
+    fn cycle_is_guarded() {
+        // Pathological parent cycle must not loop forever.
+        let members = vec![
+            member("a", Some("b")),
+            member("b", Some("a")),
+            member("me", None),
+            member("child", Some("me")),
+        ];
+        assert_eq!(
+            ids(filter_inline_swarm_subtree(&members, "me")),
+            vec!["child"]
+        );
     }
 }

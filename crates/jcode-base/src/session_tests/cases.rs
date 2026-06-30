@@ -962,6 +962,8 @@ fn test_redacted_for_export_redacts_replay_events() -> Result<()> {
         live_attachments: None,
         status_age_secs: None,
         output_tail: None,
+        report_back_to_session_id: None,
+        todo_progress: None,
     }]);
     session.record_swarm_plan_event(
         "swarm_test".to_string(),

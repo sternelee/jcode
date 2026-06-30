@@ -2,7 +2,10 @@
 //!
 //! Run with: `cargo run --profile selfdev -p jcode-tui-render --example swarm_gallery_preview`
 
-use jcode_tui_render::swarm_tiles::{SwarmGalleryConfig, SwarmTile, render_swarm_gallery};
+use jcode_tui_render::swarm_gallery::{
+    render_swarm_panel, render_swarm_strip, GalleryMember, SwarmStripHint,
+};
+use jcode_tui_render::swarm_tiles::{render_swarm_gallery, SwarmGalleryConfig, SwarmTile};
 use ratatui::prelude::*;
 
 fn accent(status: &str) -> Color {
@@ -119,5 +122,96 @@ fn main() {
     print_lines(
         "12 agents @ width 120, height 12",
         &render_swarm_gallery(&many, 120, &tight, Some(header)),
+    );
+
+    // ---- New list+detail panel ----
+    let gm = |name: &str, role: Option<&str>, status: &str, body: &[&str]| GalleryMember {
+        label: name.to_string(),
+        status: status.to_string(),
+        role: role.map(str::to_string),
+        body: body.iter().map(|s| s.to_string()).collect(),
+        sort_key: name.to_string(),
+        todo: None,
+    };
+    let panel_members = vec![
+        gm(
+            "researcher",
+            Some("coordinator"),
+            "thinking",
+            &["Cross-referencing the token refresh path.", "· 2s ago"],
+        ),
+        gm(
+            "implementer",
+            None,
+            "running",
+            &[
+                "Running cargo check...",
+                "warning: unused import `Foo`",
+                "· 5s ago",
+            ],
+        ),
+        gm("reviewer", None, "done", &["LGTM ✓", "· 1m ago"]),
+        gm(
+            "doc-writer",
+            None,
+            "blocked",
+            &["waiting on reviewer", "· 12s ago"],
+        ),
+    ];
+    print_lines(
+        "PANEL: 4 agents, selected #1 (implementer), focused @ width 70 h 14",
+        &render_swarm_panel(&panel_members, 1, true, 70, 14),
+    );
+    print_lines(
+        "PANEL: 4 agents, selected #0, unfocused @ width 70 h 14",
+        &render_swarm_panel(&panel_members, 0, false, 70, 14),
+    );
+    print_lines(
+        "PANEL: narrow @ width 44 h 12",
+        &render_swarm_panel(&panel_members, 2, true, 44, 12),
+    );
+
+    // ---- New compact strip (above status line) ----
+    let hints = vec![
+        SwarmStripHint {
+            key: "alt+w".into(),
+            label: "focus".into(),
+        },
+        SwarmStripHint {
+            key: "j/k".into(),
+            label: "select".into(),
+        },
+        SwarmStripHint {
+            key: "o".into(),
+            label: "pop out".into(),
+        },
+        SwarmStripHint {
+            key: "enter".into(),
+            label: "open".into(),
+        },
+        SwarmStripHint {
+            key: "esc".into(),
+            label: "back".into(),
+        },
+    ];
+    print_lines(
+        "STRIP: unfocused @ width 90",
+        &render_swarm_strip(
+            &panel_members,
+            1,
+            false,
+            &hints,
+            Some("alt+w controls"),
+            0,
+            90,
+        ),
+    );
+    print_lines(
+        "STRIP: focused, selected #1 @ width 90",
+        &render_swarm_strip(&panel_members, 1, true, &hints, None, 3, 90),
+    );
+    print_lines(
+        "STRIP: focused narrow @ width 54",
+        &render_swarm_strip(&panel_members, 0, true, &hints, None, 5, 54),
     );
 }
