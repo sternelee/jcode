@@ -59,7 +59,12 @@ pub(super) async fn create_headless_session(
     }
 
     registry
-        .register_mcp_tools(None, mcp_pool, Some("headless".to_string()))
+        .register_mcp_tools_for_dir(
+            None,
+            mcp_pool,
+            Some("headless".to_string()),
+            working_dir.clone(),
+        )
         .await;
 
     let mut new_agent = Agent::new(Arc::clone(&provider), registry);
@@ -180,6 +185,7 @@ pub(super) async fn create_headless_session(
                 model: None,
                 provider_key: None,
                 todo_progress: None,
+                todo_items: Vec::new(),
             },
         );
     }

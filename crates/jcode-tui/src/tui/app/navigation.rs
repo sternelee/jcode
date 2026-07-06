@@ -177,11 +177,16 @@ impl App {
         self.last_visible_diagram_hash = self.current_visible_diagram_hash();
     }
 
-    /// If a left-click landed on an inline image's `expand` badge, cycle that
-    /// image's size and return `true`. Returns `false` (so the click can fall
-    /// through to link/selection handling) when no badge was hit.
+    /// If a left-click landed on an inline image's `expand` badge or on the
+    /// rendered image itself, cycle that image's size and return `true`.
+    /// Returns `false` (so the click can fall through to link/selection
+    /// handling) when neither was hit.
     pub(super) fn try_cycle_image_expand_at(&mut self, column: u16, row: u16) -> bool {
+        let centered = self.centered;
         let Some(image_id) = super::super::ui::inline_image_expand_target_from_screen(column, row)
+            .or_else(|| {
+                super::super::ui::inline_image_body_target_from_screen(column, row, centered)
+            })
         else {
             return false;
         };
@@ -415,20 +420,16 @@ impl App {
 
         match code {
             KeyCode::Char('j') | KeyCode::Down => {
-                self.diff_pane_scroll = self.diff_pane_scroll.saturating_add(line_amount);
-                self.diff_pane_auto_scroll = false;
+                self.side_pane_scroll_by(line_amount as isize);
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.diff_pane_scroll = self.diff_pane_scroll.saturating_sub(line_amount);
-                self.diff_pane_auto_scroll = false;
+                self.side_pane_scroll_by(-(line_amount as isize));
             }
             KeyCode::Char('d') | KeyCode::PageDown => {
-                self.diff_pane_scroll = self.diff_pane_scroll.saturating_add(page_amount);
-                self.diff_pane_auto_scroll = false;
+                self.side_pane_scroll_by(page_amount as isize);
             }
             KeyCode::Char('u') | KeyCode::PageUp => {
-                self.diff_pane_scroll = self.diff_pane_scroll.saturating_sub(page_amount);
-                self.diff_pane_auto_scroll = false;
+                self.side_pane_scroll_by(-(page_amount as isize));
             }
             KeyCode::Char('g') | KeyCode::Home => {
                 self.diff_pane_scroll = 0;
@@ -530,6 +531,52 @@ impl App {
         } else {
             20
         }
+    }
+
+    /// Scroll the shared right side pane by `delta` lines (negative = up).
+    ///
+    /// All side-pane scroll paths (keyboard, mouse wheel, native scrollbar)
+    /// funnel through here so they share the same semantics:
+    /// - a stored `usize::MAX` (follow-bottom) offset is first resolved to the
+    ///   renderer's last effective scroll so relative motion works from the
+    ///   position actually on screen, and
+    /// - downward motion clamps to the renderer's last known max scroll so the
+    ///   offset cannot accumulate invisible "phantom" overscroll that would
+    ///   have to be unwound before upward scrolling moves the view again.
+    ///
+    /// Returns `true` if the stored offset changed.
+    pub(super) fn side_pane_scroll_by(&mut self, delta: isize) -> bool {
+        let rendered_max = super::super::ui::last_diff_pane_max_scroll();
+        // A rendered frame exists when the pane reported any content lines,
+        // even if everything fits (max scroll 0).
+        let has_rendered_frame =
+            rendered_max > 0 || super::super::ui::pinned_pane_total_lines() > 0;
+        let stored = self.diff_pane_scroll;
+        let mut current = if stored == usize::MAX {
+            super::super::ui::last_diff_pane_effective_scroll()
+        } else {
+            stored
+        };
+        if has_rendered_frame {
+            // Drop any phantom offset beyond the rendered extent (content may
+            // have shrunk since the offset was stored) so motion is applied to
+            // the position actually on screen.
+            current = current.min(rendered_max);
+        }
+        let next = if delta < 0 {
+            current.saturating_sub(delta.unsigned_abs())
+        } else if has_rendered_frame {
+            current
+                .saturating_add(delta.unsigned_abs())
+                .min(rendered_max)
+        } else {
+            // No frame rendered yet: allow the motion and let the renderer
+            // clamp on the next draw.
+            current.saturating_add(delta.unsigned_abs())
+        };
+        self.diff_pane_scroll = next;
+        self.diff_pane_auto_scroll = false;
+        stored != next
     }
 
     pub(super) fn enqueue_mouse_scroll(&mut self, target: MouseScrollTarget, direction: i16) {
@@ -683,18 +730,7 @@ impl App {
                 }
             }
             MouseScrollTarget::SidePane => {
-                let current = if self.diff_pane_scroll == usize::MAX {
-                    super::super::ui::last_diff_pane_effective_scroll()
-                } else {
-                    self.diff_pane_scroll
-                };
-                self.diff_pane_scroll = if direction < 0 {
-                    current.saturating_sub(1)
-                } else {
-                    current.saturating_add(1)
-                };
-                self.diff_pane_auto_scroll = false;
-                true
+                self.side_pane_scroll_by(if direction < 0 { -1 } else { 1 })
             }
             MouseScrollTarget::HelpOverlay => {
                 let Some(current) = self.help_scroll else {
@@ -851,8 +887,8 @@ impl App {
         self.set_status_notice(status);
     }
 
-    /// Cycle the per-image inline expand level (Fit -> Large -> Huge -> Fit)
-    /// for `image_id`. Bumps `expanded_images_version` so the body/full-prep
+    /// Toggle the per-image inline expand level (Fit <-> Large) for
+    /// `image_id`. Bumps `expanded_images_version` so the body/full-prep
     /// caches rebuild with the new placeholder geometry. Returns the new level.
     pub(super) fn cycle_image_expand(
         &mut self,
@@ -874,7 +910,7 @@ impl App {
         let status = match next {
             ImageExpandLevel::Fit => "Image size: fit",
             ImageExpandLevel::Large => "Image size: large",
-            ImageExpandLevel::Huge => "Image size: huge",
+            ImageExpandLevel::Full => "Image size: full",
         };
         self.set_status_notice(status);
         next
@@ -1496,8 +1532,10 @@ impl App {
             // Force a full repaint: ratatui's diff does not re-emit the trailing
             // cell after a wide grapheme (emoji/CJK) when the symbol is unchanged,
             // so terminals like kitty/foot leave a stale "ghost" char from the
-            // previous frame. See ratatui issue #2357. A clean redraw avoids it.
-            self.force_full_redraw = true;
+            // previous frame. See ratatui issue #2357. Buffer invalidation re-emits
+            // every cell without the ED2 clear escape that made images flicker
+            // during scroll (issue #404).
+            self.request_full_repaint();
             return true;
         }
         let before = (self.scroll_offset, self.auto_scroll_paused);
@@ -1522,7 +1560,7 @@ impl App {
         if changed {
             // See note above (ratatui #2357): force a clean repaint on scroll so
             // wide-grapheme trailing cells cannot leave a ghost character.
-            self.force_full_redraw = true;
+            self.request_full_repaint();
         }
         changed
     }
@@ -1556,7 +1594,7 @@ impl App {
             anchor.lines_from_bottom = anchor.lines_from_bottom.saturating_sub(amount);
             self.pending_history_anchor = Some(anchor);
             // ratatui #2357: clean repaint on scroll to avoid wide-grapheme ghosts.
-            self.force_full_redraw = true;
+            self.request_full_repaint();
             return true;
         }
         if !self.auto_scroll_paused {
@@ -1593,7 +1631,7 @@ impl App {
         };
         if changed {
             // ratatui #2357: clean repaint on scroll to avoid wide-grapheme ghosts.
-            self.force_full_redraw = true;
+            self.request_full_repaint();
         }
         changed
     }

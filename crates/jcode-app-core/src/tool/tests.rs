@@ -136,11 +136,9 @@ async fn first_party_tool_definitions_include_optional_intent_explicitly() {
 
 #[test]
 fn test_resolve_tool_name_oauth_aliases() {
-    assert_eq!(Registry::resolve_tool_name("file_grep"), "grep");
     assert_eq!(Registry::resolve_tool_name("file_read"), "read");
     assert_eq!(Registry::resolve_tool_name("file_write"), "write");
     assert_eq!(Registry::resolve_tool_name("file_edit"), "edit");
-    assert_eq!(Registry::resolve_tool_name("file_glob"), "glob");
     assert_eq!(Registry::resolve_tool_name("shell_exec"), "bash");
     assert_eq!(Registry::resolve_tool_name("shell"), "bash");
     assert_eq!(Registry::resolve_tool_name("read_file"), "read");
@@ -149,12 +147,13 @@ fn test_resolve_tool_name_oauth_aliases() {
     assert_eq!(Registry::resolve_tool_name("task_runner"), "subagent");
     assert_eq!(Registry::resolve_tool_name("task"), "subagent");
     assert_eq!(Registry::resolve_tool_name("launch"), "open");
+    assert_eq!(Registry::resolve_tool_name("grep"), "agentgrep");
+    assert_eq!(Registry::resolve_tool_name("file_grep"), "agentgrep");
     assert_eq!(Registry::resolve_tool_name("todo_read"), "todo");
     assert_eq!(Registry::resolve_tool_name("todo_write"), "todo");
     assert_eq!(Registry::resolve_tool_name("todoread"), "todo");
     assert_eq!(Registry::resolve_tool_name("todowrite"), "todo");
     assert_eq!(Registry::resolve_tool_name("bash"), "bash");
-    assert_eq!(Registry::resolve_tool_name("grep"), "grep");
     assert_eq!(Registry::resolve_tool_name("batch"), "batch");
     assert_eq!(Registry::resolve_tool_name("memory"), "memory");
 }
@@ -164,7 +163,6 @@ async fn test_batch_resolves_oauth_names() {
     let provider: Arc<dyn Provider> = Arc::new(MockProvider);
     let registry = Registry::new(provider).await;
     let temp_dir = std::env::temp_dir();
-    let temp_dir_str = temp_dir.to_string_lossy().to_string();
 
     let ctx = ToolContext {
         session_id: "test".to_string(),
@@ -177,13 +175,9 @@ async fn test_batch_resolves_oauth_names() {
     };
 
     let result = registry
-        .execute(
-            "file_grep",
-            serde_json::json!({"pattern": "nonexistent_xyz", "path": temp_dir_str}),
-            ctx,
-        )
+        .execute("shell_exec", serde_json::json!({"command": "true"}), ctx)
         .await;
-    assert!(result.is_ok(), "file_grep should resolve to grep tool");
+    assert!(result.is_ok(), "shell_exec should resolve to bash tool");
 }
 
 #[tokio::test]
@@ -192,7 +186,7 @@ async fn registry_execute_enforces_session_tool_policy_after_alias_resolution() 
     let registry = Registry::new(provider).await;
     let temp_dir = std::env::temp_dir();
     let session_id = "test-policy-deny";
-    set_session_tool_policy(session_id, None, HashSet::from(["grep".to_string()]));
+    set_session_tool_policy(session_id, None, HashSet::from(["bash".to_string()]));
 
     let ctx = ToolContext {
         session_id: session_id.to_string(),
@@ -205,20 +199,16 @@ async fn registry_execute_enforces_session_tool_policy_after_alias_resolution() 
     };
 
     let result = registry
-        .execute(
-            "file_grep",
-            serde_json::json!({"pattern": "nonexistent_xyz", "path": temp_dir.to_string_lossy()}),
-            ctx,
-        )
+        .execute("shell_exec", serde_json::json!({"command": "true"}), ctx)
         .await;
 
     clear_session_tool_policy(session_id);
-    assert!(result.is_err(), "deny-list should block aliased grep calls");
+    assert!(result.is_err(), "deny-list should block aliased bash calls");
     assert!(
         result
             .unwrap_err()
             .to_string()
-            .contains("Tool 'grep' is disabled")
+            .contains("Tool 'bash' is disabled")
     );
 }
 
@@ -232,7 +222,7 @@ async fn registry_execute_pre_tool_hook_blocks_and_allows() {
     let registry = Registry::new(provider).await;
     let temp = tempfile::TempDir::new().expect("temp dir");
 
-    // Policy script: block grep calls whose input mentions "secret".
+    // Policy script: block bash calls whose input mentions "secret".
     let policy = temp.path().join("policy.sh");
     std::fs::write(
         &policy,
@@ -260,20 +250,18 @@ async fn registry_execute_pre_tool_hook_blocks_and_allows() {
 
     let blocked = registry
         .execute(
-            "grep",
+            "bash",
             serde_json::json!({
-                "pattern": "secret",
-                "path": std::env::temp_dir().to_string_lossy()
+                "command": "echo secret"
             }),
             ctx(),
         )
         .await;
     let allowed = registry
         .execute(
-            "grep",
+            "bash",
             serde_json::json!({
-                "pattern": "nonexistent_xyz",
-                "path": std::env::temp_dir().to_string_lossy()
+                "command": "true"
             }),
             ctx(),
         )
@@ -584,4 +572,34 @@ async fn unknown_tool_error_lists_available_tools_and_suggestions() {
         msg.contains("end_ambient_cycle"),
         "available list should include registered ambient tools: {msg}"
     );
+}
+
+#[tokio::test]
+async fn gemini_build_tools_from_registry_definitions_omits_const_keywords() {
+    // Moved from jcode-base/src/provider/gemini_tests.rs: this is the one test
+    // that needs the upper-layer tool::Registry, so it lives here instead of
+    // forcing a base -> app-core dev-dependency cycle.
+    fn schema_contains_key(schema: &serde_json::Value, key: &str) -> bool {
+        match schema {
+            serde_json::Value::Object(map) => {
+                map.contains_key(key) || map.values().any(|value| schema_contains_key(value, key))
+            }
+            serde_json::Value::Array(items) => {
+                items.iter().any(|value| schema_contains_key(value, key))
+            }
+            _ => false,
+        }
+    }
+
+    let provider: Arc<dyn Provider> = Arc::new(MockProvider);
+    let registry = Registry::new(provider).await;
+    let defs = registry.definitions(None).await;
+
+    let built = crate::provider::gemini::build_tools(&defs).expect("gemini tools");
+    let parameters = &built[0].function_declarations;
+
+    assert!(!schema_contains_key(
+        &serde_json::json!(parameters),
+        "const"
+    ));
 }

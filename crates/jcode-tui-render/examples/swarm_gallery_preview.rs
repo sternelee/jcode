@@ -3,9 +3,9 @@
 //! Run with: `cargo run --profile selfdev -p jcode-tui-render --example swarm_gallery_preview`
 
 use jcode_tui_render::swarm_gallery::{
-    render_swarm_panel, render_swarm_strip, GalleryMember, SwarmStripHint,
+    GalleryMember, SwarmStripHint, render_swarm_dock, render_swarm_panel, render_swarm_strip,
 };
-use jcode_tui_render::swarm_tiles::{render_swarm_gallery, SwarmGalleryConfig, SwarmTile};
+use jcode_tui_render::swarm_tiles::{SwarmGalleryConfig, SwarmTile, render_swarm_gallery};
 use ratatui::prelude::*;
 
 fn accent(status: &str) -> Color {
@@ -132,6 +132,7 @@ fn main() {
         body: body.iter().map(|s| s.to_string()).collect(),
         sort_key: name.to_string(),
         todo: None,
+        todo_items: Vec::new(),
     };
     let panel_members = vec![
         gm(
@@ -174,7 +175,7 @@ fn main() {
     // ---- New compact strip (above status line) ----
     let hints = vec![
         SwarmStripHint {
-            key: "alt+w".into(),
+            key: "alt+n".into(),
             label: "focus".into(),
         },
         SwarmStripHint {
@@ -201,17 +202,32 @@ fn main() {
             1,
             false,
             &hints,
-            Some("alt+w controls"),
+            Some("alt+n controls"),
             0,
             90,
+            12,
         ),
     );
     print_lines(
         "STRIP: focused, selected #1 @ width 90",
-        &render_swarm_strip(&panel_members, 1, true, &hints, None, 3, 90),
+        &render_swarm_strip(&panel_members, 1, true, &hints, None, 3, 90, 12),
     );
     print_lines(
         "STRIP: focused narrow @ width 54",
-        &render_swarm_strip(&panel_members, 0, true, &hints, None, 5, 54),
+        &render_swarm_strip(&panel_members, 0, true, &hints, None, 5, 54, 12),
+    );
+
+    // ---- Dock (vertical agent list for the info-widget margins) ----
+    print_lines(
+        "DOCK: 4 agents, selected #0, unfocused @ width 34 h 12",
+        &render_swarm_dock(&panel_members, 0, false, Some((3, 7)), 0, 34, 12),
+    );
+    print_lines(
+        "DOCK: 4 agents, selected #1, focused @ width 34 h 14",
+        &render_swarm_dock(&panel_members, 1, true, Some((3, 7)), 2, 34, 14),
+    );
+    print_lines(
+        "DOCK: narrow @ width 24 h 8",
+        &render_swarm_dock(&panel_members, 2, false, None, 0, 24, 8),
     );
 }

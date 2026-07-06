@@ -51,6 +51,12 @@ pub struct SwarmTaskProgress {
     pub heartbeat_count: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checkpoint_count: Option<u64>,
+    /// How many times this node was re-queued because a deep-mode worker's turn
+    /// ended without a `complete_node` artifact. Deep mode gives the node one
+    /// fresh attempt, then fails it: there must be no path to "done" that skips
+    /// artifact validation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_artifact_requeues: Option<u32>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -117,6 +123,11 @@ pub struct NodeMeta {
     /// JSON text so the protocol/persistence layers need no extra types.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifact_json: Option<String>,
+    /// Where the node came from: "seed" | "expand" | "gap" | "gate". Powers the
+    /// growth accounting (seeded vs machinery-grown) on status surfaces. Absent
+    /// on legacy plans, which count as seeded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 /// Versioned shared swarm plan state.
@@ -196,6 +207,9 @@ pub struct PlanGraphSummary {
     pub blocked_ids: Vec<String>,
     pub active_ids: Vec<String>,
     pub completed_ids: Vec<String>,
+    /// Terminal without completing: failed, stopped, or crashed items. These are
+    /// finished from the scheduler's perspective but must not read as success.
+    pub failed_ids: Vec<String>,
     pub terminal_ids: Vec<String>,
     pub unresolved_dependency_ids: Vec<String>,
     pub cycle_ids: Vec<String>,
@@ -214,6 +228,12 @@ pub fn is_terminal_status(status: &str) -> bool {
 
 pub fn is_active_status(status: &str) -> bool {
     matches!(status, "running" | "running_stale")
+}
+
+/// Terminal without completing: the item is finished from the scheduler's
+/// perspective but did not succeed (failed, stopped, or crashed).
+pub fn is_failed_status(status: &str) -> bool {
+    is_terminal_status(status) && !is_completed_status(status)
 }
 
 pub fn is_runnable_status(status: &str) -> bool {
@@ -302,8 +322,11 @@ pub fn task_control_action_allows_status(action: TaskControlAction, status: &str
         TaskControlAction::Start | TaskControlAction::Wake => status == "queued",
         TaskControlAction::Resume => matches!(status, "queued" | "running" | "running_stale"),
         TaskControlAction::Retry => matches!(status, "failed" | "running_stale"),
+        // A completed node must never be reopened by handoff actions: deep-mode
+        // complete_node persists "completed" (not just "done"), and reassigning
+        // it would re-queue finished work and clobber its artifact.
         TaskControlAction::Reassign | TaskControlAction::Replace | TaskControlAction::Salvage => {
-            !matches!(status, "done")
+            !is_completed_status(status)
         }
     }
 }
@@ -451,6 +474,7 @@ pub fn summarize_plan_graph(items: &[PlanItem]) -> PlanGraphSummary {
     let mut blocked_ids = Vec::new();
     let mut active_ids = Vec::new();
     let mut completed = BTreeSet::new();
+    let mut failed = BTreeSet::new();
     let mut terminal = BTreeSet::new();
     let mut unresolved = BTreeSet::new();
 
@@ -466,6 +490,9 @@ pub fn summarize_plan_graph(items: &[PlanItem]) -> PlanGraphSummary {
         }
         if is_completed_status(&item.status) {
             completed.insert(item.id.clone());
+        }
+        if is_failed_status(&item.status) {
+            failed.insert(item.id.clone());
         }
         if is_terminal_status(&item.status) {
             terminal.insert(item.id.clone());
@@ -491,6 +518,7 @@ pub fn summarize_plan_graph(items: &[PlanItem]) -> PlanGraphSummary {
         blocked_ids,
         active_ids,
         completed_ids: completed.into_iter().collect(),
+        failed_ids: failed.into_iter().collect(),
         terminal_ids: terminal.into_iter().collect(),
         unresolved_dependency_ids: unresolved.into_iter().collect(),
         cycle_ids,
@@ -754,6 +782,39 @@ mod tests {
         ];
 
         assert_eq!(newly_ready_item_ids(&before, &after), vec!["follow-up"]);
+    }
+
+    #[test]
+    fn summarize_plan_graph_reports_failed_items_separately_from_completed() {
+        let items = vec![
+            item("ok", "completed", &[]),
+            item("boom", "failed", &[]),
+            item("halted", "stopped", &[]),
+            item("crashed-task", "crashed", &[]),
+            item("pending-task", "queued", &[]),
+        ];
+
+        let summary = summarize_plan_graph(&items);
+        assert_eq!(summary.completed_ids, vec!["ok".to_string()]);
+        assert_eq!(
+            summary.failed_ids,
+            vec![
+                "boom".to_string(),
+                "crashed-task".to_string(),
+                "halted".to_string()
+            ]
+        );
+        // Terminal covers both success and failure; failed is the non-success subset.
+        assert_eq!(
+            summary.terminal_ids,
+            vec![
+                "boom".to_string(),
+                "crashed-task".to_string(),
+                "halted".to_string(),
+                "ok".to_string()
+            ]
+        );
+        assert_eq!(summary.ready_ids, vec!["pending-task".to_string()]);
     }
 
     #[test]

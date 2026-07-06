@@ -964,6 +964,7 @@ fn test_redacted_for_export_redacts_replay_events() -> Result<()> {
         output_tail: None,
         report_back_to_session_id: None,
         todo_progress: None,
+        todo_items: Vec::new(),
     }]);
     session.record_swarm_plan_event(
         "swarm_test".to_string(),
@@ -1675,9 +1676,19 @@ fn test_render_messages_and_images_share_tool_resolution_and_labels() {
     );
 
     let (rendered, images) = render_messages_and_images(&session);
-    assert_eq!(rendered.len(), 2);
+    // The `[Attached image associated with the preceding tool result: ...]`
+    // text block is synthetic image metadata, not a visible message. It must be
+    // folded into the image label and never rendered as a (user) message,
+    // otherwise it leaks out as a bogus "last prompt".
+    assert_eq!(rendered.len(), 1);
     assert_eq!(rendered[0].role, "tool");
     assert_eq!(rendered[0].content, "rendered image");
+    assert!(
+        !rendered
+            .iter()
+            .any(|m| m.content.contains("Attached image associated")),
+        "attached-image label must not render as its own message"
+    );
     assert_eq!(
         rendered[0]
             .tool_data
@@ -1957,5 +1968,104 @@ fn streaming_guard_creates_visible_macos_sleep_assertion() {
     assert!(
         !stdout.contains(reason),
         "streaming assertion should be released after guard drop; output was:\n{stdout}"
+    );
+}
+
+/// Issue #432: `/rewind N` must interpret N against the same numbered list the
+/// TUI shows, even in tool-heavy sessions where stored user-role tool-result
+/// messages vastly outnumber real prompts.
+#[test]
+fn test_rewind_targets_match_rendered_transcript_numbering() {
+    let mut session = Session::create_with_id(
+        "session_rewind_numbering_test".to_string(),
+        None,
+        Some("rewind numbering".to_string()),
+    );
+
+    // Turn 1: prompt, assistant tool call, tool result, assistant answer.
+    session.add_message(
+        Role::User,
+        vec![ContentBlock::Text {
+            text: "prompt-1".to_string(),
+            cache_control: None,
+        }],
+    );
+    session.add_message(
+        Role::Assistant,
+        vec![ContentBlock::ToolUse {
+            id: "tool_1".to_string(),
+            name: "bash".to_string(),
+            input: serde_json::json!({"command": "ls"}),
+            thought_signature: None,
+        }],
+    );
+    // Tool results are stored as user-role messages; the old index mapping
+    // counted them as rewind targets even though the UI never numbers them.
+    session.add_message(
+        Role::User,
+        vec![ContentBlock::ToolResult {
+            tool_use_id: "tool_1".to_string(),
+            content: "file-a file-b".to_string(),
+            is_error: None,
+        }],
+    );
+    session.add_message(
+        Role::Assistant,
+        vec![ContentBlock::Text {
+            text: "answer-1".to_string(),
+            cache_control: None,
+        }],
+    );
+
+    // Turn 2: prompt + answer.
+    session.add_message(
+        Role::User,
+        vec![ContentBlock::Text {
+            text: "prompt-2".to_string(),
+            cache_control: None,
+        }],
+    );
+    session.add_message(
+        Role::Assistant,
+        vec![ContentBlock::Text {
+            text: "answer-2".to_string(),
+            cache_control: None,
+        }],
+    );
+
+    // The numbered /rewind list shows user/assistant transcript entries only:
+    // 1 prompt-1, 2 answer-1, 3 prompt-2, 4 answer-2.
+    let rendered_targets: Vec<String> = render_messages(&session)
+        .into_iter()
+        .filter(|m| matches!(m.role.as_str(), "user" | "assistant"))
+        .map(|m| m.content)
+        .collect();
+    assert_eq!(
+        rendered_targets,
+        ["prompt-1", "answer-1", "prompt-2", "answer-2"]
+    );
+
+    let targets = session.rewind_target_stored_indices();
+    assert_eq!(session.rewind_target_count(), 4);
+    assert_eq!(targets.len(), 4);
+
+    // Rewinding to entry 3 ("prompt-2") must keep everything through the
+    // stored prompt-2 message (stored index 4 → len 5) and drop answer-2.
+    assert_eq!(targets[2], 4);
+    let mut rewound = session.clone();
+    rewound.truncate_messages(targets[2] + 1);
+    let remaining: Vec<String> = render_messages(&rewound)
+        .into_iter()
+        .filter(|m| matches!(m.role.as_str(), "user" | "assistant"))
+        .map(|m| m.content)
+        .collect();
+    assert_eq!(remaining, ["prompt-1", "answer-1", "prompt-2"]);
+
+    // The old stored-message mapping counted the tool result as target 3,
+    // which would have chopped the transcript mid-turn (the #432 bug).
+    assert_eq!(
+        session.stored_len_for_visible_conversation_message(3),
+        Some(3),
+        "sanity: raw stored counting diverges, which is why rewind must not use it"
     );
 }

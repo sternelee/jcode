@@ -51,7 +51,8 @@ mod util;
 pub(super) use self::await_members_state::AwaitMembersRuntime;
 use self::background_tasks::{
     dispatch_background_task_completion, dispatch_background_task_progress,
-    dispatch_swarm_output_tail, dispatch_swarm_todo_progress, dispatch_ui_activity,
+    dispatch_swarm_await_completion, dispatch_swarm_output_tail, dispatch_swarm_todo_progress,
+    dispatch_ui_activity,
 };
 use self::debug::{ClientConnectionInfo, ClientDebugState};
 use self::debug_jobs::DebugJob;
@@ -652,10 +653,11 @@ impl Server {
                 registry.register_selfdev_tools().await;
             }
             registry
-                .register_mcp_tools(
+                .register_mcp_tools_for_dir(
                     None,
                     Some(Arc::clone(&mcp_pool)),
                     Some("headless".to_string()),
+                    session.working_dir.as_ref().map(std::path::PathBuf::from),
                 )
                 .await;
 
@@ -984,6 +986,22 @@ impl Server {
         // indexing cost while leaving exhaustive searches available on demand.
         crate::tool::spawn_recent_index_warmup();
 
+        // Reconcile background-task status files orphaned by a previous
+        // process image (crash or exec-based reload). Non-detached tasks die
+        // with their owning process but their status files still say Running,
+        // which leaves phantom entries in `bg list` and blocks `bg wait`
+        // until timeout. Detached tasks are untouched (they survive reloads
+        // and reconcile via their real pid).
+        tokio::spawn(async move {
+            let reconciled = crate::background::global().reconcile_orphaned_tasks().await;
+            if reconciled > 0 {
+                crate::logging::info(&format!(
+                    "Marked {} orphaned background task(s) from a previous server process as failed",
+                    reconciled
+                ));
+            }
+        });
+
         // Spawn reload monitor (event-driven via in-process channel).
         // In the unified server design, self-dev sessions share the main server,
         // so the shared server must always listen for reload signals.
@@ -1044,6 +1062,25 @@ impl Server {
             )
             .await;
         });
+
+        // Resume any background `swarm await_members` watchers that were active
+        // before this (re)start. Their results are delivered via notify/wake, so
+        // they can pick up transparently without the agent rerunning the wait.
+        {
+            let resume_swarm_members = Arc::clone(&self.swarm_state.members);
+            let resume_swarms_by_id = Arc::clone(&self.swarm_state.swarms_by_id);
+            let resume_swarm_event_tx = self.swarm_event_tx.clone();
+            let resume_await_runtime = self.await_members_runtime.clone();
+            tokio::spawn(async move {
+                comm_await::resume_background_awaits(
+                    &resume_swarm_members,
+                    &resume_swarms_by_id,
+                    &resume_swarm_event_tx,
+                    &resume_await_runtime,
+                )
+                .await;
+            });
+        }
 
         let stale_swarm_members = Arc::clone(&self.swarm_state.members);
         let stale_swarms_by_id = Arc::clone(&self.swarm_state.swarms_by_id);
@@ -1816,6 +1853,19 @@ impl Server {
                 }
                 Ok(BusEvent::BackgroundTaskProgress(task)) => {
                     dispatch_background_task_progress(&task, &swarm_members).await;
+                }
+                Ok(BusEvent::SwarmAwaitCompleted(event)) => {
+                    dispatch_swarm_await_completion(
+                        &event,
+                        &sessions,
+                        &soft_interrupt_queues,
+                        &swarm_members,
+                        &swarms_by_id,
+                        &event_history,
+                        &event_counter,
+                        &swarm_event_tx,
+                    )
+                    .await;
                 }
                 Ok(BusEvent::UiActivity(activity)) => {
                     dispatch_ui_activity(&activity, &swarm_members).await;

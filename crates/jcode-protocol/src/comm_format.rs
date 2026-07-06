@@ -393,9 +393,25 @@ pub fn format_comm_status_snapshot(snapshot: &AgentStatusSnapshot) -> String {
 pub fn format_comm_plan_status(summary: &PlanGraphStatus) -> String {
     let swarm_id = summary.swarm_id.as_deref().unwrap_or("unknown");
     let mut output = format!(
-        "Plan status for swarm {}\n\n  Version: {}\n  Items: {}\n",
-        swarm_id, summary.version, summary.item_count
+        "Plan status for swarm {}\n\n  Version: {}\n  Mode: {}\n  Items: {}\n",
+        swarm_id, summary.version, summary.mode, summary.item_count
     );
+    // Growth accounting: deep mode is meant to outgrow its seed (decomposition,
+    // gate-injected gaps). Surfacing seeded-vs-grown makes a plan that never
+    // grew visibly under-explored.
+    if summary.mode.eq_ignore_ascii_case("deep") && summary.item_count > 0 {
+        output.push_str(&format!(
+            "  Growth: {} seeded -> {} nodes ({} machinery-grown)",
+            summary.seeded_count, summary.item_count, summary.grown_count
+        ));
+        if summary.grown_count == 0 {
+            output.push_str(
+                " — the graph has not grown beyond its seed yet; \
+                 expect expand_node decomposition and gate-injected gaps",
+            );
+        }
+        output.push('\n');
+    }
 
     output.push_str(&format!(
         "  Ready: {}\n",
@@ -429,6 +445,18 @@ pub fn format_comm_plan_status(summary: &PlanGraphStatus) -> String {
         output.push_str(&format!(
             "  Completed: {}\n",
             summary.completed_ids.join(", ")
+        ));
+    }
+    if !summary.failed_ids.is_empty() {
+        output.push_str(&format!(
+            "  Failed (terminal without completing): {}\n",
+            summary.failed_ids.join(", ")
+        ));
+    }
+    if !summary.low_confidence_ids.is_empty() {
+        output.push_str(&format!(
+            "  Low confidence (completed but shaky; widen with follow-up nodes): {}\n",
+            summary.low_confidence_ids.join(", ")
         ));
     }
     if !summary.cycle_ids.is_empty() {
@@ -505,8 +533,13 @@ pub fn format_comm_awaited_members_with_reports(
     members: &[AwaitedMemberStatus],
     reports: &HashMap<String, String>,
 ) -> String {
-    let mut output = if completed {
+    // An any-mode wait can complete while some members are still pending, so
+    // only claim "All members done" when every member actually matched.
+    let all_done = members.iter().all(|member| member.done);
+    let mut output = if completed && all_done {
         format!("All members done. {}\n", summary)
+    } else if completed {
+        format!("Await satisfied. {}\n", summary)
     } else {
         format!("Await incomplete. {}\n", summary)
     };

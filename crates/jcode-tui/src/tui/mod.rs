@@ -35,6 +35,7 @@ pub mod screenshot;
 pub(crate) mod session_facts;
 pub mod session_picker;
 mod stream_buffer;
+pub(crate) mod swarm_plan_graph;
 pub mod test_harness;
 mod ui;
 mod ui_diff;
@@ -306,6 +307,17 @@ pub trait TuiState {
     fn connected_clients(&self) -> Option<usize>;
     /// Short-lived notice shown in the status line (e.g., model switch, toggle diff)
     fn status_notice(&self) -> Option<String>;
+    /// Distinct learned-keybinding nudge shown in its own pop-out color, e.g.
+    /// "you usually do X the slow way, press <key>". Separate from
+    /// [`status_notice`] so the UI can style it differently.
+    fn learn_hint(&self) -> Option<String> {
+        None
+    }
+    /// Inline hotkey feedback: "you just pressed X → does Y" for rarely-used
+    /// known chords, or "X isn't bound · nearest ..." for unknown chords.
+    fn hotkey_feedback(&self) -> Option<String> {
+        None
+    }
     /// First-use experimental feature warning for the currently active operation.
     fn active_experimental_feature_notice(&self) -> Option<String> {
         None
@@ -529,6 +541,12 @@ pub trait TuiState {
         if self.status_notice().is_some() {
             return true;
         }
+        if self.learn_hint().is_some() {
+            return true;
+        }
+        if self.hotkey_feedback().is_some() {
+            return true;
+        }
         if self.has_stashed_input() {
             return true;
         }
@@ -555,7 +573,10 @@ pub fn debug_copy_selection_text_for_bench(range: CopySelectionRange) -> Option<
 pub(crate) fn connection_type_icon(connection_type: Option<&str>) -> Option<&'static str> {
     let normalized = connection_type?.trim().to_ascii_lowercase();
     if normalized.contains("websocket") || normalized == "ws" || normalized == "wss" {
-        Some("🕸️")
+        // 🔌 is a single emoji-default codepoint. The previous 🕸️ (U+1F578 +
+        // VS16) is text-default and rendered as a monochrome outline/tofu in
+        // macOS window titles (Ghostty/Terminal ignore the VS16 selector there).
+        Some("🔌")
     } else if normalized.contains("http") {
         Some("🌐")
     } else {
@@ -1422,6 +1443,30 @@ fn primary_status_spinner_needs_full_redraw_with_policy(
         && !primary_status_spinner_fast_path_available_with_policy(state, policy)
 }
 
+/// Redraw cadence while the inline swarm strip/dock is animating an agent
+/// status spinner. The spinner samples the wall clock at ~8 fps
+/// (`animation_elapsed() * 8.0`), so repaint at the same rate: faster wastes
+/// frames on an unchanged glyph, slower makes the spinner visibly stutter.
+pub(crate) const REDRAW_SWARM_SPINNER: Duration = Duration::from_millis(125);
+
+/// Whether the swarm strip (above the status line) or the SwarmStatus dock
+/// widget is currently animating a status spinner for an active agent.
+///
+/// Both surfaces derive the spinner glyph from the wall clock, but managed
+/// agents keep running long after the coordinator session itself goes quiet.
+/// Without a dedicated wakeup the idle loop stops repainting (deep idle stops
+/// it entirely) and the spinner freezes, only twitching when a bus update
+/// happens to arrive. Unfocused clients skip this so backgrounded windows do
+/// not burn CPU animating a glyph nobody can see; terminal statuses render
+/// fixed glyphs and need no animation frames.
+fn swarm_spinner_redraw_active(state: &dyn TuiState) -> bool {
+    state.client_focused()
+        && state
+            .inline_swarm_members()
+            .iter()
+            .any(|m| jcode_tui_render::swarm_gallery::is_active_status(&m.status))
+}
+
 fn fps_to_duration(fps: u32) -> Duration {
     Duration::from_millis((1000 / fps.max(1)) as u64)
 }
@@ -1487,6 +1532,7 @@ pub(crate) fn redraw_interval_with_policy(
         && !cache_cold_countdown_redraw_active(state)
         && crate::build::read_build_progress().is_none()
         && !state.onboarding_welcome_active()
+        && !swarm_spinner_redraw_active(state)
     {
         return REDRAW_DEEP_IDLE;
     }
@@ -1512,6 +1558,23 @@ pub(crate) fn redraw_interval_with_policy(
         };
     }
 
+    // Swarm status spinners animate at a fixed ~8 fps off the wall clock.
+    // Streaming/scroll branches below already repaint faster than this, but
+    // both the quiet-coordinator case and the processing-without-streaming
+    // case (which otherwise idles at the 1s passive-liveness cadence) need
+    // this to keep agent spinners smooth while the swarm works.
+    if swarm_spinner_redraw_active(state)
+        && state.streaming_text().is_empty()
+        && !state.has_pending_mouse_scroll_animation()
+    {
+        return match policy.tier {
+            // Minimal tier drops decorative animation; a liveness-rate tick
+            // still advances the glyph so agents never look frozen.
+            crate::perf::PerformanceTier::Minimal => REDRAW_PASSIVE_LIVENESS,
+            _ => REDRAW_SWARM_SPINNER,
+        };
+    }
+
     if !state.has_pending_mouse_scroll_animation()
         && state.streaming_text().is_empty()
         && (state.is_processing() || rate_limit_countdown_redraw_active(state))
@@ -1522,6 +1585,7 @@ pub(crate) fn redraw_interval_with_policy(
     if state.is_processing()
         || !state.streaming_text().is_empty()
         || state.status_notice().is_some()
+        || state.learn_hint().is_some()
         || state.has_pending_mouse_scroll_animation()
         || state.copy_selection_edge_autoscroll_active()
         || state.has_notification()
@@ -1568,6 +1632,7 @@ pub(crate) fn periodic_redraw_required(state: &dyn TuiState) -> bool {
         && !cache_cold_countdown_redraw_active(state)
         && crate::build::read_build_progress().is_none()
         && !state.onboarding_welcome_active()
+        && !swarm_spinner_redraw_active(state)
     {
         return false;
     }
@@ -1580,10 +1645,15 @@ pub(crate) fn periodic_redraw_required(state: &dyn TuiState) -> bool {
         return true;
     }
 
+    if swarm_spinner_redraw_active(state) {
+        return true;
+    }
+
     if state.is_processing()
         || !state.streaming_text().is_empty()
         || ui::tail_catchup_active()
         || state.status_notice().is_some()
+        || state.learn_hint().is_some()
         || state.has_pending_mouse_scroll_animation()
         || state.copy_selection_edge_autoscroll_active()
         || state.chat_overscroll_active()
@@ -1868,13 +1938,31 @@ mod tests {
 
     #[test]
     fn connection_type_icon_uses_protocol_specific_icons() {
-        assert_eq!(connection_type_icon(Some("websocket")), Some("🕸️"));
-        assert_eq!(connection_type_icon(Some("wss")), Some("🕸️"));
+        assert_eq!(connection_type_icon(Some("websocket")), Some("🔌"));
+        assert_eq!(connection_type_icon(Some("wss")), Some("🔌"));
         assert_eq!(connection_type_icon(Some("https")), Some("🌐"));
         assert_eq!(connection_type_icon(Some("https/sse")), Some("🌐"));
         assert_eq!(connection_type_icon(Some("http")), Some("🌐"));
         assert_eq!(connection_type_icon(Some("unknown")), None);
         assert_eq!(connection_type_icon(None), None);
+    }
+
+    #[test]
+    fn connection_type_icons_avoid_vs16_sequences() {
+        // macOS window/tab title fonts ignore the VS16 emoji-presentation
+        // selector, so title icons must be single emoji-default codepoints.
+        for connection in ["websocket", "wss", "https", "https/sse", "http"] {
+            let icon = connection_type_icon(Some(connection)).unwrap();
+            assert_eq!(
+                icon.chars().count(),
+                1,
+                "connection icon for '{connection}' must be a single codepoint, got {icon:?}"
+            );
+            assert!(
+                !icon.contains('\u{FE0F}'),
+                "connection icon for '{connection}' must not need VS16, got {icon:?}"
+            );
+        }
     }
 
     #[test]

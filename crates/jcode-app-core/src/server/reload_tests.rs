@@ -41,6 +41,7 @@ fn member(session_id: &str, status: &str) -> SwarmMember {
         model: None,
         provider_key: None,
         todo_progress: None,
+        todo_items: Vec::new(),
     }
 }
 

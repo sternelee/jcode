@@ -735,6 +735,30 @@ pub(in crate::tui::app) fn handle_server_event(
             }
             auto_poked
         }
+        ServerEvent::ProviderGuardrail {
+            stop_reason,
+            message,
+        } => {
+            crate::logging::warn(&format!(
+                "PROVIDER_GUARDRAIL_EVENT session={:?} stop_reason={:?}",
+                app.remote_session_id, stop_reason
+            ));
+            let label = stop_reason
+                .as_deref()
+                .filter(|r| !r.trim().is_empty())
+                .unwrap_or("guardrail");
+            // Plain text prefix: U+1F6E1 shield renders poorly in some
+            // terminals (kitty shows a narrow monochrome glyph).
+            app.push_display_message(DisplayMessage::system(format!("[guardrail] {}", message)));
+            app.set_status_notice(format!("Provider guardrail: {}", label));
+            // Guardrail refusals are model-side policy stops: retrying the
+            // same model usually refuses again, but a stronger model often
+            // handles the same legitimate request. Offer a one-keypress
+            // reroute to the strongest Anthropic route and resend. The offer
+            // sets its own (more actionable) status notice when armed.
+            app.offer_guardrail_reroute();
+            true
+        }
         ServerEvent::Done { id } => {
             let mut auto_poked = false;
             let mut completed_current_message = false;
@@ -842,6 +866,34 @@ pub(in crate::tui::app) fn handle_server_event(
             retry_after_secs,
             ..
         } => {
+            // The server rejects a Message request with this error while its
+            // previous turn is still running. This typically happens when a
+            // reload/reconnect raced the turn-end dispatch: the history
+            // activity snapshot said "idle", the client dequeued and sent a
+            // queued follow-up, but the server-side turn had not actually
+            // finished. Dropping the pending send here would silently lose the
+            // user's queued message (issue #391). Instead, put it back on the
+            // queue and re-adopt the running-turn state so the queue
+            // dispatches once the real turn completes.
+            if message == "Already processing a message"
+                && recover_undelivered_queued_continuation(app, "server busy rejection")
+            {
+                app.is_processing = true;
+                app.status = ProcessingStatus::Thinking(Instant::now());
+                app.current_message_id = None;
+                app.processing_started.get_or_insert_with(Instant::now);
+                app.last_stream_activity = Some(Instant::now());
+                app.remote_resume_activity = Some(RemoteResumeActivity {
+                    session_id: app.remote_session_id.clone().unwrap_or_default(),
+                    observed_at: Instant::now(),
+                    current_tool_name: None,
+                });
+                app.set_status_notice("Server still busy; follow-up stays queued");
+                crate::logging::info(
+                    "Server rejected queued continuation because a turn is still running; re-queued it and re-adopted the running turn",
+                );
+                return true;
+            }
             let reset_duration = retry_after_secs
                 .map(Duration::from_secs)
                 .or_else(|| parse_rate_limit_error(&message));
@@ -874,6 +926,20 @@ pub(in crate::tui::app) fn handle_server_event(
             }
             let is_failover_prompt =
                 crate::provider::parse_failover_prompt_message(&message).is_some();
+            // Snapshot the failed turn's payload before the cleanup below (and
+            // the retry-budget bookkeeping) clears it, so a fallback offer
+            // armed at a terminal no-retry point can resend it after the user
+            // accepts a switch to a working route.
+            let failed_fallback_payload = app.rate_limit_pending_message.as_ref().map(|pending| {
+                app_mod::FallbackResendPayload {
+                    content: pending.content.clone(),
+                    images: pending.images.clone(),
+                    is_system: pending.is_system,
+                    auto_retry: pending.auto_retry,
+                    system_reminder: pending.system_reminder.clone(),
+                    raw_input: app.last_submitted_input.clone(),
+                }
+            });
             app.push_display_message(DisplayMessage {
                 role: "error".to_string(),
                 content: message.clone(),
@@ -920,13 +986,21 @@ pub(in crate::tui::app) fn handle_server_event(
             if crate::tui::app::commands::is_fatal_model_endpoint_error(&message) {
                 app.clear_pending_remote_retry();
                 if app.auto_poke_incomplete_todos {
-                    crate::tui::app::commands::stop_auto_poke_for_non_retryable_error(app, &message);
+                    crate::tui::app::commands::stop_auto_poke_for_non_retryable_error(
+                        app, &message,
+                    );
                 }
                 app.push_display_message(DisplayMessage::system(
                     "🛑 Not retrying: the model is not valid for the configured endpoint (e.g. an Ark coding-plan endpoint rejecting a model without the coding plan feature, or a model-not-found). Check the model name and base URL (the coding endpoint `/api/coding/v3` only accepts coding-plan models; use `/api/v3` otherwise), then send again.".to_string(),
                 ));
                 app.set_status_notice("Stopped: model/endpoint mismatch");
                 app.restore_failed_input_to_box();
+                // Switching models is exactly the right fix for a
+                // model/endpoint mismatch: offer the next best route.
+                app.offer_fallback_after_error_with_payload(
+                    &message,
+                    failed_fallback_payload.clone(),
+                );
                 return false;
             }
             if app.auto_poke_incomplete_todos
@@ -939,9 +1013,20 @@ pub(in crate::tui::app) fn handle_server_event(
                     return false;
                 }
                 crate::tui::app::commands::stop_auto_poke_for_non_retryable_error(app, &message);
+                // Terminal: no retry will fire. Offer a one-keypress switch to
+                // the next best model/auth-method (e.g. an expired OAuth login
+                // -> a working provider) with the failed payload staged.
+                app.offer_fallback_after_error_with_payload(
+                    &message,
+                    failed_fallback_payload.clone(),
+                );
                 return false;
             }
             if app.stop_overnight_auto_poke_for_non_retryable_error(&message) {
+                app.offer_fallback_after_error_with_payload(
+                    &message,
+                    failed_fallback_payload.clone(),
+                );
                 return false;
             }
             if !is_failover_prompt && !app.schedule_pending_remote_retry("⚠ Remote request failed.")
@@ -950,6 +1035,11 @@ pub(in crate::tui::app) fn handle_server_event(
                 // No automatic retry will resend this turn, so restore the prompt the
                 // user typed back into the input box instead of dropping it.
                 app.restore_failed_input_to_box();
+                // Offer a one-keypress switch to the next best model/auth-method
+                // and resend (e.g. expired OpenAI OAuth session -> a provider
+                // that is known to work), instead of leaving the user to run
+                // /login or /model manually.
+                app.offer_fallback_after_error_with_payload(&message, failed_fallback_payload);
                 return app.schedule_auto_poke_followup_if_needed()
                     || app.schedule_overnight_poke_followup_if_needed();
             }
@@ -1417,6 +1507,12 @@ pub(in crate::tui::app) fn handle_server_event(
 
             app.maybe_show_catchup_after_history(&session_id);
 
+            // The bootstrap above may have cleared/replaced the transcript for a
+            // brand-new session, wiping the startup notice card (launch-hotkeys /
+            // welcome tip). Re-apply it so it stays visible on the idle screen
+            // instead of flashing for a moment and disappearing.
+            app.reapply_pending_startup_notice_if_cleared();
+
             let should_consume_pending_reload_status = match app
                 .pending_reload_reconnect_status
                 .as_ref()
@@ -1598,6 +1694,23 @@ pub(in crate::tui::app) fn handle_server_event(
             app.swarm_plan_swarm_id = Some(snapshot.swarm_id.clone());
             app.swarm_plan_version = Some(snapshot.version);
             app.swarm_plan_items = snapshot.items.clone();
+            // Render the plan's task DAG as a mermaid diagram so the pinned
+            // pane / margin widget shows the swarm graph. Deferred render:
+            // enqueues in the background and registers the diagram on
+            // completion, so plan updates never block the event loop. Gated
+            // like transcript mermaid: a diagram surface must be enabled and
+            // mermaid rendering itself must be switched on (currently the
+            // JCODE_ENABLE_MERMAID=1 rollout gate while the renderer
+            // stabilizes), so plan graphs follow the same rollout switch.
+            if app.diagram_mode != crate::config::DiagramDisplayMode::None
+                && std::env::var("JCODE_ENABLE_MERMAID").is_ok_and(|value| value == "1")
+                && let Some(graph) =
+                    crate::tui::swarm_plan_graph::swarm_plan_mermaid(&app.swarm_plan_items)
+            {
+                let _ = crate::tui::mermaid::render_mermaid_deferred_with_registration(
+                    &graph, None, true,
+                );
+            }
             persist_swarm_plan_snapshot(
                 app,
                 snapshot.swarm_id,
@@ -1652,6 +1765,16 @@ pub(in crate::tui::app) fn handle_server_event(
             if let Some(err) = error {
                 if let Some(prepared) = app.pending_prompt_after_model_switch.take() {
                     super::input_dispatch::restore_prepared_remote_input(app, prepared);
+                }
+                // A fallback-offer resend cannot go out on the failed switch;
+                // drop it and put the prompt back in the input box instead.
+                if let Some(payload) = app.pending_fallback_resend.take()
+                    && let Some(raw_input) = payload.raw_input
+                    && !raw_input.trim().is_empty()
+                    && app.input.is_empty()
+                {
+                    app.input = raw_input;
+                    app.cursor_pos = app.input.len();
                 }
                 app.push_display_message(DisplayMessage::error(
                     crate::tui::app::model_context::model_switch_failure_message(&err, true),

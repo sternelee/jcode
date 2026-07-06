@@ -315,7 +315,16 @@ pub enum RenderResult {
 /// Check if a code block language is mermaid
 pub fn is_mermaid_lang(lang: &str) -> bool {
     let lang_lower = lang.to_lowercase();
-    lang_lower == "mermaid" || lang_lower.starts_with("mermaid")
+    let is_mermaid = lang_lower == "mermaid" || lang_lower.starts_with("mermaid");
+    if is_mermaid {
+        // First sighting of mermaid content anywhere (streaming markdown,
+        // transcript render, pinned pane) kicks off the system font-DB load in
+        // the background so the eventual PNG render finds it warm. Doing this
+        // here instead of at startup keeps diagram-free sessions from paying
+        // the font scan at all. OnceLock-guarded: only the first call spawns.
+        super::runtime::prewarm_svg_font_db_async();
+    }
+    is_mermaid
 }
 
 /// Maximum allowed nodes in a diagram (prevents OOM on complex diagrams)
@@ -701,7 +710,7 @@ fn render_mermaid_sized_internal(
     {
         let msg = "Mermaid rendering is disabled in this build".to_string();
         if let Ok(mut errors) = RENDER_ERRORS.lock() {
-            errors.insert(hash, msg.clone());
+            super::bounded_bookkeeping_insert(&mut errors, hash, msg.clone());
         }
         if let Ok(mut state) = MERMAID_DEBUG.lock() {
             state.stats.render_errors += 1;
@@ -848,7 +857,7 @@ fn render_mermaid_sized_internal(
             }
             Ok(Err(e)) => {
                 if let Ok(mut errors) = RENDER_ERRORS.lock() {
-                    errors.insert(hash, e.clone());
+                    super::bounded_bookkeeping_insert(&mut errors, hash, e.clone());
                 }
                 if let Ok(mut state) = MERMAID_DEBUG.lock() {
                     state.stats.render_errors += 1;
@@ -866,7 +875,11 @@ fn render_mermaid_sized_internal(
                     "unknown panic in mermaid renderer".to_string()
                 };
                 if let Ok(mut errors) = RENDER_ERRORS.lock() {
-                    errors.insert(hash, format!("Renderer panic: {}", msg));
+                    super::bounded_bookkeeping_insert(
+                        &mut errors,
+                        hash,
+                        format!("Renderer panic: {}", msg),
+                    );
                 }
                 if let Ok(mut state) = MERMAID_DEBUG.lock() {
                     state.stats.render_errors += 1;
@@ -917,5 +930,24 @@ fn render_mermaid_sized_internal(
             width,
             height,
         }
+    }
+}
+
+#[cfg(test)]
+mod font_prewarm_tests {
+    /// The lazy prewarm must fire exactly on first mermaid detection, so a
+    /// diagram-free session never loads the font DB and a diagram session
+    /// warms it before the render path needs it.
+    #[test]
+    fn mermaid_detection_triggers_font_db_prewarm() {
+        assert!(!super::is_mermaid_lang("rust"), "sanity: non-mermaid");
+        // No spawn yet for non-mermaid langs (flag may already be set if
+        // another test rendered a diagram first, so only assert the positive
+        // path below).
+        assert!(super::is_mermaid_lang("mermaid"));
+        assert!(
+            crate::SVG_FONT_DB_PREWARM_STARTED.get().is_some(),
+            "first mermaid sighting must kick off the font-DB prewarm"
+        );
     }
 }

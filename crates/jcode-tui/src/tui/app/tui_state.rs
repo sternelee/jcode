@@ -6,6 +6,13 @@ use std::time::Duration;
 
 const REMOTE_STARTUP_HEADER_DEBOUNCE: Duration = Duration::from_millis(400);
 
+/// How long a routine `LoadingSession` phase may keep showing the known model
+/// hint before the header falls back to the "loading session…" label. History
+/// bootstrap normally lands in ~1s, so the common spawn path never flashes a
+/// transient loading label; genuinely stuck loads still surface after this
+/// grace period.
+const REMOTE_LOADING_HEADER_GRACE: Duration = Duration::from_secs(3);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WidgetProviderKind {
     Anthropic,
@@ -80,22 +87,79 @@ impl App {
             .or_else(|| self.configured_remote_model_hint())
     }
 
+    /// Provider/model identity used for reasoning-effort UI decisions in remote
+    /// mode. Prefers the server-reported values, falling back to the same hints
+    /// the header uses (session stub, `JCODE_MODEL`, config default) so effort
+    /// cycling works during the pre-History bootstrap window instead of
+    /// reporting "not available" until the server payload settles.
+    pub(super) fn remote_effort_identity(&self) -> (Option<String>, Option<String>) {
+        let model = self.effective_remote_provider_model();
+        let provider = self.remote_provider_name.clone().or_else(|| {
+            model
+                .as_deref()
+                .and_then(|model| {
+                    crate::provider::provider_for_model_with_hint(model, None).map(str::to_string)
+                })
+                .or_else(|| self.configured_remote_provider_hint())
+        });
+        (provider, model)
+    }
+
+    /// Best-known current reasoning effort for the remote session. Falls back
+    /// to the configured provider-family default when the server has not
+    /// reported one yet, so pre-settle effort cycling starts from the value the
+    /// session will actually use instead of assuming the maximum.
+    pub(super) fn remote_reasoning_effort_hint(&self) -> Option<String> {
+        self.remote_reasoning_effort.clone().or_else(|| {
+            let (provider, model) = self.remote_effort_identity();
+            let provider = provider.unwrap_or_default().to_ascii_lowercase();
+            let model = model.unwrap_or_default().to_ascii_lowercase();
+            let cfg = &crate::config::config().provider;
+            if provider.contains("anthropic")
+                || provider.contains("claude")
+                || model.starts_with("claude-")
+            {
+                cfg.anthropic_reasoning_effort.clone()
+            } else if provider.contains("openai")
+                || provider.contains("codex")
+                || model.starts_with("gpt-")
+            {
+                cfg.openai_reasoning_effort.clone()
+            } else {
+                None
+            }
+        })
+    }
+
     fn remote_header_provider_model(&self) -> Option<String> {
         let effective_model = self.effective_remote_provider_model();
 
         self.remote_startup_phase
             .as_ref()
             .and_then(|phase| {
-                if matches!(phase, super::RemoteStartupPhase::Connecting)
-                    && effective_model.is_some()
-                {
-                    return effective_model.clone();
-                }
-
                 let elapsed = self
                     .remote_startup_phase_started
                     .map(|started| started.elapsed())
                     .unwrap_or_default();
+
+                // Routine bootstrap phases (connecting, then loading the
+                // session history) should not repaint the header when we
+                // already know which model this session runs: the pre-settle
+                // flicker ("model -> loading session… -> model") reads as
+                // instability. Keep showing the model and only surface the
+                // phase label once it overstays its expected budget.
+                match phase {
+                    super::RemoteStartupPhase::Connecting if effective_model.is_some() => {
+                        return effective_model.clone();
+                    }
+                    super::RemoteStartupPhase::LoadingSession
+                        if effective_model.is_some() && elapsed < REMOTE_LOADING_HEADER_GRACE =>
+                    {
+                        return effective_model.clone();
+                    }
+                    _ => {}
+                }
+
                 let should_defer_header = matches!(phase, super::RemoteStartupPhase::Connecting)
                     && elapsed < REMOTE_STARTUP_HEADER_DEBOUNCE;
 
@@ -809,6 +873,30 @@ impl crate::tui::TuiState for App {
         })
     }
 
+    fn learn_hint(&self) -> Option<String> {
+        self.learn_hint.as_ref().and_then(|(text, at)| {
+            // Learn-hints linger a little longer than status notices so the user
+            // has time to read and register the keybinding.
+            if at.elapsed() <= Duration::from_secs(8) {
+                Some(text.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn hotkey_feedback(&self) -> Option<String> {
+        self.hotkey_feedback.as_ref().and_then(|(text, at)| {
+            // Long enough to read the chord and its action, short enough to
+            // stay out of the way during rapid keying.
+            if at.elapsed() <= Duration::from_secs(5) {
+                Some(text.clone())
+            } else {
+                None
+            }
+        })
+    }
+
     fn active_experimental_feature_notice(&self) -> Option<String> {
         self.active_experimental_feature_notice.clone()
     }
@@ -1119,20 +1207,7 @@ impl crate::tui::TuiState for App {
         };
 
         let todos = if self.swarm_enabled && !self.swarm_plan_items.is_empty() {
-            self.swarm_plan_items
-                .iter()
-                .map(|item| crate::todo::TodoItem {
-                    content: item.content.clone(),
-                    status: item.status.clone(),
-                    priority: item.priority.clone(),
-                    id: item.id.clone(),
-                    group: None,
-                    blocked_by: item.blocked_by.clone(),
-                    assigned_to: item.assigned_to.clone(),
-                    confidence: None,
-                    completion_confidence: None,
-                })
-                .collect()
+            crate::tui::info_widget::swarm_plan_todos(&self.swarm_plan_items)
         } else {
             gather_todos_for_session(session_id)
         };
@@ -1251,6 +1326,7 @@ impl crate::tui::TuiState for App {
                         output_tail: None,
                         report_back_to_session_id: None,
                         todo_progress: None,
+                        todo_items: Vec::new(),
                     });
                 }
                 (
@@ -1261,14 +1337,45 @@ impl crate::tui::TuiState for App {
                 )
             };
 
+            // Dock data: the agents this session actually manages (spawn
+            // subtree), the shared panel selection/focus, and plan progress.
+            // This is what the SwarmStatus widget renders. Computed outside
+            // the activity gate: managing agents is itself "interesting".
+            let managed_members = self.inline_swarm_members();
+
             // Only show if there's something interesting
-            if has_activity || session_count > 1 || client_count.is_some() {
+            if has_activity
+                || session_count > 1
+                || client_count.is_some()
+                || !managed_members.is_empty()
+            {
+                let plan_progress = if self.swarm_plan_items.is_empty() {
+                    None
+                } else {
+                    let total = self.swarm_plan_items.len() as u32;
+                    let done = self
+                        .swarm_plan_items
+                        .iter()
+                        .filter(|item| matches!(item.status.as_str(), "completed" | "done"))
+                        .count() as u32;
+                    Some((done, total))
+                };
                 Some(crate::tui::info_widget::SwarmInfo {
                     session_count,
                     subagent_status,
                     client_count,
                     session_names,
                     members,
+                    selected: if managed_members.is_empty() {
+                        0
+                    } else {
+                        self.swarm_panel_selected
+                            .min(managed_members.len().saturating_sub(1))
+                    },
+                    focused: self.swarm_panel_focused,
+                    plan_progress,
+                    spinner_frame: (self.animation_elapsed() * 8.0) as usize,
+                    managed_members,
                 })
             } else {
                 None
@@ -1497,7 +1604,12 @@ impl crate::tui::TuiState for App {
         };
         match self_id {
             Some(self_id) => filter_inline_swarm_subtree(&self.remote_swarm_members, self_id),
-            None => self.remote_swarm_members.clone(),
+            // Session identity is not known yet (e.g. right after connect,
+            // before the History event sets `remote_session_id`). Showing all
+            // swarm members here caused the inline strip to flash on startup
+            // and then disappear once the subtree filter kicked in. Hide the
+            // strip until we know who we are.
+            None => Vec::new(),
         }
     }
 
@@ -1921,6 +2033,7 @@ mod inline_swarm_subtree_tests {
             output_tail: None,
             report_back_to_session_id: parent.map(str::to_string),
             todo_progress: None,
+            todo_items: Vec::new(),
         }
     }
 

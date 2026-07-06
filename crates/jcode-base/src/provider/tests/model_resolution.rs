@@ -80,22 +80,22 @@ fn test_openrouter_catalog_model_id_normalizes_bare_openai_and_claude_models() {
 #[test]
 fn test_available_models_display_uses_route_models_and_filters_placeholder_rows() {
     let provider = MultiProvider {
-      claude: RwLock::new(None),
-      anthropic: RwLock::new(None),
-      openai: RwLock::new(None),
-      copilot_api: RwLock::new(None),
-      antigravity: RwLock::new(None),
-      gemini: RwLock::new(None),
-      cursor: RwLock::new(None),
-      bedrock: RwLock::new(None),
-      openrouter: RwLock::new(None),
-      openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-      active_openai_compatible_profile: RwLock::new(None),
-      active: RwLock::new(ActiveProvider::OpenAI),
-      use_claude_cli: false,
-      startup_notices: RwLock::new(Vec::new()),
-      forced_provider: None,
-            active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+        claude: RwLock::new(None),
+        anthropic: RwLock::new(None),
+        openai: RwLock::new(None),
+        copilot_api: RwLock::new(None),
+        antigravity: RwLock::new(None),
+        gemini: RwLock::new(None),
+        cursor: RwLock::new(None),
+        bedrock: RwLock::new(None),
+        openrouter: RwLock::new(None),
+        openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+        active_openai_compatible_profile: RwLock::new(None),
+        active: RwLock::new(ActiveProvider::OpenAI),
+        use_claude_cli: false,
+        startup_notices: RwLock::new(Vec::new()),
+        forced_provider: None,
+        routes_memo: std::sync::Mutex::new(None),
     };
 
     let models = provider.available_models_display();
@@ -129,22 +129,22 @@ fn test_cerebras_model_routes_are_profile_scoped_and_unique() {
                     .expect("Cerebras direct provider should initialize"),
             );
             let provider = MultiProvider {
-              claude: RwLock::new(None),
-              anthropic: RwLock::new(None),
-              openai: RwLock::new(None),
-              copilot_api: RwLock::new(None),
-              antigravity: RwLock::new(None),
-              gemini: RwLock::new(None),
-              cursor: RwLock::new(None),
-              bedrock: RwLock::new(None),
-              openrouter: RwLock::new(Some(openrouter)),
-              openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-              active_openai_compatible_profile: RwLock::new(None),
-              active: RwLock::new(ActiveProvider::OpenRouter),
-              use_claude_cli: false,
-              startup_notices: RwLock::new(Vec::new()),
-              forced_provider: Some(ActiveProvider::OpenRouter),
-                    active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                claude: RwLock::new(None),
+                anthropic: RwLock::new(None),
+                openai: RwLock::new(None),
+                copilot_api: RwLock::new(None),
+                antigravity: RwLock::new(None),
+                gemini: RwLock::new(None),
+                cursor: RwLock::new(None),
+                bedrock: RwLock::new(None),
+                openrouter: RwLock::new(Some(openrouter)),
+                openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                active_openai_compatible_profile: RwLock::new(None),
+                active: RwLock::new(ActiveProvider::OpenRouter),
+                use_claude_cli: false,
+                startup_notices: RwLock::new(Vec::new()),
+                forced_provider: Some(ActiveProvider::OpenRouter),
+                routes_memo: std::sync::Mutex::new(None),
             };
 
             let routes = provider.model_routes();
@@ -227,22 +227,22 @@ fn test_direct_chutes_ignores_legacy_openrouter_catalog_cache() {
                 );
 
                 let provider = MultiProvider {
-                  claude: RwLock::new(None),
-                  anthropic: RwLock::new(None),
-                  openai: RwLock::new(None),
-                  copilot_api: RwLock::new(None),
-                  antigravity: RwLock::new(None),
-                  gemini: RwLock::new(None),
-                  cursor: RwLock::new(None),
-                  bedrock: RwLock::new(None),
-                  openrouter: RwLock::new(Some(openrouter)),
-                  openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-                  active_openai_compatible_profile: RwLock::new(None),
-                  active: RwLock::new(ActiveProvider::OpenRouter),
-                  use_claude_cli: false,
-                  startup_notices: RwLock::new(Vec::new()),
-                  forced_provider: Some(ActiveProvider::OpenRouter),
-                        active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                    claude: RwLock::new(None),
+                    anthropic: RwLock::new(None),
+                    openai: RwLock::new(None),
+                    copilot_api: RwLock::new(None),
+                    antigravity: RwLock::new(None),
+                    gemini: RwLock::new(None),
+                    cursor: RwLock::new(None),
+                    bedrock: RwLock::new(None),
+                    openrouter: RwLock::new(Some(openrouter)),
+                    openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                    active_openai_compatible_profile: RwLock::new(None),
+                    active: RwLock::new(ActiveProvider::OpenRouter),
+                    use_claude_cli: false,
+                    startup_notices: RwLock::new(Vec::new()),
+                    forced_provider: Some(ActiveProvider::OpenRouter),
+                    routes_memo: std::sync::Mutex::new(None),
                 };
 
                 let routes = provider.model_routes();
@@ -287,22 +287,22 @@ fn test_auth_changed_preserves_existing_direct_profile_session() {
             .expect("Cerebras model should be selectable");
 
         let provider = MultiProvider {
-          claude: RwLock::new(None),
-          anthropic: RwLock::new(None),
-          openai: RwLock::new(None),
-          copilot_api: RwLock::new(None),
-          antigravity: RwLock::new(None),
-          gemini: RwLock::new(None),
-          cursor: RwLock::new(None),
-          bedrock: RwLock::new(None),
-          openrouter: RwLock::new(Some(openrouter)),
-          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-          active_openai_compatible_profile: RwLock::new(None),
-          active: RwLock::new(ActiveProvider::OpenRouter),
-          use_claude_cli: false,
-          startup_notices: RwLock::new(Vec::new()),
-          forced_provider: Some(ActiveProvider::OpenRouter),
-                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+            claude: RwLock::new(None),
+            anthropic: RwLock::new(None),
+            openai: RwLock::new(None),
+            copilot_api: RwLock::new(None),
+            antigravity: RwLock::new(None),
+            gemini: RwLock::new(None),
+            cursor: RwLock::new(None),
+            bedrock: RwLock::new(None),
+            openrouter: RwLock::new(Some(openrouter)),
+            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+            active_openai_compatible_profile: RwLock::new(None),
+            active: RwLock::new(ActiveProvider::OpenRouter),
+            use_claude_cli: false,
+            startup_notices: RwLock::new(Vec::new()),
+            forced_provider: Some(ActiveProvider::OpenRouter),
+            routes_memo: std::sync::Mutex::new(None),
         };
 
         crate::env::set_var("GROQ_API_KEY", "test-groq-key");
@@ -349,22 +349,22 @@ fn test_auth_changed_replaces_template_direct_profile_for_new_logins() {
         );
 
         let provider = MultiProvider {
-          claude: RwLock::new(None),
-          anthropic: RwLock::new(None),
-          openai: RwLock::new(None),
-          copilot_api: RwLock::new(None),
-          antigravity: RwLock::new(None),
-          gemini: RwLock::new(None),
-          cursor: RwLock::new(None),
-          bedrock: RwLock::new(None),
-          openrouter: RwLock::new(Some(openrouter)),
-          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-          active_openai_compatible_profile: RwLock::new(None),
-          active: RwLock::new(ActiveProvider::OpenRouter),
-          use_claude_cli: false,
-          startup_notices: RwLock::new(Vec::new()),
-          forced_provider: Some(ActiveProvider::OpenRouter),
-                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+            claude: RwLock::new(None),
+            anthropic: RwLock::new(None),
+            openai: RwLock::new(None),
+            copilot_api: RwLock::new(None),
+            antigravity: RwLock::new(None),
+            gemini: RwLock::new(None),
+            cursor: RwLock::new(None),
+            bedrock: RwLock::new(None),
+            openrouter: RwLock::new(Some(openrouter)),
+            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+            active_openai_compatible_profile: RwLock::new(None),
+            active: RwLock::new(ActiveProvider::OpenRouter),
+            use_claude_cli: false,
+            startup_notices: RwLock::new(Vec::new()),
+            forced_provider: Some(ActiveProvider::OpenRouter),
+            routes_memo: std::sync::Mutex::new(None),
         };
 
         crate::env::set_var("GROQ_API_KEY", "test-groq-key");
@@ -403,22 +403,22 @@ fn test_state_space_openrouter_default_survives_switch_to_nvidia_nim() {
             .expect("OpenRouter default model should be selectable");
 
         let provider = MultiProvider {
-          claude: RwLock::new(None),
-          anthropic: RwLock::new(None),
-          openai: RwLock::new(None),
-          copilot_api: RwLock::new(None),
-          antigravity: RwLock::new(None),
-          gemini: RwLock::new(None),
-          cursor: RwLock::new(None),
-          bedrock: RwLock::new(None),
-          openrouter: RwLock::new(Some(openrouter)),
-          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-          active_openai_compatible_profile: RwLock::new(None),
-          active: RwLock::new(ActiveProvider::OpenRouter),
-          use_claude_cli: false,
-          startup_notices: RwLock::new(Vec::new()),
-          forced_provider: None,
-                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+            claude: RwLock::new(None),
+            anthropic: RwLock::new(None),
+            openai: RwLock::new(None),
+            copilot_api: RwLock::new(None),
+            antigravity: RwLock::new(None),
+            gemini: RwLock::new(None),
+            cursor: RwLock::new(None),
+            bedrock: RwLock::new(None),
+            openrouter: RwLock::new(Some(openrouter)),
+            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+            active_openai_compatible_profile: RwLock::new(None),
+            active: RwLock::new(ActiveProvider::OpenRouter),
+            use_claude_cli: false,
+            startup_notices: RwLock::new(Vec::new()),
+            forced_provider: None,
+            routes_memo: std::sync::Mutex::new(None),
         };
 
         crate::env::set_var(nvidia.api_key_env, "test-nvidia-key");
@@ -591,22 +591,22 @@ fn test_openrouter_and_compatible_profile_transition_invariants() {
             .expect("OpenRouter default model should be selectable");
 
         let provider = MultiProvider {
-          claude: RwLock::new(None),
-          anthropic: RwLock::new(None),
-          openai: RwLock::new(None),
-          copilot_api: RwLock::new(None),
-          antigravity: RwLock::new(None),
-          gemini: RwLock::new(None),
-          cursor: RwLock::new(None),
-          bedrock: RwLock::new(None),
-          openrouter: RwLock::new(Some(openrouter.clone())),
-          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-          active_openai_compatible_profile: RwLock::new(None),
-          active: RwLock::new(ActiveProvider::OpenRouter),
-          use_claude_cli: false,
-          startup_notices: RwLock::new(Vec::new()),
-          forced_provider: None,
-                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+            claude: RwLock::new(None),
+            anthropic: RwLock::new(None),
+            openai: RwLock::new(None),
+            copilot_api: RwLock::new(None),
+            antigravity: RwLock::new(None),
+            gemini: RwLock::new(None),
+            cursor: RwLock::new(None),
+            bedrock: RwLock::new(None),
+            openrouter: RwLock::new(Some(openrouter.clone())),
+            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+            active_openai_compatible_profile: RwLock::new(None),
+            active: RwLock::new(ActiveProvider::OpenRouter),
+            use_claude_cli: false,
+            startup_notices: RwLock::new(Vec::new()),
+            forced_provider: None,
+            routes_memo: std::sync::Mutex::new(None),
         };
 
         provider
@@ -663,22 +663,22 @@ fn test_set_model_accepts_bare_openai_openrouter_pin_when_openrouter_available()
                     .expect("openrouter provider should initialize"),
             );
             let provider = MultiProvider {
-              claude: RwLock::new(None),
-              anthropic: RwLock::new(None),
-              openai: RwLock::new(None),
-              copilot_api: RwLock::new(None),
-              antigravity: RwLock::new(None),
-              gemini: RwLock::new(None),
-              cursor: RwLock::new(None),
-              bedrock: RwLock::new(None),
-              openrouter: RwLock::new(Some(openrouter)),
-              openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-              active_openai_compatible_profile: RwLock::new(None),
-              active: RwLock::new(ActiveProvider::OpenAI),
-              use_claude_cli: false,
-              startup_notices: RwLock::new(Vec::new()),
-              forced_provider: None,
-                    active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                claude: RwLock::new(None),
+                anthropic: RwLock::new(None),
+                openai: RwLock::new(None),
+                copilot_api: RwLock::new(None),
+                antigravity: RwLock::new(None),
+                gemini: RwLock::new(None),
+                cursor: RwLock::new(None),
+                bedrock: RwLock::new(None),
+                openrouter: RwLock::new(Some(openrouter)),
+                openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                active_openai_compatible_profile: RwLock::new(None),
+                active: RwLock::new(ActiveProvider::OpenAI),
+                use_claude_cli: false,
+                startup_notices: RwLock::new(Vec::new()),
+                forced_provider: None,
+                routes_memo: std::sync::Mutex::new(None),
             };
 
             provider
@@ -705,22 +705,22 @@ fn test_forced_openrouter_treats_claude_like_model_as_provider_local() {
                                 .expect("custom compatible provider should initialize"),
                         );
                         let provider = MultiProvider {
-                          claude: RwLock::new(None),
-                          anthropic: RwLock::new(None),
-                          openai: RwLock::new(None),
-                          copilot_api: RwLock::new(None),
-                          antigravity: RwLock::new(None),
-                          gemini: RwLock::new(None),
-                          cursor: RwLock::new(None),
-                          bedrock: RwLock::new(None),
-                          openrouter: RwLock::new(Some(openrouter)),
-                          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-                          active_openai_compatible_profile: RwLock::new(None),
-                          active: RwLock::new(ActiveProvider::OpenRouter),
-                          use_claude_cli: false,
-                          startup_notices: RwLock::new(Vec::new()),
-                          forced_provider: Some(ActiveProvider::OpenRouter),
-                                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                            claude: RwLock::new(None),
+                            anthropic: RwLock::new(None),
+                            openai: RwLock::new(None),
+                            copilot_api: RwLock::new(None),
+                            antigravity: RwLock::new(None),
+                            gemini: RwLock::new(None),
+                            cursor: RwLock::new(None),
+                            bedrock: RwLock::new(None),
+                            openrouter: RwLock::new(Some(openrouter)),
+                            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                            active_openai_compatible_profile: RwLock::new(None),
+                            active: RwLock::new(ActiveProvider::OpenRouter),
+                            use_claude_cli: false,
+                            startup_notices: RwLock::new(Vec::new()),
+                            forced_provider: Some(ActiveProvider::OpenRouter),
+                            routes_memo: std::sync::Mutex::new(None),
                         };
 
                         provider.set_model("claude-opus4.6-thinking").expect(
@@ -750,22 +750,22 @@ fn test_forced_openrouter_preserves_custom_at_sign_model_ids() {
                                 .expect("custom compatible provider should initialize"),
                         );
                         let provider = MultiProvider {
-                          claude: RwLock::new(None),
-                          anthropic: RwLock::new(None),
-                          openai: RwLock::new(None),
-                          copilot_api: RwLock::new(None),
-                          antigravity: RwLock::new(None),
-                          gemini: RwLock::new(None),
-                          cursor: RwLock::new(None),
-                          bedrock: RwLock::new(None),
-                          openrouter: RwLock::new(Some(openrouter)),
-                          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-                          active_openai_compatible_profile: RwLock::new(None),
-                          active: RwLock::new(ActiveProvider::OpenRouter),
-                          use_claude_cli: false,
-                          startup_notices: RwLock::new(Vec::new()),
-                          forced_provider: Some(ActiveProvider::OpenRouter),
-                                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                            claude: RwLock::new(None),
+                            anthropic: RwLock::new(None),
+                            openai: RwLock::new(None),
+                            copilot_api: RwLock::new(None),
+                            antigravity: RwLock::new(None),
+                            gemini: RwLock::new(None),
+                            cursor: RwLock::new(None),
+                            bedrock: RwLock::new(None),
+                            openrouter: RwLock::new(Some(openrouter)),
+                            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                            active_openai_compatible_profile: RwLock::new(None),
+                            active: RwLock::new(ActiveProvider::OpenRouter),
+                            use_claude_cli: false,
+                            startup_notices: RwLock::new(Vec::new()),
+                            forced_provider: Some(ActiveProvider::OpenRouter),
+                            routes_memo: std::sync::Mutex::new(None),
                         };
 
                         provider
@@ -798,22 +798,22 @@ fn test_config_default_provider_openai_compatible_keeps_gpt_model_provider_local
                                 .expect("OpenAI-compatible provider should initialize"),
                         );
                         let provider = MultiProvider {
-                          claude: RwLock::new(None),
-                          anthropic: RwLock::new(None),
-                          openai: RwLock::new(None),
-                          copilot_api: RwLock::new(None),
-                          antigravity: RwLock::new(None),
-                          gemini: RwLock::new(None),
-                          cursor: RwLock::new(None),
-                          bedrock: RwLock::new(None),
-                          openrouter: RwLock::new(Some(openrouter)),
-                          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-                          active_openai_compatible_profile: RwLock::new(None),
-                          active: RwLock::new(ActiveProvider::OpenRouter),
-                          use_claude_cli: false,
-                          startup_notices: RwLock::new(Vec::new()),
-                          forced_provider: None,
-                                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                            claude: RwLock::new(None),
+                            anthropic: RwLock::new(None),
+                            openai: RwLock::new(None),
+                            copilot_api: RwLock::new(None),
+                            antigravity: RwLock::new(None),
+                            gemini: RwLock::new(None),
+                            cursor: RwLock::new(None),
+                            bedrock: RwLock::new(None),
+                            openrouter: RwLock::new(Some(openrouter)),
+                            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                            active_openai_compatible_profile: RwLock::new(None),
+                            active: RwLock::new(ActiveProvider::OpenRouter),
+                            use_claude_cli: false,
+                            startup_notices: RwLock::new(Vec::new()),
+                            forced_provider: None,
+                            routes_memo: std::sync::Mutex::new(None),
                         };
 
                         provider
@@ -849,22 +849,22 @@ fn test_custom_compatible_model_routes_do_not_request_openrouter_rewrite() {
                                 .expect("custom compatible provider should initialize"),
                         );
                         let provider = MultiProvider {
-                          claude: RwLock::new(None),
-                          anthropic: RwLock::new(None),
-                          openai: RwLock::new(None),
-                          copilot_api: RwLock::new(None),
-                          antigravity: RwLock::new(None),
-                          gemini: RwLock::new(None),
-                          cursor: RwLock::new(None),
-                          bedrock: RwLock::new(None),
-                          openrouter: RwLock::new(Some(openrouter)),
-                          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-                          active_openai_compatible_profile: RwLock::new(None),
-                          active: RwLock::new(ActiveProvider::OpenRouter),
-                          use_claude_cli: false,
-                          startup_notices: RwLock::new(Vec::new()),
-                          forced_provider: Some(ActiveProvider::OpenRouter),
-                                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                            claude: RwLock::new(None),
+                            anthropic: RwLock::new(None),
+                            openai: RwLock::new(None),
+                            copilot_api: RwLock::new(None),
+                            antigravity: RwLock::new(None),
+                            gemini: RwLock::new(None),
+                            cursor: RwLock::new(None),
+                            bedrock: RwLock::new(None),
+                            openrouter: RwLock::new(Some(openrouter)),
+                            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                            active_openai_compatible_profile: RwLock::new(None),
+                            active: RwLock::new(ActiveProvider::OpenRouter),
+                            use_claude_cli: false,
+                            startup_notices: RwLock::new(Vec::new()),
+                            forced_provider: Some(ActiveProvider::OpenRouter),
+                            routes_memo: std::sync::Mutex::new(None),
                         };
 
                         provider.set_model("claude-opus4.6-thinking").expect(
@@ -895,22 +895,22 @@ fn test_configured_direct_compatible_profiles_are_listed_without_openrouter_key(
         with_env_var("DEEPSEEK_API_KEY", "test-deepseek-key", || {
             with_env_var("KIMI_API_KEY", "test-kimi-key", || {
                 let provider = MultiProvider {
-                  claude: RwLock::new(None),
-                  anthropic: RwLock::new(None),
-                  openai: RwLock::new(None),
-                  copilot_api: RwLock::new(None),
-                  antigravity: RwLock::new(None),
-                  gemini: RwLock::new(None),
-                  cursor: RwLock::new(None),
-                  bedrock: RwLock::new(None),
-                  openrouter: RwLock::new(None),
-                  openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-                  active_openai_compatible_profile: RwLock::new(None),
-                  active: RwLock::new(ActiveProvider::OpenAI),
-                  use_claude_cli: false,
-                  startup_notices: RwLock::new(Vec::new()),
-                  forced_provider: None,
-                        active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                    claude: RwLock::new(None),
+                    anthropic: RwLock::new(None),
+                    openai: RwLock::new(None),
+                    copilot_api: RwLock::new(None),
+                    antigravity: RwLock::new(None),
+                    gemini: RwLock::new(None),
+                    cursor: RwLock::new(None),
+                    bedrock: RwLock::new(None),
+                    openrouter: RwLock::new(None),
+                    openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                    active_openai_compatible_profile: RwLock::new(None),
+                    active: RwLock::new(ActiveProvider::OpenAI),
+                    use_claude_cli: false,
+                    startup_notices: RwLock::new(Vec::new()),
+                    forced_provider: None,
+                    routes_memo: std::sync::Mutex::new(None),
                 };
 
                 let routes = provider.model_routes();
@@ -948,22 +948,22 @@ fn test_profile_prefixed_model_switch_reinitializes_direct_compatible_runtime() 
         with_env_var("DEEPSEEK_API_KEY", "test-deepseek-key", || {
             with_env_var("KIMI_API_KEY", "test-kimi-key", || {
                 let provider = MultiProvider {
-                  claude: RwLock::new(None),
-                  anthropic: RwLock::new(None),
-                  openai: RwLock::new(None),
-                  copilot_api: RwLock::new(None),
-                  antigravity: RwLock::new(None),
-                  gemini: RwLock::new(None),
-                  cursor: RwLock::new(None),
-                  bedrock: RwLock::new(None),
-                  openrouter: RwLock::new(None),
-                  openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-                  active_openai_compatible_profile: RwLock::new(None),
-                  active: RwLock::new(ActiveProvider::OpenAI),
-                  use_claude_cli: false,
-                  startup_notices: RwLock::new(Vec::new()),
-                  forced_provider: None,
-                        active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                    claude: RwLock::new(None),
+                    anthropic: RwLock::new(None),
+                    openai: RwLock::new(None),
+                    copilot_api: RwLock::new(None),
+                    antigravity: RwLock::new(None),
+                    gemini: RwLock::new(None),
+                    cursor: RwLock::new(None),
+                    bedrock: RwLock::new(None),
+                    openrouter: RwLock::new(None),
+                    openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                    active_openai_compatible_profile: RwLock::new(None),
+                    active: RwLock::new(ActiveProvider::OpenAI),
+                    use_claude_cli: false,
+                    startup_notices: RwLock::new(Vec::new()),
+                    forced_provider: None,
+                    routes_memo: std::sync::Mutex::new(None),
                 };
 
                 provider
@@ -1006,22 +1006,22 @@ fn test_openai_auth_mode_prefixed_model_switch_changes_credentials() {
             crate::auth::codex::load_credentials().expect("load OpenAI credentials"),
         ));
         let provider = MultiProvider {
-          claude: RwLock::new(None),
-          anthropic: RwLock::new(None),
-          openai: RwLock::new(Some(Arc::clone(&openai))),
-          copilot_api: RwLock::new(None),
-          antigravity: RwLock::new(None),
-          gemini: RwLock::new(None),
-          cursor: RwLock::new(None),
-          bedrock: RwLock::new(None),
-          openrouter: RwLock::new(None),
-          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-          active_openai_compatible_profile: RwLock::new(None),
-          active: RwLock::new(ActiveProvider::OpenAI),
-          use_claude_cli: false,
-          startup_notices: RwLock::new(Vec::new()),
-          forced_provider: None,
-                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+            claude: RwLock::new(None),
+            anthropic: RwLock::new(None),
+            openai: RwLock::new(Some(Arc::clone(&openai))),
+            copilot_api: RwLock::new(None),
+            antigravity: RwLock::new(None),
+            gemini: RwLock::new(None),
+            cursor: RwLock::new(None),
+            bedrock: RwLock::new(None),
+            openrouter: RwLock::new(None),
+            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+            active_openai_compatible_profile: RwLock::new(None),
+            active: RwLock::new(ActiveProvider::OpenAI),
+            use_claude_cli: false,
+            startup_notices: RwLock::new(Vec::new()),
+            forced_provider: None,
+            routes_memo: std::sync::Mutex::new(None),
         };
         let rt = enter_test_runtime();
         let _runtime_guard = rt.enter();
@@ -1073,22 +1073,22 @@ fn test_anthropic_auth_mode_prefixed_model_switch_changes_credentials() {
 
         let anthropic = Arc::new(anthropic::AnthropicProvider::new());
         let provider = MultiProvider {
-          claude: RwLock::new(None),
-          anthropic: RwLock::new(Some(Arc::clone(&anthropic))),
-          openai: RwLock::new(None),
-          copilot_api: RwLock::new(None),
-          antigravity: RwLock::new(None),
-          gemini: RwLock::new(None),
-          cursor: RwLock::new(None),
-          bedrock: RwLock::new(None),
-          openrouter: RwLock::new(None),
-          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-          active_openai_compatible_profile: RwLock::new(None),
-          active: RwLock::new(ActiveProvider::Claude),
-          use_claude_cli: false,
-          startup_notices: RwLock::new(Vec::new()),
-          forced_provider: None,
-                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+            claude: RwLock::new(None),
+            anthropic: RwLock::new(Some(Arc::clone(&anthropic))),
+            openai: RwLock::new(None),
+            copilot_api: RwLock::new(None),
+            antigravity: RwLock::new(None),
+            gemini: RwLock::new(None),
+            cursor: RwLock::new(None),
+            bedrock: RwLock::new(None),
+            openrouter: RwLock::new(None),
+            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+            active_openai_compatible_profile: RwLock::new(None),
+            active: RwLock::new(ActiveProvider::Claude),
+            use_claude_cli: false,
+            startup_notices: RwLock::new(Vec::new()),
+            forced_provider: None,
+            routes_memo: std::sync::Mutex::new(None),
         };
         let rt = enter_test_runtime();
         let _runtime_guard = rt.enter();
@@ -1150,22 +1150,22 @@ fn test_config_default_provider_anthropic_api_pins_api_credential() {
 
             let anthropic = Arc::new(anthropic::AnthropicProvider::new());
             let provider = MultiProvider {
-              claude: RwLock::new(None),
-              anthropic: RwLock::new(Some(Arc::clone(&anthropic))),
-              openai: RwLock::new(None),
-              copilot_api: RwLock::new(None),
-              antigravity: RwLock::new(None),
-              gemini: RwLock::new(None),
-              cursor: RwLock::new(None),
-              bedrock: RwLock::new(None),
-              openrouter: RwLock::new(None),
-              openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-              active_openai_compatible_profile: RwLock::new(None),
-              active: RwLock::new(ActiveProvider::Claude),
-              use_claude_cli: false,
-              startup_notices: RwLock::new(Vec::new()),
-              forced_provider: None,
-                    active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                claude: RwLock::new(None),
+                anthropic: RwLock::new(Some(Arc::clone(&anthropic))),
+                openai: RwLock::new(None),
+                copilot_api: RwLock::new(None),
+                antigravity: RwLock::new(None),
+                gemini: RwLock::new(None),
+                cursor: RwLock::new(None),
+                bedrock: RwLock::new(None),
+                openrouter: RwLock::new(None),
+                openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                active_openai_compatible_profile: RwLock::new(None),
+                active: RwLock::new(ActiveProvider::Claude),
+                use_claude_cli: false,
+                startup_notices: RwLock::new(Vec::new()),
+                forced_provider: None,
+                routes_memo: std::sync::Mutex::new(None),
             };
             let rt = enter_test_runtime();
             let _runtime_guard = rt.enter();
@@ -1204,6 +1204,89 @@ fn test_config_default_provider_anthropic_api_pins_api_credential() {
 }
 
 #[test]
+fn test_config_default_model_with_credential_prefix_applies_model_and_pin() {
+    use jcode_provider_core::{Provider, ResolvedCredential};
+    // The model picker saves default_model as a full spec like
+    // `claude-api:claude-opus-4-6`. Startup must parse the prefix (routing +
+    // credential pin) instead of handing the raw spec to the Anthropic
+    // provider, which would reject it and silently keep the fallback default.
+    for (spec, expect_oauth) in [
+        ("claude-api:claude-opus-4-6", false),
+        ("claude-oauth:claude-opus-4-6", true),
+        ("claude:claude-opus-4-6", true),
+    ] {
+        with_clean_provider_test_env(|| {
+            crate::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test-api-key");
+            crate::auth::claude::upsert_account(crate::auth::claude::AnthropicAccount {
+                label: "claude-1".to_string(),
+                access: "oauth-access-token".to_string(),
+                refresh: "oauth-refresh-token".to_string(),
+                expires: chrono::Utc::now().timestamp_millis() + 3_600_000,
+                email: None,
+                subscription_type: Some("max".to_string()),
+                scopes: vec!["user:inference".to_string()],
+            })
+            .expect("save Claude OAuth account");
+
+            let anthropic = Arc::new(anthropic::AnthropicProvider::new());
+            let provider = MultiProvider {
+                claude: RwLock::new(None),
+                anthropic: RwLock::new(Some(Arc::clone(&anthropic))),
+                openai: RwLock::new(None),
+                copilot_api: RwLock::new(None),
+                antigravity: RwLock::new(None),
+                gemini: RwLock::new(None),
+                cursor: RwLock::new(None),
+                bedrock: RwLock::new(None),
+                openrouter: RwLock::new(None),
+                openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                active_openai_compatible_profile: RwLock::new(None),
+                active: RwLock::new(ActiveProvider::Claude),
+                use_claude_cli: false,
+                startup_notices: RwLock::new(Vec::new()),
+                forced_provider: None,
+                routes_memo: std::sync::Mutex::new(None),
+            };
+            let rt = enter_test_runtime();
+            let _runtime_guard = rt.enter();
+
+            provider
+                .set_config_default_model(spec, Some("anthropic-api"))
+                .unwrap_or_else(|e| panic!("default_model '{spec}' should apply: {e}"));
+
+            assert_eq!(
+                provider.active_provider(),
+                ActiveProvider::Claude,
+                "default_model '{spec}' routes to Claude",
+            );
+            assert_eq!(
+                provider.model(),
+                "claude-opus-4-6",
+                "default_model '{spec}' should set the bare model id",
+            );
+            assert_eq!(
+                rt.block_on(anthropic.test_access_token_and_oauth_mode())
+                    .expect("token"),
+                (
+                    if expect_oauth {
+                        "oauth-access-token".to_string()
+                    } else {
+                        "sk-ant-test-api-key".to_string()
+                    },
+                    expect_oauth,
+                ),
+                "default_model '{spec}' should resolve {:?}",
+                if expect_oauth {
+                    ResolvedCredential::Oauth
+                } else {
+                    ResolvedCredential::ApiKey
+                },
+            );
+        });
+    }
+}
+
+#[test]
 fn test_multi_provider_fork_switch_request_preserves_route_identity_state_space() {
     with_clean_provider_test_env(|| {
         let rt = enter_test_runtime();
@@ -1221,22 +1304,22 @@ fn test_multi_provider_fork_switch_request_preserves_route_identity_state_space(
             crate::auth::codex::load_credentials().expect("load OpenAI credentials"),
         ));
         let provider = MultiProvider {
-          claude: RwLock::new(None),
-          anthropic: RwLock::new(None),
-          openai: RwLock::new(Some(openai)),
-          copilot_api: RwLock::new(None),
-          antigravity: RwLock::new(None),
-          gemini: RwLock::new(None),
-          cursor: RwLock::new(None),
-          bedrock: RwLock::new(None),
-          openrouter: RwLock::new(None),
-          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-          active_openai_compatible_profile: RwLock::new(None),
-          active: RwLock::new(ActiveProvider::OpenAI),
-          use_claude_cli: false,
-          startup_notices: RwLock::new(Vec::new()),
-          forced_provider: None,
-                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+            claude: RwLock::new(None),
+            anthropic: RwLock::new(None),
+            openai: RwLock::new(Some(openai)),
+            copilot_api: RwLock::new(None),
+            antigravity: RwLock::new(None),
+            gemini: RwLock::new(None),
+            cursor: RwLock::new(None),
+            bedrock: RwLock::new(None),
+            openrouter: RwLock::new(None),
+            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+            active_openai_compatible_profile: RwLock::new(None),
+            active: RwLock::new(ActiveProvider::OpenAI),
+            use_claude_cli: false,
+            startup_notices: RwLock::new(Vec::new()),
+            forced_provider: None,
+            routes_memo: std::sync::Mutex::new(None),
         };
 
         provider
@@ -1271,22 +1354,22 @@ fn test_multi_provider_fork_switch_request_preserves_route_identity_state_space(
         .expect("save Claude OAuth account");
         let anthropic = Arc::new(anthropic::AnthropicProvider::new());
         let provider = MultiProvider {
-          claude: RwLock::new(None),
-          anthropic: RwLock::new(Some(anthropic)),
-          openai: RwLock::new(None),
-          copilot_api: RwLock::new(None),
-          antigravity: RwLock::new(None),
-          gemini: RwLock::new(None),
-          cursor: RwLock::new(None),
-          bedrock: RwLock::new(None),
-          openrouter: RwLock::new(None),
-          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-          active_openai_compatible_profile: RwLock::new(None),
-          active: RwLock::new(ActiveProvider::Claude),
-          use_claude_cli: false,
-          startup_notices: RwLock::new(Vec::new()),
-          forced_provider: None,
-                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+            claude: RwLock::new(None),
+            anthropic: RwLock::new(Some(anthropic)),
+            openai: RwLock::new(None),
+            copilot_api: RwLock::new(None),
+            antigravity: RwLock::new(None),
+            gemini: RwLock::new(None),
+            cursor: RwLock::new(None),
+            bedrock: RwLock::new(None),
+            openrouter: RwLock::new(None),
+            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+            active_openai_compatible_profile: RwLock::new(None),
+            active: RwLock::new(ActiveProvider::Claude),
+            use_claude_cli: false,
+            startup_notices: RwLock::new(Vec::new()),
+            forced_provider: None,
+            routes_memo: std::sync::Mutex::new(None),
         };
 
         provider
@@ -1310,22 +1393,22 @@ fn test_multi_provider_fork_switch_request_preserves_route_identity_state_space(
         let _runtime_guard = rt.enter();
         crate::env::set_var("CEREBRAS_API_KEY", "test-cerebras-key");
         let provider = MultiProvider {
-          claude: RwLock::new(None),
-          anthropic: RwLock::new(None),
-          openai: RwLock::new(None),
-          copilot_api: RwLock::new(None),
-          antigravity: RwLock::new(None),
-          gemini: RwLock::new(None),
-          cursor: RwLock::new(None),
-          bedrock: RwLock::new(None),
-          openrouter: RwLock::new(None),
-          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-          active_openai_compatible_profile: RwLock::new(None),
-          active: RwLock::new(ActiveProvider::OpenAI),
-          use_claude_cli: false,
-          startup_notices: RwLock::new(Vec::new()),
-          forced_provider: None,
-                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+            claude: RwLock::new(None),
+            anthropic: RwLock::new(None),
+            openai: RwLock::new(None),
+            copilot_api: RwLock::new(None),
+            antigravity: RwLock::new(None),
+            gemini: RwLock::new(None),
+            cursor: RwLock::new(None),
+            bedrock: RwLock::new(None),
+            openrouter: RwLock::new(None),
+            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+            active_openai_compatible_profile: RwLock::new(None),
+            active: RwLock::new(ActiveProvider::OpenAI),
+            use_claude_cli: false,
+            startup_notices: RwLock::new(Vec::new()),
+            forced_provider: None,
+            routes_memo: std::sync::Mutex::new(None),
         };
         provider
             .set_model("cerebras:qwen-3-235b-a22b-instruct-2507")
@@ -1345,22 +1428,22 @@ fn test_multi_provider_fork_switch_request_preserves_route_identity_state_space(
                     .expect("openrouter provider should initialize"),
             );
             let provider = MultiProvider {
-              claude: RwLock::new(None),
-              anthropic: RwLock::new(None),
-              openai: RwLock::new(None),
-              copilot_api: RwLock::new(None),
-              antigravity: RwLock::new(None),
-              gemini: RwLock::new(None),
-              cursor: RwLock::new(None),
-              bedrock: RwLock::new(None),
-              openrouter: RwLock::new(Some(openrouter)),
-              openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-              active_openai_compatible_profile: RwLock::new(None),
-              active: RwLock::new(ActiveProvider::OpenRouter),
-              use_claude_cli: false,
-              startup_notices: RwLock::new(Vec::new()),
-              forced_provider: None,
-                    active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                claude: RwLock::new(None),
+                anthropic: RwLock::new(None),
+                openai: RwLock::new(None),
+                copilot_api: RwLock::new(None),
+                antigravity: RwLock::new(None),
+                gemini: RwLock::new(None),
+                cursor: RwLock::new(None),
+                bedrock: RwLock::new(None),
+                openrouter: RwLock::new(Some(openrouter)),
+                openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                active_openai_compatible_profile: RwLock::new(None),
+                active: RwLock::new(ActiveProvider::OpenRouter),
+                use_claude_cli: false,
+                startup_notices: RwLock::new(Vec::new()),
+                forced_provider: None,
+                routes_memo: std::sync::Mutex::new(None),
             };
 
             provider
@@ -1379,22 +1462,22 @@ fn test_deepseek_direct_profile_supports_reasoning_effort_via_multi_provider() {
     with_clean_provider_test_env(|| {
         with_env_var("DEEPSEEK_API_KEY", "test-deepseek-key", || {
             let provider = MultiProvider {
-              claude: RwLock::new(None),
-              anthropic: RwLock::new(None),
-              openai: RwLock::new(None),
-              copilot_api: RwLock::new(None),
-              antigravity: RwLock::new(None),
-              gemini: RwLock::new(None),
-              cursor: RwLock::new(None),
-              bedrock: RwLock::new(None),
-              openrouter: RwLock::new(None),
-              openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-              active_openai_compatible_profile: RwLock::new(None),
-              active: RwLock::new(ActiveProvider::OpenAI),
-              use_claude_cli: false,
-              startup_notices: RwLock::new(Vec::new()),
-              forced_provider: None,
-                    active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                claude: RwLock::new(None),
+                anthropic: RwLock::new(None),
+                openai: RwLock::new(None),
+                copilot_api: RwLock::new(None),
+                antigravity: RwLock::new(None),
+                gemini: RwLock::new(None),
+                cursor: RwLock::new(None),
+                bedrock: RwLock::new(None),
+                openrouter: RwLock::new(None),
+                openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                active_openai_compatible_profile: RwLock::new(None),
+                active: RwLock::new(ActiveProvider::OpenAI),
+                use_claude_cli: false,
+                startup_notices: RwLock::new(Vec::new()),
+                forced_provider: None,
+                routes_memo: std::sync::Mutex::new(None),
             };
 
             provider
@@ -1420,22 +1503,22 @@ fn test_forced_copilot_treats_claude_like_model_as_provider_local() {
             "test-token".to_string(),
         ));
         let provider = MultiProvider {
-          claude: RwLock::new(None),
-          anthropic: RwLock::new(None),
-          openai: RwLock::new(None),
-          copilot_api: RwLock::new(Some(copilot)),
-          antigravity: RwLock::new(None),
-          gemini: RwLock::new(None),
-          cursor: RwLock::new(None),
-          bedrock: RwLock::new(None),
-          openrouter: RwLock::new(None),
-          openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-          active_openai_compatible_profile: RwLock::new(None),
-          active: RwLock::new(ActiveProvider::Copilot),
-          use_claude_cli: false,
-          startup_notices: RwLock::new(Vec::new()),
-          forced_provider: Some(ActiveProvider::Copilot),
-                active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+            claude: RwLock::new(None),
+            anthropic: RwLock::new(None),
+            openai: RwLock::new(None),
+            copilot_api: RwLock::new(Some(copilot)),
+            antigravity: RwLock::new(None),
+            gemini: RwLock::new(None),
+            cursor: RwLock::new(None),
+            bedrock: RwLock::new(None),
+            openrouter: RwLock::new(None),
+            openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+            active_openai_compatible_profile: RwLock::new(None),
+            active: RwLock::new(ActiveProvider::Copilot),
+            use_claude_cli: false,
+            startup_notices: RwLock::new(Vec::new()),
+            forced_provider: Some(ActiveProvider::Copilot),
+            routes_memo: std::sync::Mutex::new(None),
         };
 
         provider
@@ -1456,22 +1539,22 @@ fn test_provider_specific_model_prefix_cannot_bypass_provider_lock() {
                     .expect("openrouter provider should initialize"),
             );
             let provider = MultiProvider {
-              claude: RwLock::new(None),
-              anthropic: RwLock::new(None),
-              openai: RwLock::new(None),
-              copilot_api: RwLock::new(None),
-              antigravity: RwLock::new(None),
-              gemini: RwLock::new(None),
-              cursor: RwLock::new(Some(Arc::new(cursor::CursorCliProvider::new()))),
-              bedrock: RwLock::new(None),
-              openrouter: RwLock::new(Some(openrouter)),
-              openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-              active_openai_compatible_profile: RwLock::new(None),
-              active: RwLock::new(ActiveProvider::OpenRouter),
-              use_claude_cli: false,
-              startup_notices: RwLock::new(Vec::new()),
-              forced_provider: Some(ActiveProvider::OpenRouter),
-                    active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                claude: RwLock::new(None),
+                anthropic: RwLock::new(None),
+                openai: RwLock::new(None),
+                copilot_api: RwLock::new(None),
+                antigravity: RwLock::new(None),
+                gemini: RwLock::new(None),
+                cursor: RwLock::new(Some(Arc::new(cursor::CursorCliProvider::new()))),
+                bedrock: RwLock::new(None),
+                openrouter: RwLock::new(Some(openrouter)),
+                openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                active_openai_compatible_profile: RwLock::new(None),
+                active: RwLock::new(ActiveProvider::OpenRouter),
+                use_claude_cli: false,
+                startup_notices: RwLock::new(Vec::new()),
+                forced_provider: Some(ActiveProvider::OpenRouter),
+                routes_memo: std::sync::Mutex::new(None),
             };
 
             let err = provider

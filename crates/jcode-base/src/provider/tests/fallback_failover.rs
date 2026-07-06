@@ -176,22 +176,22 @@ fn test_set_model_rejects_cross_provider_without_creds() {
     crate::env::remove_var("JCODE_FORCE_PROVIDER");
 
     let provider = MultiProvider {
-      claude: RwLock::new(None),
-      anthropic: RwLock::new(None),
-      openai: RwLock::new(None),
-      copilot_api: RwLock::new(None),
-      antigravity: RwLock::new(None),
-      gemini: RwLock::new(None),
-      cursor: RwLock::new(None),
-      bedrock: RwLock::new(None),
-      openrouter: RwLock::new(None),
-      openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-      active_openai_compatible_profile: RwLock::new(None),
-      active: RwLock::new(ActiveProvider::OpenAI),
-      use_claude_cli: false,
-      startup_notices: RwLock::new(Vec::new()),
-      forced_provider: Some(ActiveProvider::OpenAI),
-            active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+        claude: RwLock::new(None),
+        anthropic: RwLock::new(None),
+        openai: RwLock::new(None),
+        copilot_api: RwLock::new(None),
+        antigravity: RwLock::new(None),
+        gemini: RwLock::new(None),
+        cursor: RwLock::new(None),
+        bedrock: RwLock::new(None),
+        openrouter: RwLock::new(None),
+        openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+        active_openai_compatible_profile: RwLock::new(None),
+        active: RwLock::new(ActiveProvider::OpenAI),
+        use_claude_cli: false,
+        startup_notices: RwLock::new(Vec::new()),
+        forced_provider: Some(ActiveProvider::OpenAI),
+        routes_memo: std::sync::Mutex::new(None),
     };
 
     let err = provider
@@ -292,69 +292,31 @@ fn test_should_not_failover_on_generic_error() {
 #[test]
 fn test_no_provider_error_mentions_tokens_and_details() {
     let provider = MultiProvider {
-      claude: RwLock::new(None),
-      anthropic: RwLock::new(None),
-      openai: RwLock::new(None),
-      copilot_api: RwLock::new(None),
-      antigravity: RwLock::new(None),
-      gemini: RwLock::new(None),
-      cursor: RwLock::new(None),
-      bedrock: RwLock::new(None),
-      openrouter: RwLock::new(None),
-      openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-      active_openai_compatible_profile: RwLock::new(None),
-      active: RwLock::new(ActiveProvider::OpenAI),
-      use_claude_cli: false,
-      startup_notices: RwLock::new(Vec::new()),
-      forced_provider: None,
-            active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+        claude: RwLock::new(None),
+        anthropic: RwLock::new(None),
+        openai: RwLock::new(None),
+        copilot_api: RwLock::new(None),
+        antigravity: RwLock::new(None),
+        gemini: RwLock::new(None),
+        cursor: RwLock::new(None),
+        bedrock: RwLock::new(None),
+        openrouter: RwLock::new(None),
+        openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+        active_openai_compatible_profile: RwLock::new(None),
+        active: RwLock::new(ActiveProvider::OpenAI),
+        use_claude_cli: false,
+        startup_notices: RwLock::new(Vec::new()),
+        forced_provider: None,
+        routes_memo: std::sync::Mutex::new(None),
     };
-    let err = provider.no_provider_available_error(
-        &[
-            "OpenAI: rate limited".to_string(),
-            "GitHub Copilot: not configured".to_string(),
-        ],
-        None,
-    );
+    let err = provider.no_provider_available_error(&[
+        "OpenAI: rate limited".to_string(),
+        "GitHub Copilot: not configured".to_string(),
+    ]);
     let text = err.to_string();
     assert!(text.contains("No tokens/providers left"));
     assert!(text.contains("OpenAI: rate limited"));
     assert!(text.contains("GitHub Copilot: not configured"));
-}
-
-#[test]
-fn test_locked_provider_error_is_specific() {
-    let provider = MultiProvider {
-      claude: RwLock::new(None),
-      anthropic: RwLock::new(None),
-      openai: RwLock::new(None),
-      copilot_api: RwLock::new(None),
-      antigravity: RwLock::new(None),
-      gemini: RwLock::new(None),
-      cursor: RwLock::new(None),
-      bedrock: RwLock::new(None),
-      openrouter: RwLock::new(None),
-      openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-      active_openai_compatible_profile: RwLock::new(None),
-      active: RwLock::new(ActiveProvider::OpenAI),
-      use_claude_cli: false,
-      startup_notices: RwLock::new(Vec::new()),
-      forced_provider: None,
-      active_provider_locked: std::sync::atomic::AtomicBool::new(false),
-    };
-    let err = provider.no_provider_available_error(
-        &[
-            "OpenRouter: not configured".to_string(),
-            "GitHub Copilot: 403".to_string(),
-        ],
-        Some("DeepSeek"),
-    );
-    let text = err.to_string();
-    assert!(text.contains("Provider 'DeepSeek' is not available right now"));
-    assert!(text.contains("OpenRouter: not configured"));
-    assert!(text.contains("GitHub Copilot: 403"));
-    assert!(!text.contains("No tokens/providers left"));
-    assert!(!text.contains("Anthropic/OpenAI usage may be exhausted"));
 }
 
 /// Regression for issue #358: after switching to a direct OpenAI-compatible
@@ -369,22 +331,22 @@ fn test_active_compat_profile_counts_as_configured_openrouter_slot() {
         with_env_var("DEEPSEEK_API_KEY", "test-deepseek-key", || {
             crate::env::remove_var("OPENROUTER_API_KEY");
             let provider = MultiProvider {
-              claude: RwLock::new(None),
-              anthropic: RwLock::new(None),
-              openai: RwLock::new(None),
-              copilot_api: RwLock::new(None),
-              antigravity: RwLock::new(None),
-              gemini: RwLock::new(None),
-              cursor: RwLock::new(None),
-              bedrock: RwLock::new(None),
-              openrouter: RwLock::new(None),
-              openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-              active_openai_compatible_profile: RwLock::new(None),
-              active: RwLock::new(ActiveProvider::OpenRouter),
-              use_claude_cli: false,
-              startup_notices: RwLock::new(Vec::new()),
-              forced_provider: None,
-                    active_provider_locked: std::sync::atomic::AtomicBool::new(false),
+                claude: RwLock::new(None),
+                anthropic: RwLock::new(None),
+                openai: RwLock::new(None),
+                copilot_api: RwLock::new(None),
+                antigravity: RwLock::new(None),
+                gemini: RwLock::new(None),
+                cursor: RwLock::new(None),
+                bedrock: RwLock::new(None),
+                openrouter: RwLock::new(None),
+                openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
+                active_openai_compatible_profile: RwLock::new(None),
+                active: RwLock::new(ActiveProvider::OpenRouter),
+                use_claude_cli: false,
+                startup_notices: RwLock::new(Vec::new()),
+                forced_provider: None,
+                routes_memo: std::sync::Mutex::new(None),
             };
 
             // Activate a direct compat profile exactly like
@@ -409,53 +371,4 @@ fn test_active_compat_profile_counts_as_configured_openrouter_slot() {
             );
         })
     });
-}
-
-#[test]
-fn test_lock_active_provider_disables_cross_provider_failover() {
-    let runtime = enter_test_runtime();
-    let _enter = runtime.enter();
-    let provider = MultiProvider {
-        claude: RwLock::new(None),
-        anthropic: RwLock::new(None),
-        openai: RwLock::new(None),
-        copilot_api: RwLock::new(None),
-        antigravity: RwLock::new(None),
-        gemini: RwLock::new(None),
-        cursor: RwLock::new(None),
-        bedrock: RwLock::new(None),
-        openrouter: RwLock::new(None),
-        openai_compatible_profiles: RwLock::new(std::collections::HashMap::new()),
-        active_openai_compatible_profile: RwLock::new(None),
-        active: RwLock::new(ActiveProvider::OpenAI),
-        use_claude_cli: false,
-        startup_notices: RwLock::new(Vec::new()),
-        forced_provider: None,
-        active_provider_locked: std::sync::atomic::AtomicBool::new(false),
-    };
-    provider.lock_active_provider();
-	let result = runtime.block_on(provider.complete(
-		&[],
-		&[],
-		"you are a helpful assistant",
-		None,
-	));
-	let err = match result {
-		Err(e) => e,
-		Ok(_) => panic!("locked provider should fail when not configured"),
-	};
-	let text = err.to_string();
-	assert!(
-		text.contains("Details: OpenAI: not configured"),
-		"expected OpenAI-specific detail, got: {text}"
-	);
-	let after_details = text.split("Details:").nth(1).unwrap_or("");
-	assert!(
-		!after_details.contains("Claude"),
-		"locked provider should not list Claude fallback in details: {text}"
-	);
-	assert!(
-		!after_details.contains("OpenRouter"),
-		"locked provider should not list OpenRouter fallback in details: {text}"
-	);
 }

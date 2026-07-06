@@ -273,6 +273,35 @@ pub fn effort_switch_keys_label() -> String {
     )
 }
 
+/// Display label for the "next model" switch chord, or `None` when the binding
+/// is disabled. Used by the learned-keybinding hint registry.
+pub(crate) fn model_switch_next_label() -> Option<String> {
+    let cfg = config();
+    let raw = cfg.keybindings.model_switch_next.trim();
+    if raw.is_empty() || is_disabled(raw) {
+        return None;
+    }
+    Some(format_binding(&load_model_switch_keys().next))
+}
+
+/// Display label for the effort-increase chord, or `None` when disabled.
+pub(crate) fn effort_increase_label() -> Option<String> {
+    let cfg = config();
+    let raw = cfg.keybindings.effort_increase.trim();
+    if raw.is_empty() || is_disabled(raw) {
+        return None;
+    }
+    Some(format_binding(&load_effort_switch_keys().increase))
+}
+
+/// Display label for the alignment (centered-mode) toggle, or `None` when unbound.
+pub(crate) fn centered_toggle_label() -> Option<String> {
+    load_centered_toggle_key()
+        .toggle
+        .as_ref()
+        .map(format_binding)
+}
+
 pub fn load_centered_toggle_key() -> CenteredToggleKeys {
     let cfg = config();
 
@@ -297,10 +326,17 @@ pub struct ToggleBinding {
 
 impl ToggleBinding {
     fn load(raw: &str, default_letter: char) -> Self {
-        let default = KeyBinding {
-            code: KeyCode::Char(default_letter),
-            modifiers: KeyModifiers::ALT,
-        };
+        Self::load_with_default(
+            raw,
+            KeyBinding {
+                code: KeyCode::Char(default_letter),
+                modifiers: KeyModifiers::ALT,
+            },
+        )
+    }
+
+    /// Load a toggle binding from an explicit default chord.
+    fn load_with_default(raw: &str, default: KeyBinding) -> Self {
         let default_label = format_binding(&default);
         let (binding, _) = parse_optional(raw, default, &default_label);
         let macos_option_letter = binding.as_ref().and_then(|b| {
@@ -330,6 +366,11 @@ impl ToggleBinding {
         }
         false
     }
+
+    /// The configured chord, or `None` when the toggle is disabled.
+    pub fn binding(&self) -> Option<&KeyBinding> {
+        self.binding.as_ref()
+    }
 }
 
 /// All configurable pane / mode toggle keybindings.
@@ -353,7 +394,18 @@ pub fn load_toggle_keys() -> ToggleKeys {
         typing_scroll_lock: ToggleBinding::load(&cfg.keybindings.typing_scroll_lock_toggle, 's'),
         diff_mode_cycle: ToggleBinding::load(&cfg.keybindings.diff_mode_cycle, 'g'),
         info_widget: ToggleBinding::load(&cfg.keybindings.info_widget_toggle, 'i'),
-        swarm_panel_focus: ToggleBinding::load(&cfg.keybindings.swarm_panel_focus, 'w'),
+        swarm_panel_focus: ToggleBinding::load_with_default(
+            &cfg.keybindings.swarm_panel_focus,
+            swarm_panel_focus_default(),
+        ),
+    }
+}
+
+/// The default swarm-panel focus chord: Alt+N.
+fn swarm_panel_focus_default() -> KeyBinding {
+    KeyBinding {
+        code: KeyCode::Char('n'),
+        modifiers: KeyModifiers::ALT,
     }
 }
 
@@ -369,16 +421,12 @@ pub(crate) fn side_panel_toggle_key_label() -> &'static str {
 }
 
 /// Human-friendly label for the configured swarm-panel focus chord (e.g.
-/// "Alt+W"), used in the inline swarm strip's enter-controls hint.
+/// "Alt+N"), used in the inline swarm strip's enter-controls hint.
 pub(crate) fn swarm_panel_focus_key_label() -> String {
     let cfg = config();
-    let default = KeyBinding {
-        code: KeyCode::Char('w'),
-        modifiers: KeyModifiers::ALT,
-    };
+    let default = swarm_panel_focus_default();
     let default_label = format_binding(&default);
-    let (binding, _) =
-        parse_optional(&cfg.keybindings.swarm_panel_focus, default, &default_label);
+    let (binding, _) = parse_optional(&cfg.keybindings.swarm_panel_focus, default, &default_label);
     match binding {
         Some(b) => format_binding(&b),
         None => default_label,

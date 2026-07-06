@@ -366,8 +366,8 @@ async fn ensure_oauth_preflight(
     Ok(())
 }
 
-/// Default model. `claude-fable-5` was retired by Anthropic (it 404s), so the
-/// default is the current flagship.
+/// Default model. Kept on Opus 4.8; `claude-fable-5` is available again after
+/// its brief retirement and can be selected explicitly.
 const DEFAULT_MODEL: &str = "claude-opus-4-8";
 
 /// API version header
@@ -386,6 +386,7 @@ const DEFAULT_MAX_TOKENS: u32 = 32_768;
 
 /// Available models
 pub const AVAILABLE_MODELS: &[&str] = &[
+    "claude-fable-5",
     "claude-opus-4-8",
     "claude-opus-4-6",
     "claude-opus-4-6[1m]",
@@ -581,12 +582,11 @@ impl AnthropicProvider {
 
     fn model_supports_output_effort(model: &str) -> bool {
         let model = Self::normalized_model_key(model);
-        // NOTE: `claude-fable-5` is intentionally excluded. Despite being listed
-        // with effort levels in `GET /v1/models`, the live Messages API rejects
-        // an `output_config` effort with a 400 ("This model does not support the
-        // effort parameter."), just as it rejects an adaptive `thinking` block.
-        // Fable 5 is effectively a non-reasoning model, so it must send neither.
-        model.contains("claude-mythos")
+        // `claude-fable-5` initially rejected effort/thinking during its preview
+        // (400s), but the released model accepts `output_config` effort
+        // low/medium/high/xhigh/max (verified live 2026-07-01).
+        model.contains("claude-fable-5")
+            || model.contains("claude-mythos")
             || model.contains("claude-opus-4-8")
             || model.contains("claude-opus-4-7")
             || model.contains("claude-opus-4-6")
@@ -596,11 +596,10 @@ impl AnthropicProvider {
 
     fn model_supports_adaptive_thinking(model: &str) -> bool {
         let model = Self::normalized_model_key(model);
-        // NOTE: `claude-fable-5` is intentionally excluded. The Messages API
-        // rejects an explicit adaptive `thinking` block with a 400 ("adaptive
-        // thinking is not supported on this model"). See
-        // `model_supports_output_effort` for the matching effort restriction.
-        model.contains("claude-mythos")
+        // The released `claude-fable-5` accepts `thinking: {type: adaptive}`
+        // (manual `enabled` budgets still 400; verified live 2026-07-01).
+        model.contains("claude-fable-5")
+            || model.contains("claude-mythos")
             || model.contains("claude-opus-4-8")
             || model.contains("claude-opus-4-7")
             || model.contains("claude-opus-4-6")
@@ -616,9 +615,18 @@ impl AnthropicProvider {
 
     fn model_supports_xhigh_effort(model: &str) -> bool {
         let model = Self::normalized_model_key(model);
-        // `claude-fable-5` is excluded: it does not accept the effort parameter
-        // at all (see `model_supports_output_effort`).
-        model.contains("claude-opus-4-8") || model.contains("claude-opus-4-7")
+        model.contains("claude-fable-5")
+            || model.contains("claude-opus-4-8")
+            || model.contains("claude-opus-4-7")
+    }
+
+    /// `max` effort ("absolute maximum capability with no constraints on token
+    /// spending") is a real API level on the `output_config` effort models,
+    /// except Claude Opus 4.5 where manual thinking keeps `max` as an alias for
+    /// the strongest supported level.
+    fn model_supports_max_effort(model: &str) -> bool {
+        Self::model_supports_output_effort(model)
+            && !Self::normalized_model_key(model).contains("claude-opus-4-5")
     }
 
     fn model_supports_reasoning_effort(model: &str) -> bool {
@@ -648,7 +656,18 @@ impl AnthropicProvider {
     }
 
     fn actual_effort_for_model(model: &str, effort: &str) -> String {
-        if effort == "max" || crate::prompt::is_swarm_effort(effort) {
+        if crate::prompt::is_swarm_effort(effort) {
+            // Swarm rungs sit above `max` on the ladder and mean "strongest
+            // reasoning the model supports", so cycling upward never lowers
+            // the wire effort.
+            if Self::model_supports_max_effort(model) {
+                "max".to_string()
+            } else if Self::model_supports_xhigh_effort(model) {
+                "xhigh".to_string()
+            } else {
+                "high".to_string()
+            }
+        } else if effort == "max" && !Self::model_supports_max_effort(model) {
             if Self::model_supports_xhigh_effort(model) {
                 "xhigh".to_string()
             } else {
@@ -677,12 +696,19 @@ impl AnthropicProvider {
 
     /// Default reasoning effort to apply when the user has *not* explicitly
     /// configured one. Claude Opus models are reasoning-heavy flagships, so we
-    /// default them to their strongest supported thinking level (`xhigh` on
-    /// Opus 4.7/4.8, clamped to `high` on older Opus). Every other model keeps
-    /// the model's own default (no forced effort) so cheaper models stay cheap.
+    /// default them to `xhigh` where supported (Opus 4.7/4.8), clamped to
+    /// `high` on older Opus. Deliberately NOT `max`: Anthropic recommends
+    /// `xhigh` as the starting point for coding/agentic work and reserves
+    /// `max` for frontier problems (it costs much more and can overthink).
+    /// Every other model keeps the model's own default (no forced effort) so
+    /// cheaper models stay cheap.
     fn default_reasoning_effort_for_model(model: &str) -> Option<String> {
         if Self::normalized_model_key(model).contains("claude-opus") {
-            Some(Self::actual_effort_for_model(model, "max"))
+            Some(if Self::model_supports_xhigh_effort(model) {
+                "xhigh".to_string()
+            } else {
+                "high".to_string()
+            })
         } else {
             None
         }
@@ -1205,7 +1231,9 @@ impl Provider for AnthropicProvider {
             );
         }
         if normalized.as_deref() == Some("xhigh") && !Self::model_supports_xhigh_effort(&model) {
-            anyhow::bail!("Anthropic xhigh effort is only supported for Claude Opus 4.7 models");
+            anyhow::bail!(
+                "Anthropic xhigh effort is only supported for Claude Opus 4.7/4.8 and Fable 5 models"
+            );
         }
         let normalized = normalized.map(|effort| Self::store_effort_for_model(&model, &effort));
         match self.reasoning_effort.write() {
@@ -1225,11 +1253,15 @@ impl Provider for AnthropicProvider {
         if !Self::model_supports_reasoning_effort(&model) {
             return vec![];
         }
+        let mut efforts = vec!["none", "low", "medium", "high"];
         if Self::model_supports_xhigh_effort(&model) {
-            vec!["none", "low", "medium", "high", "xhigh", "swarm", "swarm-deep"]
-        } else {
-            vec!["none", "low", "medium", "high", "swarm", "swarm-deep"]
+            efforts.push("xhigh");
         }
+        if Self::model_supports_max_effort(&model) {
+            efforts.push("max");
+        }
+        efforts.extend(["swarm", "swarm-deep"]);
+        efforts
     }
 
     fn service_tier(&self) -> Option<String> {
@@ -1827,15 +1859,24 @@ async fn stream_response(
         ..SseStreamState::default()
     };
 
-    const SSE_CHUNK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(180);
+    // Idle timeout between streamed chunks. Configurable via
+    // `[provider] stream_idle_timeout_secs` / `JCODE_STREAM_IDLE_TIMEOUT_SECS`
+    // so slow reasoning models don't trip a premature timeout (issue #434).
+    let sse_chunk_timeout = crate::provider::stream_idle_timeout();
 
     loop {
-        let chunk = match tokio::time::timeout(SSE_CHUNK_TIMEOUT, stream.next()).await {
+        let chunk = match tokio::time::timeout(sse_chunk_timeout, stream.next()).await {
             Ok(Some(chunk_result)) => chunk_result.context("Error reading stream chunk")?,
             Ok(None) => break, // stream ended normally
             Err(_) => {
-                crate::logging::warn("Anthropic SSE stream timed out (no data for 180s)");
-                anyhow::bail!("Stream read timeout: no data received for 180 seconds");
+                crate::logging::warn(&format!(
+                    "Anthropic SSE stream timed out (no data for {}s)",
+                    sse_chunk_timeout.as_secs()
+                ));
+                anyhow::bail!(
+                    "Stream read timeout: no data received for {} seconds",
+                    sse_chunk_timeout.as_secs()
+                );
             }
         };
         let chunk_str = String::from_utf8_lossy(&chunk);
@@ -1942,8 +1983,9 @@ fn is_reasoning_unsupported_error(error_str: &str) -> bool {
 
 /// Models that have been retired and must never be chosen as a fallback target
 /// (the server 404s them, so picking one just loops). Matched as a substring of
-/// the normalized id so dated variants are covered too.
-const RETIRED_ANTHROPIC_MODEL_MARKERS: &[&str] = &["claude-fable", "claude-mythos"];
+/// the normalized id so dated variants are covered too. `claude-fable` was
+/// briefly on this list while retired, but the model is live again.
+const RETIRED_ANTHROPIC_MODEL_MARKERS: &[&str] = &["claude-mythos"];
 
 fn anthropic_model_is_retired(model: &str) -> bool {
     let normalized = AnthropicProvider::normalized_model_key(model);

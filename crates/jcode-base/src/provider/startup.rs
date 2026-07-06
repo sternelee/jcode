@@ -312,6 +312,7 @@ impl MultiProvider {
             startup_notices: RwLock::new(Vec::new()),
             active_provider_locked: std::sync::atomic::AtomicBool::new(false),
             forced_provider,
+            routes_memo: Mutex::new(None),
         };
 
         if let Some(model) = provider_state.default_model() {

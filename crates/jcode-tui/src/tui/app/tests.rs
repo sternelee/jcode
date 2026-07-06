@@ -25,6 +25,7 @@ include!("tests/remote_events_reload_02/part_02.rs");
 include!("tests/remote_events_reload_03/part_01.rs");
 include!("tests/remote_events_reload_03/part_02.rs");
 include!("tests/remote_events_reload_04.rs");
+include!("tests/remote_events_reload_05.rs");
 include!("tests/scroll_copy_01/part_01.rs");
 include!("tests/scroll_copy_01/part_02.rs");
 include!("tests/scroll_copy_02/part_01.rs");
@@ -36,6 +37,7 @@ include!("tests/onboarding_eval.rs");
 include!("tests/onboarding_sim.rs");
 include!("tests/reasoning_region.rs");
 include!("tests/smoothness_benchmark.rs");
+include!("tests/hotkey_feedback_e2e.rs");
 
 #[test]
 fn kv_cache_signature_prefix_match_allows_appended_messages() {
@@ -576,6 +578,43 @@ fn skills_command_marks_active_skill_in_remote_mode() {
     assert!(
         content.contains("/firefox-browser [installed]"),
         "{content}"
+    );
+}
+
+/// Regression for issue #431: skills added on disk after startup (e.g. by the
+/// agent-side `skill_manage reload_all`, which only refreshes the server
+/// process registry) must show up in `/skills` without a session restart.
+#[test]
+fn skills_command_refreshes_registry_from_disk_before_listing() {
+    let mut app = create_test_app();
+
+    // Point the session at a fresh project dir and add a project-local skill
+    // after the app (and its skill snapshot) was created.
+    let temp = tempfile::tempdir().expect("tempdir");
+    let skill_dir = temp.path().join(".jcode").join("skills").join("late-skill");
+    std::fs::create_dir_all(&skill_dir).expect("create skill dir");
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: late-skill\ndescription: Added after startup\n---\n# Late skill\n",
+    )
+    .expect("write SKILL.md");
+    app.session.working_dir = Some(temp.path().to_string_lossy().to_string());
+
+    assert!(
+        app.current_skills_snapshot().get("late-skill").is_none(),
+        "snapshot must start without the new skill for this regression test"
+    );
+
+    assert!(super::state_ui::handle_info_command(&mut app, "/skills"));
+    let content = app.display_messages().last().unwrap().content.clone();
+
+    assert!(
+        content.contains("- /late-skill"),
+        "expected late-added skill in /skills output:\n{content}"
+    );
+    assert!(
+        app.current_skills_snapshot().get("late-skill").is_some(),
+        "registry snapshot must be synced so /late-skill invocations resolve"
     );
 }
 

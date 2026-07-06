@@ -132,6 +132,7 @@ mod transcript_routing_tests {
             model: None,
             provider_key: None,
             todo_progress: None,
+            todo_items: Vec::new(),
         }
     }
 

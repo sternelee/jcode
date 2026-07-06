@@ -56,8 +56,7 @@ pub fn is_active_status(status: &str) -> bool {
 }
 
 /// Frames for the inline status spinner used by active agents on the strip.
-pub const STRIP_SPINNER_FRAMES: [&str; 10] =
-    ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+pub const STRIP_SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /// A glyph summarizing a member's lifecycle status. Active members (running,
 /// thinking, streaming) animate via the spinner frame; terminal states get a
@@ -127,19 +126,23 @@ pub struct GalleryMember {
     /// Optional todo progress as (completed, total) for the agent's plan/todos.
     /// Rendered as "C/T" next to the agent on the strip when present.
     pub todo: Option<(u32, u32)>,
+    /// Compact todo entries (content, status) for the focused detail view.
+    /// Status is one of "pending", "in_progress", "completed".
+    pub todo_items: Vec<GalleryTodo>,
+}
+
+/// One compact todo entry shown in the focused swarm detail view.
+#[derive(Clone, Debug)]
+pub struct GalleryTodo {
+    pub content: String,
+    /// "pending", "in_progress", or "completed".
+    pub status: String,
 }
 
 /// Convert members into gallery tiles, sorted for stable placement
 /// (coordinator first, worktree manager next, then by `sort_key`).
 pub fn members_to_tiles(members: &[GalleryMember]) -> Vec<SwarmTile> {
-    let mut sorted: Vec<&GalleryMember> = members.iter().collect();
-    sorted.sort_by(|a, b| {
-        role_rank(a.role.as_deref())
-            .cmp(&role_rank(b.role.as_deref()))
-            .then_with(|| a.sort_key.cmp(&b.sort_key))
-    });
-
-    sorted
+    sort_members_for_display(members)
         .into_iter()
         .map(|m| {
             let mut tile =
@@ -176,7 +179,13 @@ pub fn render_gallery(
         max_height: max_height.saturating_sub(1).max(4),
         ..Default::default()
     };
-    render_swarm_gallery(&tiles, width, &cfg, Some(header))
+    let mut out = render_swarm_gallery(&tiles, width, &cfg, Some(header));
+    // The grid cells are width-bounded already, but the header (and any
+    // degenerate-width artifacts) are not. Enforce the bound uniformly.
+    for line in &mut out {
+        clamp_line_to_width(line, width);
+    }
+    out
 }
 
 /// Render the swarm panel as a compact list of managed agents plus a detail
@@ -252,12 +261,18 @@ pub fn render_swarm_panel(
         out.extend(detail);
     }
 
+    // Hard bound: the header carries a fixed hint and list rows budget by
+    // display width, but never let any line exceed the panel width.
+    for line in &mut out {
+        clamp_line_to_width(line, width);
+    }
+
     out
 }
 
 /// A key/label pair for the swarm strip hint line.
 pub struct SwarmStripHint {
-    /// The key chord to show, e.g. "alt+w" or "j/k".
+    /// The key chord to show, e.g. "alt+n" or "j/k".
     pub key: String,
     /// What it does, e.g. "select".
     pub label: String,
@@ -268,14 +283,17 @@ pub struct SwarmStripHint {
 /// - Unfocused: a single line of agent "chips" (status glyph + name + optional
 ///   `done/total` todo count), colored by status, plus a right-aligned
 ///   `M/N active` readout. A trailing hint shows how to enter the controls.
-/// - Focused: the chips line (selected agent highlighted) + a one-line inline
-///   render of the hovered agent's latest output + a keybinding hint line.
+/// - Focused: the chips line (selected agent highlighted) + an expanded detail
+///   viewport for the hovered agent (transcript tail + todo list, bounded by
+///   `max_height`) + a keybinding hint line.
 ///
+/// `max_height` is the total line budget for the strip when focused (chips +
+/// detail + hints). Small budgets degrade to a single inline detail line.
 /// `spinner_frame` animates the glyph for active agents. Returns empty when
 /// there are no members or no width.
 ///
 /// ```text
-/// 🐝 swarm  ⠙researcher 8/16  ✓reviewer            2/3 active   ctrl+t controls
+/// 🐝 swarm  · ⠙ researcher 8/16  ✓ reviewer         2/3 active · ctrl+t controls
 /// ```
 pub fn render_swarm_strip(
     members: &[GalleryMember],
@@ -285,6 +303,7 @@ pub fn render_swarm_strip(
     enter_hint: Option<&str>,
     spinner_frame: usize,
     width: usize,
+    max_height: usize,
 ) -> Vec<Line<'static>> {
     if members.is_empty() || width < 8 {
         return Vec::new();
@@ -296,126 +315,215 @@ pub fn render_swarm_strip(
         .filter(|m| is_active_status(&m.status))
         .count();
 
-    // ---- Chips line ----
-    let mut spans: Vec<Span<'static>> = vec![
+    // ---- Leading "🐝 swarm" label ----
+    let lead: Vec<Span<'static>> = vec![
         Span::styled("🐝 ", Style::default().fg(rgb(255, 200, 100))),
         Span::styled("swarm", Style::default().fg(rgb(160, 160, 170))),
-        Span::raw("  "),
+        Span::styled("  · ", Style::default().fg(rgb(80, 80, 90))),
     ];
+    let lead_w: usize = lead.iter().map(|s| disp_w(&s.content)).sum();
 
-    // Right side: "M/N active" plus, when unfocused, the enter-controls hint.
+    // ---- Right tail: "M/N active" plus, when unfocused, the controls hint.
+    // Degrade gracefully on narrow widths: drop the hint first, then the tally,
+    // so the chips never get pushed past the line width.
     let tally = format!("{active}/{} active", members.len());
-    let right_tail = match (focused, enter_hint) {
-        (false, Some(hint)) => format!("{tally}   {hint}"),
-        _ => tally.clone(),
-    };
-    let right_w = right_tail.chars().count();
+    let tally_w = disp_w(&tally);
+    let hint_text = if focused { None } else { enter_hint };
+    let hint_sep = " · ";
+    let gap = 2usize; // minimum gap between chips and the right tail
+    let hint_w = hint_text.map(|h| disp_w(h) + disp_w(hint_sep)).unwrap_or(0);
 
-    // Build chips: "<glyph><name>[ done/total]".
+    // ---- Chips: "<glyph> <name>[ done/total]" ----
     struct Chip {
-        text: String,
+        glyph: String,
+        name: String,
+        todo: Option<String>,
         color: Color,
         is_sel: bool,
     }
     let chips: Vec<Chip> = ordered
         .iter()
         .enumerate()
-        .map(|(idx, m)| {
-            let is_sel = idx == selected;
-            let glyph = status_glyph(&m.status, spinner_frame);
-            let todo = m
-                .todo
-                .map(|(done, total)| format!(" {done}/{total}"))
-                .unwrap_or_default();
-            Chip {
-                text: format!("{glyph}{}{todo}", m.label),
-                color: status_accent(&m.status),
-                is_sel,
-            }
+        .map(|(idx, m)| Chip {
+            glyph: status_glyph(&m.status, spinner_frame).to_string(),
+            name: m.label.clone(),
+            todo: m.todo.map(|(done, total)| format!("{done}/{total}")),
+            color: status_accent(&m.status),
+            is_sel: idx == selected,
         })
         .collect();
+    let chip_w = |c: &Chip| -> usize {
+        disp_w(&c.glyph) + 1 + disp_w(&c.name) + c.todo.as_ref().map(|t| disp_w(t) + 1).unwrap_or(0)
+    };
 
-    // Width budget for chips: total minus the leading "🐝 swarm  " and the
-    // right tail plus a gap.
-    let lead_w = 3 + 5 + 2; // bee + "swarm" + two spaces
-    let chips_budget = width.saturating_sub(lead_w + right_w + 2);
-    let mut used = 0usize;
+    // Fit as many chips as possible into `budget`, collapsing overflow into a
+    // "+N" marker that is itself budgeted so the line can never exceed `width`.
+    // Returns (chips shown, columns used including any "+N" marker).
+    const CHIP_SEP: &str = "  ";
+    let sep_w = disp_w(CHIP_SEP);
+    let fit_chips = |budget: usize| -> (usize, usize) {
+        let mut shown = 0usize;
+        let mut acc = 0usize;
+        for (i, chip) in chips.iter().enumerate() {
+            let s = if i == 0 { 0 } else { sep_w };
+            let w = chip_w(chip);
+            // Reserve room for a "+N" marker when chips would remain hidden.
+            let remaining_after = chips.len() - i - 1;
+            let reserve = if remaining_after > 0 {
+                1 + 1 + count_digits(remaining_after)
+            } else {
+                0
+            };
+            if acc + s + w + reserve > budget {
+                break;
+            }
+            acc += s + w;
+            shown += 1;
+        }
+        let hidden = chips.len() - shown;
+        if hidden > 0 {
+            acc += 1 + 1 + count_digits(hidden);
+        }
+        (shown, acc)
+    };
+
+    // Pick the richest right tail that still leaves room for the chips:
+    // tally + hint, then tally only, then no tail at all.
+    let mut tail_configs: Vec<usize> = Vec::new();
+    if hint_w > 0 {
+        tail_configs.push(tally_w + hint_w);
+    }
+    tail_configs.push(tally_w);
+    tail_configs.push(0);
     let mut shown = 0usize;
-    for (i, chip) in chips.iter().enumerate() {
-        let sep_w = if i == 0 { 0 } else { 1 };
-        let chip_w = chip.text.chars().count();
-        if used + sep_w + chip_w > chips_budget && shown > 0 {
+    let mut chips_used = 0usize;
+    let mut tail_w = 0usize;
+    for tw in tail_configs {
+        let reserved = if tw > 0 { tw + gap } else { 0 };
+        let budget = match width.checked_sub(lead_w + reserved) {
+            Some(b) => b,
+            None => continue,
+        };
+        let (s, u) = fit_chips(budget);
+        if s > 0 || tw == 0 {
+            shown = s;
+            chips_used = u;
+            tail_w = tw;
             break;
         }
-        if i > 0 {
-            spans.push(Span::raw(" "));
-            used += 1;
-        }
-        let mut style = Style::default().fg(chip.color);
-        if chip.is_sel && focused {
-            style = style.add_modifier(Modifier::BOLD | Modifier::REVERSED);
-        } else if chip.is_sel {
-            style = style.add_modifier(Modifier::BOLD);
-        }
-        spans.push(Span::styled(chip.text.clone(), style));
-        used += chip_w;
-        shown += 1;
     }
-    let hidden = chips.len().saturating_sub(shown);
-    if hidden > 0 {
-        let more = format!(" +{hidden}");
-        let more_w = more.chars().count();
-        spans.push(Span::styled(more, Style::default().fg(rgb(140, 140, 150))));
-        used += more_w;
+    let show_hint = tail_w > tally_w;
+    let show_tally = tail_w > 0;
+
+    let mut spans: Vec<Span<'static>> = lead;
+    let used: usize;
+    if shown == 0 && !chips.is_empty() {
+        // Degenerate width: show the first chip truncated.
+        let budget = width.saturating_sub(lead_w + if show_tally { tail_w + gap } else { 0 });
+        let c = &chips[0];
+        let avail = budget.saturating_sub(disp_w(&c.glyph) + 1);
+        let name = truncate_label(&c.name, avail.max(1));
+        let style = Style::default().fg(c.color);
+        spans.push(Span::styled(format!("{} ", c.glyph), style));
+        spans.push(Span::styled(name.clone(), style));
+        used = disp_w(&c.glyph) + 1 + disp_w(&name);
+    } else {
+        for (i, chip) in chips.iter().take(shown).enumerate() {
+            if i > 0 {
+                spans.push(Span::raw(CHIP_SEP));
+            }
+            let mut style = Style::default().fg(chip.color);
+            if chip.is_sel && focused {
+                style = style.add_modifier(Modifier::BOLD | Modifier::REVERSED);
+            } else if chip.is_sel {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            spans.push(Span::styled(format!("{} {}", chip.glyph, chip.name), style));
+            if let Some(todo) = &chip.todo {
+                spans.push(Span::styled(
+                    format!(" {todo}"),
+                    Style::default().fg(rgb(130, 130, 140)),
+                ));
+            }
+        }
+        let hidden = chips.len().saturating_sub(shown);
+        if hidden > 0 {
+            spans.push(Span::styled(
+                format!(" +{hidden}"),
+                Style::default().fg(rgb(140, 140, 150)),
+            ));
+        }
+        used = chips_used;
     }
 
-    // Right-align the tail (tally [+ enter hint]).
-    let consumed = lead_w + used;
-    let pad = width.saturating_sub(consumed + right_w).max(1);
-    spans.push(Span::raw(" ".repeat(pad)));
-    spans.push(Span::styled(
-        tally,
-        Style::default().fg(if active > 0 {
-            rgb(255, 200, 100)
-        } else {
-            rgb(120, 120, 130)
-        }),
-    ));
-    if !focused && let Some(hint) = enter_hint {
-        spans.push(Span::styled(
-            format!("   {hint}"),
-            Style::default().fg(rgb(110, 130, 170)),
-        ));
+    // ---- Right-align the tail (tally [+ hint]) ----
+    if show_tally {
+        let consumed = lead_w + used;
+        if consumed + gap + tail_w <= width {
+            let pad = width - consumed - tail_w;
+            spans.push(Span::raw(" ".repeat(pad)));
+            spans.push(Span::styled(
+                tally,
+                Style::default().fg(if active > 0 {
+                    rgb(255, 200, 100)
+                } else {
+                    rgb(120, 120, 130)
+                }),
+            ));
+            if show_hint && let Some(hint) = hint_text {
+                spans.push(Span::styled(
+                    hint_sep.to_string(),
+                    Style::default().fg(rgb(80, 80, 90)),
+                ));
+                spans.push(Span::styled(
+                    hint.to_string(),
+                    Style::default().fg(rgb(110, 130, 170)),
+                ));
+            }
+        }
     }
 
     let mut out = vec![Line::from(spans)];
 
-    // ---- Focused extras: inline detail render + hint line ----
+    // ---- Focused extras: expanded detail viewport + hint line ----
     if focused {
-        // Inline one-line render of the hovered agent's latest output.
+        // Budget: chips line (already emitted) + hint line are fixed; the
+        // detail viewport gets the rest. Degrade to one inline line when the
+        // budget is too small for the expanded view.
+        let hint_rows = usize::from(!hints.is_empty());
+        let detail_budget = max_height.saturating_sub(1 + hint_rows);
         if let Some(m) = ordered.get(selected) {
-            let detail = m
-                .body
-                .iter()
-                .rev()
-                .find(|l| !l.trim().is_empty() && !l.trim_start().starts_with('·'))
-                .cloned()
-                .unwrap_or_else(|| format!("[{}]", m.status));
-            let prefix = format!("   {} ", status_glyph(&m.status, spinner_frame));
-            let prefix_w = prefix.chars().count();
-            let body = truncate_label(&detail, width.saturating_sub(prefix_w));
-            out.push(Line::from(vec![
-                Span::styled(prefix, Style::default().fg(status_accent(&m.status))),
-                Span::styled(body, Style::default().fg(rgb(180, 180, 190))),
-            ]));
+            if detail_budget >= 4 {
+                out.extend(render_hovered_detail(
+                    m,
+                    spinner_frame,
+                    width,
+                    detail_budget,
+                ));
+            } else {
+                // Compact fallback: a single inline line of the latest output.
+                let detail = m
+                    .body
+                    .iter()
+                    .rev()
+                    .find(|l| !l.trim().is_empty() && !l.trim_start().starts_with('·'))
+                    .cloned()
+                    .unwrap_or_else(|| format!("[{}]", m.status));
+                let prefix = format!("   {} ", status_glyph(&m.status, spinner_frame));
+                let prefix_w = prefix.chars().count();
+                let body = truncate_label(&detail, width.saturating_sub(prefix_w));
+                out.push(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(status_accent(&m.status))),
+                    Span::styled(body, Style::default().fg(rgb(180, 180, 190))),
+                ]));
+            }
         }
 
         if !hints.is_empty() {
             let mut hint_spans: Vec<Span<'static>> = vec![Span::raw("   ")];
             for (i, h) in hints.iter().enumerate() {
                 if i > 0 {
-                    hint_spans
-                        .push(Span::styled(" · ", Style::default().fg(rgb(80, 80, 90))));
+                    hint_spans.push(Span::styled(" · ", Style::default().fg(rgb(80, 80, 90))));
                 }
                 hint_spans.push(Span::styled(
                     h.key.clone(),
@@ -442,10 +550,423 @@ pub fn render_swarm_strip(
         }
     }
 
+    // Hard bound: no matter how the budgeting above worked out, never emit a
+    // line wider than the strip (degenerate widths, wide glyphs, etc.).
+    for line in &mut out {
+        clamp_line_to_width(line, width);
+    }
+
     out
 }
 
-/// Header line for the list+detail swarm panel. Adds a focus hint when focused.
+/// Render the swarm dock: a narrow, vertical agent list sized for the
+/// info-widget margins (~20-38 inner columns).
+///
+/// Layout (all lines bounded to `width`, at most `max_height` lines):
+/// ```text
+/// 🐝 2/4 active · plan 3/7 · ⚠1
+/// ▸ ★ coordinator      ⠋ 4/9
+///   │ ⚙ bash cargo build 47s
+///   │ carving gallery band
+///   researcher         ⠙ 2/5
+///   reviewer           ✓
+///   +2 more
+///   j/k · enter · esc
+/// ```
+///
+/// The selected agent (clamped into range) gets a short live tail from its
+/// `body` directly beneath its row: up to 2 lines, or 4 when `focused`. When
+/// not all agents fit, the list windows around the selection and a `+N more`
+/// line reports the rest. The hint line appears only when `focused`.
+pub fn render_swarm_dock(
+    members: &[GalleryMember],
+    selected: usize,
+    focused: bool,
+    plan: Option<(u32, u32)>,
+    spinner_frame: usize,
+    width: usize,
+    max_height: usize,
+) -> Vec<Line<'static>> {
+    if members.is_empty() || width < 12 || max_height < 2 {
+        return Vec::new();
+    }
+    let ordered = sort_members_for_display(members);
+    let selected = selected.min(ordered.len() - 1);
+    let active = members
+        .iter()
+        .filter(|m| is_active_status(&m.status))
+        .count();
+    let attention = members
+        .iter()
+        .filter(|m| {
+            matches!(
+                m.status.as_str(),
+                "blocked" | "failed" | "crashed" | "waiting_network"
+            )
+        })
+        .count();
+
+    let mut out: Vec<Line<'static>> = Vec::new();
+    out.push(dock_header(members.len(), active, attention, plan, width));
+
+    // ---- Line budget: header (emitted) + rows + selected tail + hints ----
+    let hint_rows = usize::from(focused);
+    let budget = max_height.saturating_sub(1 + hint_rows);
+    let n = ordered.len();
+    let tail_want = if focused { 4 } else { 2 };
+    // Prefer listing every agent; leftover lines become the selected tail.
+    // When agents alone overflow, window around the selection and spend one
+    // line on the "+N more" marker.
+    let (list_rows, tail_rows) = if n <= budget {
+        (n, budget.saturating_sub(n).min(tail_want))
+    } else {
+        (budget.saturating_sub(1).max(1), 0)
+    };
+    let hidden = n.saturating_sub(list_rows);
+    let first = if selected >= list_rows {
+        selected + 1 - list_rows
+    } else {
+        0
+    };
+
+    let tail_lines = if tail_rows > 0 {
+        dock_tail_lines(ordered[selected], width, tail_rows)
+    } else {
+        Vec::new()
+    };
+
+    for (idx, member) in ordered.iter().enumerate().skip(first).take(list_rows) {
+        let is_sel = idx == selected;
+        out.push(dock_row(member, is_sel, focused, spinner_frame, width));
+        if is_sel {
+            out.extend(tail_lines.iter().cloned());
+        }
+    }
+    if hidden > 0 {
+        out.push(Line::from(Span::styled(
+            format!("  +{hidden} more"),
+            Style::default().fg(rgb(130, 130, 140)),
+        )));
+    }
+
+    if focused {
+        out.push(Line::from(vec![
+            Span::styled("  j/k", Style::default().fg(rgb(150, 170, 210))),
+            Span::styled(" · ", Style::default().fg(rgb(80, 80, 90))),
+            Span::styled("enter", Style::default().fg(rgb(150, 170, 210))),
+            Span::styled(" · ", Style::default().fg(rgb(80, 80, 90))),
+            Span::styled("esc", Style::default().fg(rgb(150, 170, 210))),
+        ]));
+    }
+
+    // Hard bounds: never exceed the height budget (tiny budgets can otherwise
+    // overflow via the header + marker + hint fixed rows) or the width.
+    out.truncate(max_height);
+    for line in &mut out {
+        clamp_line_to_width(line, width);
+    }
+    out
+}
+
+/// Dock header: bee + active tally, then plan progress and attention count,
+/// dropped right-to-left when the width is too tight.
+fn dock_header(
+    total: usize,
+    active: usize,
+    attention: usize,
+    plan: Option<(u32, u32)>,
+    width: usize,
+) -> Line<'static> {
+    let sep_style = Style::default().fg(rgb(80, 80, 90));
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::styled("🐝 ", Style::default().fg(rgb(255, 200, 100))),
+        Span::styled(
+            format!("{active}/{total} active"),
+            Style::default().fg(if active > 0 {
+                rgb(255, 200, 100)
+            } else {
+                rgb(120, 120, 130)
+            }),
+        ),
+    ];
+    let mut used: usize = spans.iter().map(|s| disp_w(&s.content)).sum();
+    if let Some((done, total)) = plan {
+        let text = format!("plan {done}/{total}");
+        if used + 3 + disp_w(&text) <= width {
+            used += 3 + disp_w(&text);
+            spans.push(Span::styled(" · ", sep_style));
+            spans.push(Span::styled(text, Style::default().fg(rgb(160, 160, 170))));
+        }
+    }
+    if attention > 0 {
+        let text = format!("⚠{attention}");
+        if used + 3 + disp_w(&text) <= width {
+            spans.push(Span::styled(" · ", sep_style));
+            spans.push(Span::styled(text, Style::default().fg(rgb(255, 170, 80))));
+        }
+    }
+    Line::from(spans)
+}
+
+/// One dock row: selection marker, optional role glyph, label, then a
+/// right-aligned status glyph and optional todo counter.
+fn dock_row(
+    member: &GalleryMember,
+    selected: bool,
+    focused: bool,
+    spinner_frame: usize,
+    width: usize,
+) -> Line<'static> {
+    let accent = status_accent(&member.status);
+    let marker = if selected { "▸ " } else { "  " };
+    let glyph = role_glyph(member.role.as_deref())
+        .map(|g| format!("{g} "))
+        .unwrap_or_default();
+    let status = status_glyph(&member.status, spinner_frame);
+    let todo = member.todo.map(|(d, t)| format!(" {d}/{t}"));
+
+    let right_w = disp_w(status) + todo.as_ref().map(|t| disp_w(t)).unwrap_or(0);
+    let fixed = 2 + disp_w(&glyph) + 1 + right_w;
+    let label = truncate_label(&member.label, width.saturating_sub(fixed).max(4));
+    let filler = width
+        .saturating_sub(2 + disp_w(&glyph) + disp_w(&label) + right_w)
+        .max(1);
+
+    let mut label_style = Style::default().fg(if selected {
+        rgb(235, 235, 245)
+    } else {
+        rgb(170, 170, 180)
+    });
+    if selected && focused {
+        label_style = label_style.add_modifier(Modifier::BOLD);
+    }
+    let mut spans = vec![Span::styled(
+        marker.to_string(),
+        Style::default().fg(if selected { accent } else { rgb(90, 90, 100) }),
+    )];
+    if !glyph.is_empty() {
+        spans.push(Span::styled(glyph, Style::default().fg(accent)));
+    }
+    spans.push(Span::styled(label, label_style));
+    spans.push(Span::raw(" ".repeat(filler)));
+    spans.push(Span::styled(
+        status.to_string(),
+        Style::default().fg(accent),
+    ));
+    if let Some(todo) = todo {
+        spans.push(Span::styled(todo, Style::default().fg(rgb(130, 130, 140))));
+    }
+    Line::from(spans)
+}
+
+/// The selected agent's live tail: the last `rows` non-meta body lines,
+/// dim, behind a `│` gutter.
+fn dock_tail_lines(member: &GalleryMember, width: usize, rows: usize) -> Vec<Line<'static>> {
+    let text_budget = width.saturating_sub(4);
+    member
+        .body
+        .iter()
+        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('·'))
+        .rev()
+        .take(rows)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|l| {
+            Line::from(vec![
+                Span::styled("  │ ", Style::default().fg(rgb(80, 80, 90))),
+                Span::styled(
+                    truncate_label(l, text_budget),
+                    Style::default().fg(rgb(160, 160, 170)),
+                ),
+            ])
+        })
+        .collect()
+}
+
+/// Truncate a styled line so its display width never exceeds `max_width`.
+/// Splits mid-span if needed, dropping a trailing wide glyph that would
+/// straddle the boundary.
+fn clamp_line_to_width(line: &mut Line<'static>, max_width: usize) {
+    use unicode_width::UnicodeWidthChar;
+    let mut used = 0usize;
+    let mut clamped: Vec<Span<'static>> = Vec::new();
+    for span in line.spans.drain(..) {
+        let w = disp_w(&span.content);
+        if used + w <= max_width {
+            used += w;
+            clamped.push(span);
+            continue;
+        }
+        // Partial span: take chars while they fit.
+        let mut taken = String::new();
+        for ch in span.content.chars() {
+            let cw = ch.width().unwrap_or(0);
+            if used + cw > max_width {
+                break;
+            }
+            used += cw;
+            taken.push(ch);
+        }
+        if !taken.is_empty() {
+            clamped.push(Span::styled(taken, span.style));
+        }
+        break;
+    }
+    line.spans = clamped;
+}
+
+/// Render the expanded detail viewport for the hovered agent in the focused
+/// strip: a header, a tail of the agent's live transcript, and its todo list.
+///
+/// Layout (at most `budget` lines, fewer when there is less content):
+/// ```text
+///    ⠙ researcher · thinking · 12s
+///    │ Editing crates/jcode-tui/src/tui/ui.rs
+///    │   carving the gallery band off chat_area
+///    ├ todos 3/9
+///    │ ✓ wire the bus tap
+///    │ ▸ carve the gallery band
+///    │ · run the ui tests
+/// ```
+/// Todos get at most half the budget (they are skimmable); the transcript tail
+/// takes the rest. Every line is truncated to `width`.
+fn render_hovered_detail(
+    m: &GalleryMember,
+    spinner_frame: usize,
+    width: usize,
+    budget: usize,
+) -> Vec<Line<'static>> {
+    let accent = status_accent(&m.status);
+    let dim = rgb(120, 120, 130);
+    let text_fg = rgb(190, 190, 200);
+    let gutter_fg = rgb(80, 80, 90);
+    const GUTTER: &str = "   ";
+    const BAR: &str = "│ ";
+
+    // Split body lines into transcript vs '·'-prefixed meta markers (the age
+    // hint the adapter appends); the age moves into the header.
+    let transcript: Vec<&str> = m
+        .body
+        .iter()
+        .map(|l| l.as_str())
+        .filter(|l| !l.trim_start().starts_with('·'))
+        .collect();
+    let age: Option<String> = m
+        .body
+        .iter()
+        .rev()
+        .find(|l| l.trim_start().starts_with('·'))
+        .map(|l| l.trim().trim_start_matches('·').trim().to_string());
+
+    let mut out: Vec<Line<'static>> = Vec::new();
+
+    // ---- Header ----
+    let mut header: Vec<Span<'static>> = vec![
+        Span::raw(GUTTER),
+        Span::styled(
+            format!("{} {}", status_glyph(&m.status, spinner_frame), m.label),
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!(" · {}", m.status), Style::default().fg(dim)),
+    ];
+    if let Some(age) = age {
+        header.push(Span::styled(format!(" · {age}"), Style::default().fg(dim)));
+    }
+    out.push(Line::from(header));
+
+    // ---- Budget split: todos take at most half of what remains ----
+    let remaining = budget.saturating_sub(1);
+    let todo_want = if m.todo_items.is_empty() {
+        0
+    } else {
+        // +1 for the "todos C/T" section header.
+        m.todo_items.len() + 1
+    };
+    let todo_rows = todo_want.min(remaining / 2);
+    let transcript_rows = remaining.saturating_sub(todo_rows);
+
+    // ---- Transcript tail ----
+    let text_budget = width.saturating_sub(GUTTER.len() + BAR.len());
+    let shown: Vec<&str> = transcript
+        .iter()
+        .copied()
+        .rev()
+        .take(transcript_rows)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    if shown.iter().all(|l| l.trim().is_empty()) {
+        out.push(Line::from(vec![
+            Span::raw(GUTTER),
+            Span::styled(BAR, Style::default().fg(gutter_fg)),
+            Span::styled(format!("[{}]", m.status), Style::default().fg(dim)),
+        ]));
+    } else {
+        for line in shown {
+            out.push(Line::from(vec![
+                Span::raw(GUTTER),
+                Span::styled(BAR, Style::default().fg(gutter_fg)),
+                Span::styled(
+                    truncate_label(line, text_budget),
+                    Style::default().fg(text_fg),
+                ),
+            ]));
+        }
+    }
+
+    // ---- Todos ----
+    if todo_rows >= 2 {
+        let item_rows = todo_rows - 1;
+        let done = m
+            .todo_items
+            .iter()
+            .filter(|t| t.status == "completed")
+            .count();
+        let (done, total) = m.todo.unwrap_or((done as u32, m.todo_items.len() as u32));
+        out.push(Line::from(vec![
+            Span::raw(GUTTER),
+            Span::styled("├ ", Style::default().fg(gutter_fg)),
+            Span::styled(
+                format!("todos {done}/{total}"),
+                Style::default().fg(rgb(150, 170, 210)),
+            ),
+        ]));
+        // Window the items around the active one: a little completed context,
+        // then in-progress and pending.
+        let first_open = m
+            .todo_items
+            .iter()
+            .position(|t| t.status != "completed")
+            .unwrap_or(m.todo_items.len().saturating_sub(item_rows));
+        let start = first_open
+            .saturating_sub(1)
+            .min(m.todo_items.len().saturating_sub(item_rows));
+        for t in m.todo_items.iter().skip(start).take(item_rows) {
+            let (glyph, fg, emph) = match t.status.as_str() {
+                "completed" => ("✓", rgb(100, 200, 100), false),
+                "in_progress" => ("▸", rgb(255, 200, 100), true),
+                _ => ("·", dim, false),
+            };
+            let mut style = Style::default().fg(if emph { text_fg } else { dim });
+            if emph {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            out.push(Line::from(vec![
+                Span::raw(GUTTER),
+                Span::styled(BAR, Style::default().fg(gutter_fg)),
+                Span::styled(format!("{glyph} "), Style::default().fg(fg)),
+                Span::styled(
+                    truncate_label(&t.content, text_budget.saturating_sub(2)),
+                    style,
+                ),
+            ]));
+        }
+    }
+
+    out
+}
 fn panel_header(total: usize, active: usize, focused: bool) -> Line<'static> {
     let mut spans = vec![
         Span::styled("🐝 ", Style::default().fg(rgb(255, 200, 100))),
@@ -472,16 +993,29 @@ fn panel_header(total: usize, active: usize, focused: bool) -> Line<'static> {
     Line::from(spans)
 }
 
-/// Sort members the same way `members_to_tiles` does (coordinator first, then
-/// worktree manager, then by sort_key), returning references in display order.
-fn sort_members_for_display(members: &[GalleryMember]) -> Vec<&GalleryMember> {
-    let mut sorted: Vec<&GalleryMember> = members.iter().collect();
-    sorted.sort_by(|a, b| {
+/// Indices of `members` in display order: coordinator first, then worktree
+/// manager, then everything else, ties broken by `sort_key` (stable for full
+/// ties). This is the single source of truth for how the gallery, panel, and
+/// strip order members; callers that need to map a displayed row back to an
+/// input member (e.g. pop-out selection) must use this rather than
+/// re-implementing the sort.
+pub fn display_order(members: &[GalleryMember]) -> Vec<usize> {
+    let mut idx: Vec<usize> = (0..members.len()).collect();
+    idx.sort_by(|&a, &b| {
+        let (a, b) = (&members[a], &members[b]);
         role_rank(a.role.as_deref())
             .cmp(&role_rank(b.role.as_deref()))
             .then_with(|| a.sort_key.cmp(&b.sort_key))
     });
-    sorted
+    idx
+}
+
+/// References to `members` in [`display_order`], for rendering.
+fn sort_members_for_display(members: &[GalleryMember]) -> Vec<&GalleryMember> {
+    display_order(members)
+        .into_iter()
+        .map(|i| &members[i])
+        .collect()
 }
 
 /// The tile index (in `members_to_tiles(members)` order) for a display row.
@@ -517,14 +1051,14 @@ fn list_row(member: &GalleryMember, selected: bool, focused: bool, width: usize)
         .map(|a| a.to_string());
 
     let marker_w = 2;
-    let glyph_w = glyph.chars().count();
-    let badge_w = badge.chars().count();
-    let age_w = age.as_ref().map(|a| a.chars().count() + 1).unwrap_or(0);
+    let glyph_w = disp_w(&glyph);
+    let badge_w = disp_w(&badge);
+    let age_w = age.as_ref().map(|a| disp_w(a) + 1).unwrap_or(0);
     // Reserve: marker + glyph + label + space + badge + space + age.
     let reserved = marker_w + glyph_w + 1 + badge_w + age_w + 1;
     let label_budget = width.saturating_sub(reserved).max(4);
     let label = truncate_label(&member.label, label_budget);
-    let label_w = label.chars().count();
+    let label_w = disp_w(&label);
 
     let label_style = if selected {
         Style::default().fg(rgb(235, 235, 245))
@@ -560,16 +1094,46 @@ fn list_row(member: &GalleryMember, selected: bool, focused: bool, width: usize)
     Line::from(spans)
 }
 
+/// Truncate `s` to at most `max` display columns (wide glyphs count as 2),
+/// appending an ellipsis when truncated.
 fn truncate_label(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
+    use unicode_width::UnicodeWidthChar;
+    if disp_w(s) <= max {
         return s.to_string();
     }
     if max <= 1 {
         return "…".to_string();
     }
-    let mut out: String = s.chars().take(max - 1).collect();
+    let target = max - 1;
+    let mut out = String::new();
+    let mut used = 0usize;
+    for ch in s.chars() {
+        let cw = ch.width().unwrap_or(0);
+        if used + cw > target {
+            break;
+        }
+        used += cw;
+        out.push(ch);
+    }
     out.push('…');
     out
+}
+
+/// Terminal display width of a string (wide glyphs like 🐝 count as 2).
+fn disp_w(s: &str) -> usize {
+    use unicode_width::UnicodeWidthStr;
+    s.width()
+}
+
+/// Number of decimal digits in `n` (for budgeting "+N" markers).
+fn count_digits(n: usize) -> usize {
+    let mut n = n.max(1);
+    let mut d = 0;
+    while n > 0 {
+        d += 1;
+        n /= 10;
+    }
+    d
 }
 
 #[cfg(test)]
@@ -584,6 +1148,7 @@ mod tests {
             body: body.iter().map(|s| s.to_string()).collect(),
             sort_key: id.to_string(),
             todo: None,
+            todo_items: Vec::new(),
         }
     }
 
@@ -596,6 +1161,41 @@ mod tests {
         let tiles = members_to_tiles(&members);
         assert_eq!(tiles[0].title, "alpha");
         assert_eq!(tiles[0].role_glyph.as_deref(), Some("★"));
+    }
+
+    /// `display_order` is the contract callers (e.g. pop-out selection) use to
+    /// map a displayed row back to an input member, so it must match tile
+    /// order exactly, including for mixed/unknown roles and sort_key ties.
+    #[test]
+    fn display_order_matches_tile_order_for_mixed_members() {
+        let mut members = vec![
+            member("zeta", "running", None, &[]),
+            member("mid", "done", Some("worktree_manager"), &[]),
+            member("boss", "running", Some("coordinator"), &[]),
+            member("alpha", "thinking", Some("mystery_role"), &[]),
+            member("beta", "failed", None, &[]),
+        ];
+        // Full tie with "beta" on both role rank and sort_key.
+        let mut dup = member("beta-label-2", "ready", None, &[]);
+        dup.sort_key = "beta".to_string();
+        members.push(dup);
+
+        let order = display_order(&members);
+        assert_eq!(order.len(), members.len());
+        let ordered_labels: Vec<String> = order.iter().map(|&i| members[i].label.clone()).collect();
+        let tile_titles: Vec<String> = members_to_tiles(&members)
+            .into_iter()
+            .map(|t| t.title)
+            .collect();
+        assert_eq!(ordered_labels, tile_titles);
+        let ordered_labels: Vec<&str> = ordered_labels.iter().map(String::as_str).collect();
+        // Role buckets come first, then sort_key order within the bucket.
+        assert_eq!(ordered_labels[0], "boss");
+        assert_eq!(ordered_labels[1], "mid");
+        assert_eq!(
+            &ordered_labels[2..],
+            &["alpha", "beta", "beta-label-2", "zeta"]
+        );
     }
 
     #[test]
@@ -721,7 +1321,7 @@ mod tests {
     fn hints() -> Vec<SwarmStripHint> {
         vec![
             SwarmStripHint {
-                key: "alt+w".into(),
+                key: "alt+n".into(),
                 label: "focus".into(),
             },
             SwarmStripHint {
@@ -741,28 +1341,74 @@ mod tests {
 
     #[test]
     fn strip_empty_renders_nothing() {
-        assert!(render_swarm_strip(&[], 0, true, &hints(), None, 0, 80).is_empty());
+        assert!(render_swarm_strip(&[], 0, true, &hints(), None, 0, 80, 12).is_empty());
     }
 
     #[test]
-    fn strip_one_line_when_unfocused_three_when_focused() {
+    fn strip_one_line_when_unfocused_expands_when_focused() {
         let members = vec![
             member("researcher", "thinking", Some("coordinator"), &["working"]),
             member("implementer", "running", None, &["building"]),
         ];
-        let unfocused = render_swarm_strip(&members, 0, false, &hints(), None, 0, 80);
+        let unfocused = render_swarm_strip(&members, 0, false, &hints(), None, 0, 80, 12);
         assert_eq!(
             unfocused.len(),
             1,
             "unfocused strip should be a single line"
         );
-        // Focused: chips line + inline detail line + hint line.
-        let focused = render_swarm_strip(&members, 0, true, &hints(), None, 0, 80);
-        assert_eq!(
-            focused.len(),
-            3,
-            "focused strip should add a detail line and a hint line"
+        // Focused: chips line + expanded detail viewport + hint line, bounded
+        // by the max_height budget.
+        let focused = render_swarm_strip(&members, 0, true, &hints(), None, 0, 80, 12);
+        assert!(
+            focused.len() > 3,
+            "focused strip should expand into a detail viewport, got {} lines",
+            focused.len()
         );
+        assert!(focused.len() <= 12, "focused strip must respect max_height");
+        // With a tiny budget the focused strip degrades to the compact
+        // 3-line form (chips + one detail line + hints).
+        let tiny = render_swarm_strip(&members, 0, true, &hints(), None, 0, 80, 3);
+        assert_eq!(tiny.len(), 3, "tiny budget should degrade to 3 lines");
+    }
+
+    #[test]
+    fn strip_focused_detail_shows_transcript_and_todos() {
+        let mut m = member(
+            "researcher",
+            "thinking",
+            Some("coordinator"),
+            &["editing ui.rs", "running tests now"],
+        );
+        m.todo = Some((1, 3));
+        m.todo_items = vec![
+            GalleryTodo {
+                content: "wire the bus tap".into(),
+                status: "completed".into(),
+            },
+            GalleryTodo {
+                content: "carve the gallery band".into(),
+                status: "in_progress".into(),
+            },
+            GalleryTodo {
+                content: "run the ui tests".into(),
+                status: "pending".into(),
+            },
+        ];
+        let lines = render_swarm_strip(&[m], 0, true, &hints(), None, 0, 80, 14);
+        let text: Vec<String> = lines.iter().map(plain_line).collect();
+        let all = text.join("\n");
+        // Transcript tail lines are present, not just the last one.
+        assert!(all.contains("editing ui.rs"), "got: {all}");
+        assert!(all.contains("running tests now"), "got: {all}");
+        // Todo section with counter and items.
+        assert!(all.contains("todos 1/3"), "got: {all}");
+        assert!(all.contains("carve the gallery band"), "got: {all}");
+        assert!(all.contains("run the ui tests"), "got: {all}");
+        // Hint line still present.
+        assert!(all.contains("pop out"), "got: {all}");
+        for line in &lines {
+            assert!(line.width() <= 80, "line too wide: {}", plain_line(line));
+        }
     }
 
     #[test]
@@ -772,7 +1418,7 @@ mod tests {
             member("implementer", "running", None, &["building"]),
             member("reviewer", "done", None, &["done"]),
         ];
-        let lines = render_swarm_strip(&members, 1, true, &hints(), None, 0, 90);
+        let lines = render_swarm_strip(&members, 1, true, &hints(), None, 0, 90, 12);
         for line in &lines {
             assert!(line.width() <= 90, "line too wide: {}", plain_line(line));
         }
@@ -789,17 +1435,25 @@ mod tests {
     #[test]
     fn strip_unfocused_shows_enter_controls_hint() {
         let members = vec![member("a", "running", None, &[])];
-        let lines =
-            render_swarm_strip(&members, 0, false, &hints(), Some("alt+w controls"), 0, 90);
+        let lines = render_swarm_strip(
+            &members,
+            0,
+            false,
+            &hints(),
+            Some("alt+n controls"),
+            0,
+            90,
+            12,
+        );
         let chips = plain_line(&lines[0]);
-        assert!(chips.contains("alt+w controls"), "got: {chips}");
+        assert!(chips.contains("alt+n controls"), "got: {chips}");
     }
 
     #[test]
     fn strip_shows_todo_counter() {
         let mut m = member("worker", "running", None, &["step"]);
         m.todo = Some((8, 16));
-        let lines = render_swarm_strip(&[m], 0, false, &hints(), None, 0, 90);
+        let lines = render_swarm_strip(&[m], 0, false, &hints(), None, 0, 90, 12);
         let chips = plain_line(&lines[0]);
         assert!(chips.contains("8/16"), "todo counter missing: {chips}");
     }
@@ -809,9 +1463,275 @@ mod tests {
         let members: Vec<GalleryMember> = (0..12)
             .map(|i| member(&format!("agent-number-{i:02}"), "running", None, &[]))
             .collect();
-        let lines = render_swarm_strip(&members, 0, false, &hints(), None, 0, 50);
+        let lines = render_swarm_strip(&members, 0, false, &hints(), None, 0, 50, 12);
         assert!(lines[0].width() <= 50, "too wide");
         let chips = plain_line(&lines[0]);
         assert!(chips.contains('+'), "expected +N overflow marker: {chips}");
+    }
+
+    #[test]
+    fn strip_is_display_width_bounded_at_all_widths() {
+        use unicode_width::UnicodeWidthStr;
+        let mut members: Vec<GalleryMember> = (0..9)
+            .map(|i| member(&format!("agent-{i}"), "running", None, &["working"]))
+            .collect();
+        members[0].todo = Some((3, 8));
+        members[0].role = Some("coordinator".into());
+        for width in 8..=140 {
+            for focused in [false, true] {
+                let lines = render_swarm_strip(
+                    &members,
+                    2,
+                    focused,
+                    &hints(),
+                    Some("ctrl+shift+tab controls"),
+                    0,
+                    width,
+                    12,
+                );
+                for line in &lines {
+                    let text = plain_line(line);
+                    let w = text.as_str().width();
+                    assert!(
+                        w <= width,
+                        "width {width} focused {focused}: line overflows ({w}): {text:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn strip_drops_hint_before_tally_when_narrow() {
+        let members: Vec<GalleryMember> = (0..6)
+            .map(|i| member(&format!("agent-{i}"), "running", None, &[]))
+            .collect();
+        // Narrow enough that the long hint cannot fit, but the tally can.
+        let lines = render_swarm_strip(
+            &members,
+            0,
+            false,
+            &hints(),
+            Some("ctrl+shift+tab controls"),
+            0,
+            60,
+            12,
+        );
+        let chips = plain_line(&lines[0]);
+        assert!(chips.contains("6/6 active"), "tally missing: {chips}");
+        assert!(!chips.contains("controls"), "hint should drop: {chips}");
+    }
+
+    #[test]
+    fn panel_is_display_width_bounded_with_wide_labels() {
+        use unicode_width::UnicodeWidthStr;
+        let members = vec![
+            member(
+                "日本語のエージェント名前が長い場合の確認",
+                "running",
+                None,
+                &["· 3s ago"],
+            ),
+            member("ascii", "done", None, &["· 1m ago"]),
+        ];
+        for width in 8..=80 {
+            for focused in [false, true] {
+                for lines in [
+                    render_swarm_panel(&members, 0, focused, width, 14),
+                    render_gallery(&members, width, 12),
+                ] {
+                    for line in &lines {
+                        let text = plain_line(line);
+                        let w = text.as_str().width();
+                        assert!(w <= width, "width {width}: line overflows ({w}): {text:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn degenerate_sizes_and_large_member_counts_do_not_panic() {
+        let statuses = [
+            "spawned",
+            "ready",
+            "running",
+            "thinking",
+            "blocked",
+            "failed",
+            "completed",
+            "stopped",
+            "unknown-status",
+        ];
+        for count in [0usize, 1, 3, 50, 400] {
+            let members: Vec<GalleryMember> = (0..count)
+                .map(|i| {
+                    let mut m = member(
+                        &format!("agent-🐝-{i}"),
+                        statuses[i % statuses.len()],
+                        if i == 0 { Some("coordinator") } else { None },
+                        &["line 一二三四五", "· 2s ago"],
+                    );
+                    m.todo = Some((i as u32, (i as u32).max(1)));
+                    m
+                })
+                .collect();
+            for width in [0usize, 1, 2, 7, 8, 9, 40] {
+                for height in [0usize, 1, 2, 3, 7, 20] {
+                    let _ = render_gallery(&members, width, height);
+                    let _ = render_swarm_panel(&members, count + 5, true, width, height);
+                    let _ = render_swarm_strip(
+                        &members,
+                        count + 5,
+                        true,
+                        &hints(),
+                        Some("ctrl+t controls"),
+                        usize::MAX / 2,
+                        width,
+                        12,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn strip_right_tail_is_right_aligned() {
+        use unicode_width::UnicodeWidthStr;
+        let members = vec![
+            member("alpha", "running", None, &[]),
+            member("beta", "done", None, &[]),
+        ];
+        let width = 80;
+        let lines = render_swarm_strip(
+            &members,
+            0,
+            false,
+            &hints(),
+            Some("alt+n controls"),
+            0,
+            width,
+            12,
+        );
+        let chips = plain_line(&lines[0]);
+        assert!(
+            chips.as_str().width() == width,
+            "tail should pad to exactly the width: got {} for {chips:?}",
+            chips.as_str().width()
+        );
+        assert!(chips.trim_end().ends_with("controls"), "got: {chips}");
+    }
+
+    #[test]
+    fn dock_empty_renders_nothing() {
+        assert!(render_swarm_dock(&[], 0, false, None, 0, 30, 10).is_empty());
+    }
+
+    #[test]
+    fn dock_lists_agents_with_header_and_selected_tail() {
+        let mut m1 = member(
+            "researcher",
+            "thinking",
+            Some("coordinator"),
+            &["tracing refresh path", "· 2s ago"],
+        );
+        m1.todo = Some((2, 5));
+        let m2 = member("implementer", "running", None, &["building"]);
+        let m3 = member("reviewer", "completed", None, &["LGTM"]);
+        let lines = render_swarm_dock(&[m1, m2, m3], 0, false, Some((3, 7)), 0, 34, 12);
+        let all: Vec<String> = lines.iter().map(plain_line).collect();
+        let joined = all.join("\n");
+        assert!(joined.contains("2/3 active"), "got:\n{joined}");
+        assert!(joined.contains("plan 3/7"), "got:\n{joined}");
+        for name in ["researcher", "implementer", "reviewer"] {
+            assert!(joined.contains(name), "missing {name} in:\n{joined}");
+        }
+        // Selected (coordinator, sorts first) shows its live tail with gutter.
+        assert!(joined.contains("│ tracing refresh path"), "got:\n{joined}");
+        // Meta age line stays out of the tail.
+        assert!(!joined.contains("2s ago"), "got:\n{joined}");
+        // Todo counter on the row.
+        assert!(joined.contains("2/5"), "got:\n{joined}");
+        // Unfocused: no hint line.
+        assert!(!joined.contains("j/k"), "got:\n{joined}");
+    }
+
+    #[test]
+    fn dock_focused_shows_hints_and_attention_count() {
+        let members = vec![
+            member("a", "running", None, &["working"]),
+            member("b", "blocked", None, &["stuck"]),
+            member("c", "failed", None, &["boom"]),
+        ];
+        let lines = render_swarm_dock(&members, 1, true, None, 0, 34, 14);
+        let joined: String = lines.iter().map(plain_line).collect::<Vec<_>>().join("\n");
+        assert!(joined.contains("⚠2"), "got:\n{joined}");
+        assert!(joined.contains("j/k"), "got:\n{joined}");
+        // Selected row marked.
+        let sel = lines
+            .iter()
+            .map(plain_line)
+            .find(|l| l.contains('▸'))
+            .expect("selected row");
+        assert!(sel.contains('b'), "got: {sel}");
+    }
+
+    #[test]
+    fn dock_windows_list_and_reports_overflow() {
+        let members: Vec<GalleryMember> = (0..12)
+            .map(|i| member(&format!("agent-{i:02}"), "running", None, &["w"]))
+            .collect();
+        // Budget: header + 5 rows -> 7 hidden.
+        let lines = render_swarm_dock(&members, 11, false, None, 0, 30, 7);
+        assert!(lines.len() <= 7, "got {} lines", lines.len());
+        let joined: String = lines.iter().map(plain_line).collect::<Vec<_>>().join("\n");
+        // Selection stays visible even at the end of the list.
+        assert!(joined.contains("agent-11"), "got:\n{joined}");
+        assert!(joined.contains("+7 more"), "got:\n{joined}");
+    }
+
+    #[test]
+    fn dock_is_display_width_bounded_at_all_widths() {
+        use unicode_width::UnicodeWidthStr;
+        let mut members: Vec<GalleryMember> = (0..6)
+            .map(|i| {
+                member(
+                    &format!("agent-🐝-{i}"),
+                    "running",
+                    None,
+                    &["line 一二三四五"],
+                )
+            })
+            .collect();
+        members[0].role = Some("coordinator".into());
+        members[0].todo = Some((3, 9));
+        for width in 8..=60 {
+            for focused in [false, true] {
+                for height in [0usize, 1, 2, 3, 8, 20] {
+                    let lines = render_swarm_dock(
+                        &members,
+                        3,
+                        focused,
+                        Some((2, 9)),
+                        usize::MAX / 2,
+                        width,
+                        height,
+                    );
+                    assert!(
+                        lines.len() <= height.max(1),
+                        "width {width} height {height}: {} lines",
+                        lines.len()
+                    );
+                    for line in &lines {
+                        let text = plain_line(line);
+                        let w = text.as_str().width();
+                        assert!(
+                            w <= width,
+                            "width {width} focused {focused}: line overflows ({w}): {text:?}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

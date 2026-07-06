@@ -467,6 +467,7 @@ async fn register_visible_spawned_member(
                 model,
                 provider_key,
                 todo_progress: None,
+                todo_items: Vec::new(),
             },
         );
     }

@@ -178,6 +178,9 @@ static PINNED_PANE_TOTAL_LINES: AtomicUsize = AtomicUsize::new(0);
 /// Effective scroll position of the side pane after render-time clamping.
 #[cfg(not(test))]
 static LAST_DIFF_PANE_EFFECTIVE_SCROLL: AtomicUsize = AtomicUsize::new(0);
+/// Maximum scroll offset of the side pane on the most recent render frame.
+#[cfg(not(test))]
+static LAST_DIFF_PANE_MAX_SCROLL: AtomicUsize = AtomicUsize::new(0);
 /// Total wrapped line count of the chat transcript on the most recent frame.
 /// Used together with `LAST_RESOLVED_CHAT_SCROLL` to anchor the viewport when
 /// older compacted history is loaded in (so the content under the reader stays
@@ -206,6 +209,7 @@ thread_local! {
     static TEST_LAST_CHAT_SCROLLBAR_VISIBLE: Cell<bool> = const { Cell::new(false) };
     static TEST_PINNED_PANE_TOTAL_LINES: Cell<usize> = const { Cell::new(0) };
     static TEST_LAST_DIFF_PANE_EFFECTIVE_SCROLL: Cell<usize> = const { Cell::new(0) };
+    static TEST_LAST_DIFF_PANE_MAX_SCROLL: Cell<usize> = const { Cell::new(0) };
     static TEST_LAST_TOTAL_WRAPPED_LINES: Cell<usize> = const { Cell::new(0) };
     static TEST_LAST_RESOLVED_CHAT_SCROLL: Cell<usize> = const { Cell::new(0) };
     static TEST_TAIL_CATCHUP_ACTIVE: Cell<bool> = const { Cell::new(false) };
@@ -282,6 +286,21 @@ pub fn last_diff_pane_effective_scroll() -> usize {
     }
 }
 
+/// Maximum scroll offset of the side pane on the most recent render frame
+/// (total content lines minus the visible viewport height). Scroll handlers
+/// clamp against this so stored offsets cannot accumulate invisible
+/// "phantom" overscroll past the bottom of the content.
+pub fn last_diff_pane_max_scroll() -> usize {
+    #[cfg(test)]
+    {
+        return TEST_LAST_DIFF_PANE_MAX_SCROLL.with(Cell::get);
+    }
+    #[cfg(not(test))]
+    {
+        LAST_DIFF_PANE_MAX_SCROLL.load(Ordering::Relaxed)
+    }
+}
+
 /// Get the last known user prompt line positions (from the most recent render frame).
 /// Returns positions as wrapped line indices from the top of content.
 pub fn last_user_prompt_positions() -> Vec<usize> {
@@ -352,6 +371,18 @@ pub(crate) fn set_last_diff_pane_effective_scroll(value: usize) {
     #[cfg(not(test))]
     {
         LAST_DIFF_PANE_EFFECTIVE_SCROLL.store(value, Ordering::Relaxed);
+    }
+}
+
+pub(crate) fn set_last_diff_pane_max_scroll(value: usize) {
+    #[cfg(test)]
+    {
+        TEST_LAST_DIFF_PANE_MAX_SCROLL.with(|cell| cell.set(value));
+        return;
+    }
+    #[cfg(not(test))]
+    {
+        LAST_DIFF_PANE_MAX_SCROLL.store(value, Ordering::Relaxed);
     }
 }
 
@@ -1217,8 +1248,8 @@ pub(crate) use frame_metrics::{
     record_draw_call_attribution, set_frame_input_attribution, wall_clock_ms,
 };
 pub(crate) use frame_metrics::{
-    debug_flicker_frame_history, debug_slow_frame_history, recent_flicker_copy_target_for_key,
-    recent_flicker_ui_notice,
+    debug_draw_call_history, debug_flicker_frame_history, debug_slow_frame_history,
+    recent_flicker_copy_target_for_key, recent_flicker_ui_notice,
 };
 #[cfg(test)]
 pub(crate) use smoothness::frame_from_buffer as smoothness_frame_from_buffer;
@@ -1296,6 +1327,7 @@ pub(crate) fn clear_test_render_state_for_tests() {
     set_last_max_scroll(0);
     set_pinned_pane_total_lines(0);
     set_last_diff_pane_effective_scroll(0);
+    set_last_diff_pane_max_scroll(0);
     set_last_total_wrapped_lines(0);
     set_last_resolved_chat_scroll(0);
     update_user_prompt_positions(&[]);
@@ -2160,7 +2192,7 @@ pub(crate) fn link_target_from_screen(column: u16, row: u16) -> Option<String> {
 }
 
 /// First display column of the inline-image expand badge within a label line,
-/// if present. The badge is the `🖱 ●○○ expand` suffix that `image_label_line`
+/// if present. The badge is the `🖱 ●○ expand` suffix that `image_label_line`
 /// appends; we accept a click from the leading click-icon to end of line as
 /// "hit the badge". Returns `None` when the line has no badge (e.g. a
 /// hidden/collapsed image label).
@@ -2170,6 +2202,24 @@ fn expand_badge_start_col(text: &str) -> Option<usize> {
     // future icon change can never silently drop the whole hit-region.
     let byte_idx = text.find(icon).or_else(|| text.find(['○', '●']))?;
     Some(line_display_width(&text[..byte_idx]))
+}
+
+/// Display column of a trailing badge verb (`expand` / `reset`) when the line
+/// ends with one. Long image labels wrap in the transcript, and the wrap can
+/// split inside the badge, leaving only the verb on the final label row (the
+/// row the region mapping identifies). The verb is then the whole visible
+/// badge on that row, so it must stay clickable even without the icon/dots.
+fn expand_badge_verb_start_col(text: &str) -> Option<usize> {
+    let trimmed = text.trim_end();
+    for verb in ["expand", "reset"] {
+        if let Some(prefix) = trimmed.strip_suffix(verb) {
+            // Must be a whole trailing token, not the tail of a longer word.
+            if prefix.is_empty() || prefix.ends_with(char::is_whitespace) {
+                return Some(line_display_width(prefix));
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -2184,7 +2234,7 @@ mod expand_badge_hit_tests {
     #[test]
     fn locates_first_dot_display_column() {
         // ASCII prefix: the badge starts exactly at the prefix's display width.
-        let text = "abc ●○○ expand";
+        let text = "abc ●○ expand";
         assert_eq!(expand_badge_start_col(text), Some(4));
     }
 
@@ -2193,7 +2243,7 @@ mod expand_badge_hit_tests {
         // Multi-byte chars before the badge must be measured by display width,
         // not byte offset. unicode-width reports the picture glyph as width 1,
         // so emoji(1) + space(1) = 2.
-        let text = "🖼 ●○○ expand";
+        let text = "🖼 ●○ expand";
         assert_eq!(expand_badge_start_col(text), Some(2));
     }
 
@@ -2202,9 +2252,22 @@ mod expand_badge_hit_tests {
         // The real label puts a click icon ahead of the dots; the hit-region
         // must start at the icon so users can click the whole affordance.
         let icon = crate::tui::ui::inline_image_ui::EXPAND_BADGE_CLICK_ICON;
-        let text = format!("abc {icon} ●○○ expand");
+        let text = format!("abc {icon} ●○ expand");
         // Prefix is "abc " (display width 4); the icon is the first badge cell.
         assert_eq!(expand_badge_start_col(&text), Some(4));
+    }
+
+    #[test]
+    fn verb_fallback_matches_wrapped_badge_tail() {
+        use super::expand_badge_verb_start_col;
+        // A wrapped label row can carry only the badge verb.
+        assert_eq!(expand_badge_verb_start_col("expand"), Some(0));
+        assert_eq!(expand_badge_verb_start_col("reset"), Some(0));
+        assert_eq!(expand_badge_verb_start_col("  expand  "), Some(2));
+        // Must be a whole trailing token, not a word tail or mid-line text.
+        assert_eq!(expand_badge_verb_start_col("preexpand"), None);
+        assert_eq!(expand_badge_verb_start_col("expand more"), None);
+        assert_eq!(expand_badge_verb_start_col("shot.png 600×400"), None);
     }
 }
 
@@ -2216,12 +2279,113 @@ pub(crate) fn inline_image_expand_target_from_screen(column: u16, row: u16) -> O
     let snapshot = copy_snapshot_for_pane(point.pane)?;
     let image_id = snapshot.inline_image_id_for_label_line(point.abs_line)?;
     let text = snapshot.wrapped_plain_line(point.abs_line)?;
-    let badge_start = expand_badge_start_col(text)?;
+    // Long labels wrap: the final label row may carry only the badge verb
+    // (`expand`/`reset`), with the icon and dots on the previous wrapped row.
+    let badge_start = expand_badge_start_col(text).or_else(|| expand_badge_verb_start_col(text))?;
     if point.column >= badge_start {
         Some(image_id)
     } else {
         None
     }
+}
+
+/// If a screen click landed on the rendered body of an inline image (its
+/// placeholder rows), return the image id so the caller can cycle that image's
+/// size. This makes the whole picture clickable, not just the label badge.
+/// The hit-region is bounded by the image's rendered width (`region.width`,
+/// which includes the 2-cell left border), shifted right when `centered` mode
+/// horizontally centers the drawn pixels, so clicks in empty space beside a
+/// narrow image stay inert.
+pub(crate) fn inline_image_body_target_from_screen(
+    column: u16,
+    row: u16,
+    centered: bool,
+) -> Option<u64> {
+    let point = copy_point_from_screen(column, row)?;
+    let snapshot = copy_snapshot_for_pane(point.pane)?;
+    let prepared = match &snapshot.data {
+        CopyViewportData::ChatFrame { prepared } => prepared,
+        CopyViewportData::Dense { .. } => return None,
+    };
+    let region = prepared.image_regions.iter().find(|region| {
+        region.render == jcode_tui_messages::ImageRegionRender::Fit
+            && point.abs_line >= region.abs_line_idx
+            && point.abs_line < region.end_line
+    })?;
+    let area = snapshot.content_area;
+    let rel_col = column.saturating_sub(area.x);
+    // `width == 0` means unknown; treat the rows as fully occupied then.
+    let width = if region.width == 0 {
+        area.width
+    } else {
+        region.width.min(area.width)
+    };
+    // Centered mode draws the border at the left edge but centers the image
+    // pixels; accept the full band from the border through the image's right
+    // edge so both the border and the picture are clickable.
+    let right_edge = if centered {
+        let offset = area.width.saturating_sub(width) / 2;
+        offset.saturating_add(width)
+    } else {
+        width
+    };
+    (rel_col < right_edge).then_some(region.hash)
+}
+
+/// Debug dump of the live chat snapshot's inline-image regions plus the screen
+/// coordinates of each visible expand badge, so external drivers (debug
+/// socket) can compute real click targets against the running TUI.
+pub(crate) fn debug_chat_image_regions_json() -> String {
+    let Some(snapshot) = copy_snapshot_for_pane(crate::tui::CopySelectionPane::Chat) else {
+        return "{\"error\":\"no chat snapshot\"}".to_string();
+    };
+    let prepared = match &snapshot.data {
+        CopyViewportData::ChatFrame { prepared } => prepared.clone(),
+        CopyViewportData::Dense { .. } => {
+            return "{\"error\":\"dense snapshot (no image regions)\"}".to_string();
+        }
+    };
+    let area = snapshot.content_area;
+    let regions: Vec<serde_json::Value> = prepared
+        .image_regions
+        .iter()
+        .map(|region| {
+            let label_line = region.abs_line_idx.saturating_sub(1);
+            let label_text = snapshot.wrapped_plain_line(label_line).unwrap_or("");
+            let badge_col = expand_badge_start_col(label_text)
+                .or_else(|| expand_badge_verb_start_col(label_text));
+            let label_visible = label_line >= snapshot.scroll && label_line < snapshot.visible_end;
+            let badge_screen = badge_col.filter(|_| label_visible).map(|col| {
+                let rel_row = label_line - snapshot.scroll;
+                let left_margin = snapshot.left_margins.get(rel_row).copied().unwrap_or(0);
+                serde_json::json!({
+                    "col": area.x as usize + left_margin as usize + col,
+                    "row": area.y as usize + rel_row,
+                })
+            });
+            serde_json::json!({
+                "hash": region.hash,
+                "render": format!("{:?}", region.render),
+                "abs_line_idx": region.abs_line_idx,
+                "end_line": region.end_line,
+                "rows": region.height,
+                "cols": region.width,
+                "label_line": label_line,
+                "label_text": label_text,
+                "label_visible": label_visible,
+                "badge_screen": badge_screen,
+            })
+        })
+        .collect();
+    serde_json::to_string_pretty(&serde_json::json!({
+        "scroll": snapshot.scroll,
+        "visible_end": snapshot.visible_end,
+        "content_area": {
+            "x": area.x, "y": area.y, "width": area.width, "height": area.height,
+        },
+        "image_regions": regions,
+    }))
+    .unwrap_or_else(|_| "{}".to_string())
 }
 
 pub fn draw(frame: &mut Frame, app: &dyn TuiState) {
@@ -2390,18 +2554,20 @@ fn draw_inner(frame: &mut Frame, app: &dyn TuiState) {
             crate::config::DiagramPanePosition::Side => {
                 const MIN_DIAGRAM_WIDTH: u16 = 24;
                 const MIN_CHAT_WIDTH: u16 = 20;
-                const AUTO_DIAGRAM_WIDTH_CAP_PERCENT: u32 = 75;
                 let max_diagram = area.width.saturating_sub(MIN_CHAT_WIDTH);
                 if max_diagram >= MIN_DIAGRAM_WIDTH {
                     let ratio = app.diagram_pane_ratio().clamp(25, 100) as u32;
                     let ratio_target = ((area.width as u32 * ratio) / 100) as u16;
-                    let auto_cap =
-                        ((area.width as u32 * AUTO_DIAGRAM_WIDTH_CAP_PERCENT) / 100) as u16;
                     let needed =
                         estimate_pinned_diagram_pane_width(diagram, area.height, MIN_DIAGRAM_WIDTH);
-                    let auto_target = needed.min(max_diagram).min(auto_cap.max(MIN_DIAGRAM_WIDTH));
+                    // The configured ratio is the upper bound for the pane so the
+                    // transcript (which still renders the diagram inline) is never
+                    // crushed. Shrink below the ratio when a diagram is narrow
+                    // enough to need less, but do not grow past it: a large/tall
+                    // diagram just scales down to fit the pane instead of eating
+                    // the chat column.
                     let diagram_width = ratio_target
-                        .max(auto_target)
+                        .min(needed.max(MIN_DIAGRAM_WIDTH))
                         .max(MIN_DIAGRAM_WIDTH)
                         .min(max_diagram);
                     let chat_width = area.width.saturating_sub(diagram_width);
@@ -2438,8 +2604,11 @@ fn draw_inner(frame: &mut Frame, app: &dyn TuiState) {
                         area.width,
                         MIN_DIAGRAM_HEIGHT,
                     );
+                    // Cap the pane at the configured ratio so the transcript keeps
+                    // its rows; shrink below it when the diagram is short. A tall
+                    // diagram scales down to fit rather than swallowing the chat.
                     let diagram_height = ratio_target
-                        .max(needed.min(max_diagram))
+                        .min(needed.max(MIN_DIAGRAM_HEIGHT))
                         .max(MIN_DIAGRAM_HEIGHT)
                         .min(max_diagram);
                     let chat_height = area.height.saturating_sub(diagram_height);
@@ -2516,14 +2685,28 @@ fn draw_inner(frame: &mut Frame, app: &dyn TuiState) {
 
     // Inline swarm strip: when `swarm_spawn_mode = inline` and this session
     // manages agents, render a compact strip (agent chips + keybinding hints)
-    // directly above the status line instead of a big gallery band.
-    let swarm_strip_lines: Vec<Line<'static>> = if app.inline_swarm_gallery_active() {
+    // directly above the status line instead of a big gallery band. When the
+    // panel is focused, the strip expands into a taller viewport showing the
+    // hovered agent's live transcript tail and todo list. The strip stands
+    // down while the SwarmStatus dock widget (margin HUD) is showing the same
+    // agents, unless the panel is focused (keyboard interaction lives here).
+    // The stand-down is sticky (anchored blinks count as engaged, plus a short
+    // linger after disengagement) because each strip appearance adds a row to
+    // the bottom chrome and shoves the transcript up: reacting to raw
+    // frame-by-frame dock visibility made the strip pop in and out and the
+    // whole screen bounce (flicker).
+    let swarm_strip_lines: Vec<Line<'static>> = if app.inline_swarm_gallery_active()
+        && (app.swarm_panel_focused() || !super::info_widget::swarm_strip_stands_down_for_dock())
+    {
         let members = app.inline_swarm_members();
         if chat_area.width >= 24 {
-            let focus_key =
-                crate::tui::keybind::swarm_panel_focus_key_label();
+            let focus_key = crate::tui::keybind::swarm_panel_focus_key_label();
             // ~8 fps spinner from the wall-clock animation timer.
             let spinner_frame = (app.animation_elapsed() * 8.0) as usize;
+            // Focused budget: chips + hints + a ~14-line detail viewport, but
+            // never more than a third of the chat column so the transcript
+            // stays usable on short terminals.
+            let focused_budget = ((chat_area.height as usize) / 3).clamp(3, 16);
             super::info_widget::swarm_gallery::render_swarm_strip_lines(
                 &members,
                 app.swarm_panel_selected(),
@@ -2531,6 +2714,7 @@ fn draw_inner(frame: &mut Frame, app: &dyn TuiState) {
                 &focus_key,
                 spinner_frame,
                 chat_area.width as usize,
+                focused_budget,
             )
         } else {
             Vec::new()
@@ -2614,8 +2798,17 @@ fn draw_inner(frame: &mut Frame, app: &dyn TuiState) {
         + overscroll_height
         + donut_height; // status + queued + swarm strip + notification + inline UI + gap + input + overscroll + donut
     let available_height = chat_area.height;
+    // Overflow decisions (native scrollbar, and thus the wrap width) must not
+    // depend on the transient overscroll row. Otherwise revealing the line at
+    // the fits/overflows boundary flips the scrollbar on, re-wraps the whole
+    // transcript one column narrower, and the extra wrapped lines keep the
+    // scrollbar latched after the rebound: the screen visibly re-wraps twice
+    // per overscroll and can settle in a different state than it started
+    // (flicker). The packed/scrolling choice below still accounts for the real
+    // row so the elastic reveal remains a clean one-row slide.
+    let stable_fixed_height = fixed_height - overscroll_height;
     let overflows = |prepared: &PreparedChatFrame| {
-        (prepared.total_wrapped_lines().max(1) as u16) + fixed_height > available_height
+        (prepared.total_wrapped_lines().max(1) as u16) + stable_fixed_height > available_height
     };
 
     // Resolving native-scrollbar overflow can require wrapping the transcript at
@@ -3001,11 +3194,19 @@ fn draw_inner(frame: &mut Frame, app: &dyn TuiState) {
         widget_render_ms = Some(widget_start.elapsed().as_secs_f32() * 1000.0);
 
         // Optional visual overlay for placements
-    } else if let Some(ref mut capture) = debug_capture {
-        capture.info_widgets = Some(InfoWidgetCapture {
-            summary: build_info_widget_summary(&widget_data),
-            placements: Vec::new(),
-        });
+    } else {
+        // The widget pass did not run (idle donut takeover or no widget data),
+        // so nothing from the previous frame is on screen anymore. Clear the
+        // remembered placements/anchors so consumers of last-frame state (the
+        // swarm strip stand-down, idle fallback facts) do not keep reacting to
+        // widgets that are no longer drawn.
+        info_widget::note_widget_pass_skipped();
+        if let Some(ref mut capture) = debug_capture {
+            capture.info_widgets = Some(InfoWidgetCapture {
+                summary: build_info_widget_summary(&widget_data),
+                placements: Vec::new(),
+            });
+        }
     }
 
     if visual_debug::overlay_enabled() {

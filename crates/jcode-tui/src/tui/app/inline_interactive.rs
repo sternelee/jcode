@@ -1095,7 +1095,8 @@ impl App {
                         continue;
                     }
                     let effort_label = match *effort {
-                        "xhigh" => "max",
+                        "xhigh" => "xhigh",
+                        "max" => "max",
                         "high" => "high",
                         "medium" => "med",
                         "low" => "low",
@@ -1974,6 +1975,9 @@ impl App {
                 ResumeTarget::OpenCodeSession { session_id, .. } => {
                     format!("OpenCode {}", jcode_core::util::truncate_str(session_id, 8))
                 }
+                ResumeTarget::CursorSession { session_id, .. } => {
+                    format!("Cursor {}", jcode_core::util::truncate_str(session_id, 8))
+                }
             };
             let resolved_target = match crate::import::resolve_resume_target_to_jcode(target) {
                 Ok(target) => target,
@@ -2075,6 +2079,9 @@ impl App {
                 .to_string(),
             ResumeTarget::OpenCodeSession { session_id, .. } => {
                 format!("OpenCode {}", jcode_core::util::truncate_str(session_id, 8))
+            }
+            ResumeTarget::CursorSession { session_id, .. } => {
+                format!("Cursor {}", jcode_core::util::truncate_str(session_id, 8))
             }
         };
 
@@ -2745,8 +2752,22 @@ impl App {
                             self.inline_interactive_state = None;
                             self.upstream_provider = None;
                             self.status_detail = None;
+                            // Track the chosen method client-side so post-error
+                            // fallback picks know which credential path the
+                            // active route uses (remote sessions have no other
+                            // route bookkeeping).
+                            self.session.route_api_method =
+                                Some(route_selection.api_method.clone());
                             self.pending_route_selection = Some(route_selection);
                             self.pending_model_switch = Some(spec);
+                            // In remote mode `self.provider` is a local
+                            // stand-in, so applying the picked effort variant
+                            // to it does not reach the server. Stage it so the
+                            // remote dispatcher forwards it right after the
+                            // model switch; otherwise the server keeps its
+                            // configured default (low) and silently runs e.g.
+                            // "gpt-5.5 (high)" at low effort (issue #427).
+                            self.pending_reasoning_effort = effort.clone();
                         } else {
                             match self.provider.set_route_selection(&route_selection) {
                                 Ok(()) => {
@@ -3244,24 +3265,32 @@ mod tests {
             &unavailable_openai_oauth_route,
         ));
 
+        // Current policy (see jcode-provider-core): claude-opus-4-8 is the
+        // recommended Anthropic flagship; older Opus and OpenRouter/Copilot
+        // routes are not recommended.
         assert!(model_picker_route_is_recommended(
-            "claude-opus-4-7",
+            "claude-opus-4-8",
             &claude_oauth_route,
         ));
         assert!(!model_picker_route_is_recommended(
             "claude-opus-4-7",
+            &claude_oauth_route,
+        ));
+        assert!(!model_picker_route_is_recommended(
+            "claude-opus-4-8",
             &claude_openrouter_route,
         ));
         assert!(!model_picker_route_is_recommended(
-            "claude-opus-4-7",
+            "claude-opus-4-8",
             &copilot_route,
         ));
 
-        assert!(model_picker_route_is_recommended(
+        // DeepSeek routes are no longer in the recommended set at all.
+        assert!(!model_picker_route_is_recommended(
             "deepseek/deepseek-v4-pro",
             &openrouter_auto_route,
         ));
-        assert!(model_picker_route_is_recommended(
+        assert!(!model_picker_route_is_recommended(
             "deepseek/deepseek-v4-pro",
             &deepseek_direct_route,
         ));

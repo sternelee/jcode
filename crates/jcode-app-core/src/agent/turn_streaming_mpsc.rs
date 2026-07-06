@@ -52,8 +52,8 @@ fn reload_interrupted_tool_result(tc: &ToolCall, elapsed_secs: f64) -> (String, 
         .get("action")
         .and_then(|value| value.as_str())
         .unwrap_or_default();
-    let is_wait_like =
-        (tc.name == "bg" && action == "wait") || (tc.name == "swarm" && action == "await_members");
+    let is_wait_like = (tc.name == "bg" && action == "wait")
+        || (tc.name == "swarm" && matches!(action, "await_members" | "run_plan"));
 
     if is_wait_like {
         let input = serde_json::to_string(&tc.input).unwrap_or_else(|_| "{}".to_string());
@@ -73,29 +73,6 @@ fn reload_interrupted_tool_result(tc: &ToolCall, elapsed_secs: f64) -> (String, 
         ),
         true,
     )
-}
-
-/// Build a compact, already-truncated output tail for inline swarm gallery
-/// viewports from the worker's in-progress assistant text. Keeps only the last
-/// few lines and caps total length so the bus payload stays small.
-fn build_inline_output_tail(text: &str) -> String {
-    const MAX_LINES: usize = 6;
-    const MAX_CHARS: usize = 600;
-    let trimmed = text.trim_end_matches('\n');
-    let tail_lines: Vec<&str> = trimmed
-        .lines()
-        .rev()
-        .take(MAX_LINES)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect();
-    let mut tail = tail_lines.join("\n");
-    if tail.len() > MAX_CHARS {
-        let start = floor_char_boundary(&tail, tail.len() - MAX_CHARS);
-        tail = tail[start..].to_string();
-    }
-    tail
 }
 
 impl Agent {
@@ -309,7 +286,6 @@ impl Agent {
             // in-progress assistant text to the bus so a coordinator can render
             // a live inline gallery viewport.
             let inline_output_tap = self.inline_output_tap();
-            let inline_tap_session_id = self.session.id.clone();
             let mut inline_tap_last = Instant::now()
                 .checked_sub(std::time::Duration::from_millis(1000))
                 .unwrap_or_else(Instant::now);
@@ -485,18 +461,12 @@ impl Agent {
                             });
                         }
                         text_content.push_str(&text);
-                        if inline_output_tap
-                            && inline_tap_last.elapsed() >= std::time::Duration::from_millis(200)
-                        {
-                            inline_tap_last = Instant::now();
-                            crate::bus::Bus::global().publish(
-                                crate::bus::BusEvent::SwarmOutputTail(
-                                    crate::bus::SwarmOutputTail {
-                                        session_id: inline_tap_session_id.clone(),
-                                        tail: build_inline_output_tail(&text_content),
-                                    },
-                                ),
-                            );
+                        if inline_output_tap {
+                            self.inline_tail.set_live(&text_content);
+                            if inline_tap_last.elapsed() >= std::time::Duration::from_millis(200) {
+                                inline_tap_last = Instant::now();
+                                self.publish_inline_tail();
+                            }
                         }
                         if !text_wrapped_detected {
                             // Scan only the new delta (plus a short overlap for
@@ -707,6 +677,11 @@ impl Agent {
                             ],
                         );
                         text_content.clear();
+                        if inline_output_tap {
+                            // The provider replays from the top; drop the
+                            // discarded partial from the live tail too.
+                            self.inline_tail.clear_live();
+                        }
                         text_wrapped_detected = false;
                         tool_calls.clear();
                         current_tool = None;
@@ -731,6 +706,12 @@ impl Agent {
                         stop_reason: reason,
                     } => {
                         saw_message_end = true;
+                        if inline_output_tap {
+                            // Fold the finished text into the rolling tail so
+                            // it survives the next turn/continuation.
+                            self.inline_tail.set_live(&text_content);
+                            self.inline_tail.commit_live();
+                        }
                         // Close any still-open reasoning region (e.g. a reasoning-only
                         // step) so the client flushes its live partial line.
                         if reasoning_open {
@@ -900,6 +881,10 @@ impl Agent {
                 vec![
                     ("mode", "mpsc".to_string()),
                     ("saw_message_end", saw_message_end.to_string()),
+                    (
+                        "stop_reason",
+                        stop_reason.clone().unwrap_or_else(|| "none".to_string()),
+                    ),
                     ("input_tokens", usage_input.unwrap_or(0).to_string()),
                     ("output_tokens", usage_output.unwrap_or(0).to_string()),
                     ("cache_read", usage_cache_read.unwrap_or(0).to_string()),
@@ -1079,7 +1064,32 @@ impl Agent {
                     stop_reason.as_deref(),
                     &mut incomplete_continuations,
                 )? {
-                    NoToolCallOutcome::Break => break,
+                    NoToolCallOutcome::Break => {
+                        // Surface silent guardrail/refusal stops: the provider
+                        // ended the turn with no visible output (e.g. Anthropic
+                        // stop_reason "refusal", or a reasoning-only response).
+                        // Only when the provider actually finished the message
+                        // (saw_message_end) and the user did not cancel, so
+                        // interrupted turns never show a spurious notice.
+                        if saw_message_end && !self.is_graceful_shutdown() {
+                            if let Some(notice) = Self::provider_guardrail_notice(
+                                stop_reason.as_deref(),
+                                text_content.trim().is_empty(),
+                                !reasoning_content.trim().is_empty(),
+                            ) {
+                                logging::warn(&format!(
+                                    "PROVIDER_GUARDRAIL: turn ended with no visible output (stop_reason={:?}, reasoning_chars={})",
+                                    stop_reason,
+                                    reasoning_content.len()
+                                ));
+                                let _ = event_tx.send(ServerEvent::ProviderGuardrail {
+                                    stop_reason: stop_reason.clone(),
+                                    message: notice,
+                                });
+                            }
+                        }
+                        break;
+                    }
                     NoToolCallOutcome::ContinueWithoutEvent => continue,
                     NoToolCallOutcome::ContinueWithSoftInterrupt { injected, point } => {
                         for event in Self::build_soft_interrupt_events(injected, point, None) {
@@ -1240,6 +1250,13 @@ impl Agent {
                 }
 
                 logging::info(&format!("Tool starting: {}", tc.name));
+                if inline_output_tap {
+                    // Surface the tool execution on the coordinator's inline
+                    // viewport immediately: workers spend most wall-clock time
+                    // here, where no assistant text streams.
+                    self.inline_tail.start_tool(&tc.name, &tc.input);
+                    self.publish_inline_tail();
+                }
                 let tool_start = Instant::now();
 
                 // Spawn tool in its own task so we can detach it to background on Alt+B
@@ -1305,6 +1322,12 @@ impl Agent {
                         tc.name,
                         tool_elapsed.as_secs_f64()
                     ));
+                    if inline_output_tap {
+                        // Update the tool marker in place with duration/error.
+                        self.inline_tail
+                            .finish_tool(tool_elapsed.as_secs_f64(), result.is_err());
+                        self.publish_inline_tail();
+                    }
 
                     match result {
                         Ok(output) => {
@@ -1486,22 +1509,6 @@ impl Agent {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn inline_output_tail_keeps_last_lines_and_caps_length() {
-        let text = (0..20)
-            .map(|i| format!("line {i}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let tail = build_inline_output_tail(&text);
-        assert!(tail.lines().count() <= 6);
-        assert!(tail.ends_with("line 19"));
-        assert!(!tail.contains("line 0\n"));
-
-        let huge = "x".repeat(5000);
-        let capped = build_inline_output_tail(&huge);
-        assert!(capped.len() <= 600);
-    }
 
     fn tool_call(name: &str, input: serde_json::Value) -> ToolCall {
         ToolCall {

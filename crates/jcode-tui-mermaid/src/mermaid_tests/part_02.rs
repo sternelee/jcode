@@ -148,3 +148,82 @@ fn image_scroll_steady_state_has_no_per_frame_stats_or_rebuilds() {
         "expected one cheap fit-state reuse per visible image per frame"
     );
 }
+
+/// `evict_old_cache` used to look only at `*.png`, so inline images cached in
+/// their source container format (`{hash}_inline.jpg` etc.) were never evicted
+/// and leaked on disk forever. The recognized-extension list must cover every
+/// extension `inline_image_extension` can produce.
+#[test]
+fn cache_eviction_recognizes_every_inline_extension() {
+    for media_type in [
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+        "image/bmp",
+        "image/x-icon",
+        "application/octet-stream", // falls back to "img"
+    ] {
+        let ext = crate::inline_image::mermaid_inline_extension_for_test(media_type);
+        assert!(
+            crate::CACHE_FILE_EXTENSIONS.contains(&ext),
+            "extension {ext:?} (from {media_type}) is written to the cache dir \
+             but would never be evicted by evict_old_cache"
+        );
+    }
+}
+
+/// The bounded bookkeeping insert must clear-and-restart instead of growing
+/// past its cap, while still recording the newest entry.
+#[test]
+fn bounded_bookkeeping_insert_caps_map_growth() {
+    let mut map: std::collections::HashMap<u64, u32> = std::collections::HashMap::new();
+    for hash in 0..(crate::RENDER_BOOKKEEPING_MAX as u64 * 2) {
+        crate::bounded_bookkeeping_insert(&mut map, hash, 0);
+        assert!(
+            map.len() <= crate::RENDER_BOOKKEEPING_MAX,
+            "bookkeeping map exceeded its cap at {} entries",
+            map.len()
+        );
+    }
+    let last = crate::RENDER_BOOKKEEPING_MAX as u64 * 2 - 1;
+    assert!(map.contains_key(&last), "newest entry must survive insert");
+    // Re-inserting an existing key at the cap must not clear the map.
+    let before = map.len();
+    crate::bounded_bookkeeping_insert(&mut map, last, 1);
+    assert_eq!(map.len(), before, "existing-key update must not clear");
+}
+
+/// Inline-fit geometry must preserve aspect ratio, respect the row cap, and
+/// return a marker-parsable placeholder that survives leading padding spans
+/// (centered mode inserts one).
+#[test]
+fn inline_fit_geometry_and_marker_roundtrip() {
+    use ratatui::style::Style;
+    use ratatui::text::{Line, Span};
+
+    // Wide image at 80 cells: width-bound, well under the cap.
+    let (rows, cols) = crate::inline_fit_geometry(1600, 400, 80, crate::INLINE_DIAGRAM_MAX_ROWS);
+    assert!(rows >= crate::INLINE_FIT_MIN_ROWS);
+    assert!(rows < crate::INLINE_DIAGRAM_MAX_ROWS);
+    assert!(cols <= 80);
+
+    // Tall image: height-bound by the cap.
+    let (tall_rows, _) = crate::inline_fit_geometry(400, 40_000, 80, 20);
+    assert_eq!(tall_rows, 20);
+
+    // Placeholder lines round-trip through the parser.
+    let lines = crate::inline_image_placeholder_lines(0xabcdef, rows, cols);
+    assert_eq!(lines.len(), rows as usize);
+    let parsed = crate::parse_inline_image_placeholder(&lines[0]);
+    assert_eq!(parsed, Some((0xabcdef, rows, cols)));
+
+    // A leading whitespace span (centered-mode padding) must not break parsing.
+    let mut padded = lines[0].clone();
+    padded.spans.insert(0, Span::styled("    ", Style::default()));
+    assert_eq!(
+        crate::parse_inline_image_placeholder(&padded),
+        Some((0xabcdef, rows, cols)),
+        "padded marker line must still parse"
+    );
+}

@@ -1606,7 +1606,7 @@ pub(super) fn handle_pre_control_shortcuts(
         return true;
     }
 
-    // Inline swarm panel: Alt+W focuses/unfocuses the managed-agents panel.
+    // Inline swarm panel: Alt+N focuses/unfocuses the managed-agents panel.
     // While focused, j/k navigate, o pops out the selected agent, esc exits.
     if app.toggle_keys.swarm_panel_focus.matches(code, modifiers) {
         let focused = app.toggle_swarm_panel_focus();
@@ -1628,14 +1628,17 @@ pub(super) fn handle_pre_control_shortcuts(
         return true;
     }
     if app.open_resume_key_matches(code, modifiers) {
+        app.record_keybinding_fast(super::shortcut_hints::LearnableAction::Resume);
         app.open_session_picker();
         return true;
     }
     if let Some(direction) = app.model_switch_keys.direction_for(code, modifiers) {
+        app.record_keybinding_fast(super::shortcut_hints::LearnableAction::ModelSwitch);
         app.cycle_model(direction);
         return true;
     }
     if let Some(direction) = app.effort_switch_keys.direction_for(code, modifiers) {
+        app.record_keybinding_fast(super::shortcut_hints::LearnableAction::EffortCycle);
         app.cycle_effort(direction);
         return true;
     }
@@ -1649,6 +1652,7 @@ pub(super) fn handle_pre_control_shortcuts(
         return true;
     }
     if app.centered_toggle_keys.matches(code, modifiers) {
+        app.record_keybinding_fast(super::shortcut_hints::LearnableAction::Alignment);
         app.toggle_centered_mode();
         return true;
     }
@@ -2130,6 +2134,12 @@ impl App {
             return Ok(());
         }
 
+        // Inline hotkey feedback: when a known-but-rarely-used chord is pressed,
+        // show "you just pressed X → does Y". Placed after the modal/overlay
+        // handlers so overlay-local keys stay silent. Unknown chords are
+        // reported at the fall-through points below.
+        self.observe_known_hotkey(code, modifiers, false);
+
         if code == KeyCode::BackTab {
             self.cycle_model_favorite_hotkey();
             return Ok(());
@@ -2161,6 +2171,13 @@ impl App {
             && self.fallback_switch_key_matches(code, modifiers)
         {
             self.apply_pending_fallback_offer();
+            return Ok(());
+        }
+
+        // Accept an armed "merge the diverged update" offer: spawn a jcode agent
+        // to reconcile the branches. Shares the fallback-switch accept key.
+        if self.merge_offer_key_matches(code, modifiers) {
+            self.accept_update_merge_offer();
             return Ok(());
         }
 
@@ -2250,6 +2267,7 @@ impl App {
         // Never fall through and insert literal text for unhandled Ctrl+key chords. This stays
         // after text_input so Ctrl+Alt/AltGr symbols delivered as final printable text still work.
         if modifiers.contains(KeyModifiers::CONTROL) {
+            self.note_unrecognized_hotkey(code, modifiers, false);
             return Ok(());
         }
 
@@ -2269,6 +2287,11 @@ impl App {
             return Ok(());
         }
 
+        // A modified chord (or function key) that reached this point is not
+        // bound to anything; tell the user instead of silently swallowing it or
+        // inserting a surprise character.
+        self.note_unrecognized_hotkey(code, modifiers, false);
+
         if handle_basic_key(self, code) {
             return Ok(());
         }
@@ -2278,6 +2301,14 @@ impl App {
 
     pub(super) fn request_full_redraw(&mut self) {
         self.force_full_redraw = true;
+    }
+
+    /// Arm a full re-emit of every cell on the next frame without an
+    /// intermediate ED2 clear escape. Prefer this over `request_full_redraw`
+    /// when the real screen has not diverged from ratatui's model (e.g. chat
+    /// scrolling), so image placeholder cells do not flash blank (issue #404).
+    pub(super) fn request_full_repaint(&mut self) {
+        self.force_full_repaint = true;
     }
 
     pub(super) fn should_redraw_after_resize(&mut self) -> bool {
@@ -3033,19 +3064,8 @@ impl App {
             // directory before reporting Unknown skill so project-local skills such
             // as .jcode/skills/optimization work immediately after reload/build.
             if skill.is_none() {
-                let working_dir = self
-                    .session
-                    .working_dir
-                    .as_deref()
-                    .map(std::path::Path::new);
-                if let Ok(reloaded) = SkillRegistry::load_for_working_dir(working_dir) {
-                    skill = reloaded.get(skill_name).cloned();
-                    self.skills = std::sync::Arc::new(reloaded.clone());
-                    if let Ok(mut shared) = self.registry.skills().try_write() {
-                        *shared = reloaded;
-                    }
-                    self.invalidate_command_candidates_cache();
-                }
+                self.refresh_skills_snapshot();
+                skill = self.current_skills_snapshot().get(skill_name).cloned();
             }
 
             if let Some(skill) = skill {
@@ -3128,6 +3148,8 @@ impl App {
         // A fresh user turn supersedes any post-error fallback offer from the
         // previous turn; drop it so a stale keypress can't switch+resend.
         self.clear_pending_fallback_offer();
+        // Likewise drop any armed "merge the diverged update" offer.
+        self.clear_update_merge_offer();
 
         // Set up processing state - actual processing happens after UI redraws
         self.is_processing = true;

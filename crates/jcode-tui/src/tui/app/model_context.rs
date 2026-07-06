@@ -1,5 +1,10 @@
 use super::*;
 
+/// Reroute target offered after a provider guardrail/refusal stop. Guardrail
+/// refusals are model-side policy stops, so retrying the same model rarely
+/// helps; hopping to the strongest Anthropic route often does.
+const GUARDRAIL_REROUTE_MODEL: &str = "claude-opus-4-8";
+
 impl App {
     fn format_failover_count(value: usize) -> String {
         match value {
@@ -262,15 +267,41 @@ impl App {
     /// This is the manual counterpart to automatic cross-provider failover: it can
     /// switch *auth methods on the same provider* (e.g. from a broken API key to a
     /// working OAuth login), which the automatic path never does.
+    ///
+    /// Works in both local and remote sessions. Remote offers capture the failed
+    /// turn's payload (from the pending retry slot) so accepting the offer can
+    /// resend it after the server confirms the route switch; callers must arm the
+    /// offer *before* clearing the pending retry state.
     pub(super) fn offer_fallback_after_error(&mut self, error: &str) -> bool {
+        // Remote sessions resend through the server: capture the failed turn's
+        // payload from the pending retry slot while it is still populated.
+        let remote_resend = if self.is_remote {
+            self.rate_limit_pending_message
+                .as_ref()
+                .map(|pending| super::FallbackResendPayload {
+                    content: pending.content.clone(),
+                    images: pending.images.clone(),
+                    is_system: pending.is_system,
+                    auto_retry: pending.auto_retry,
+                    system_reminder: pending.system_reminder.clone(),
+                    raw_input: self.last_submitted_input.clone(),
+                })
+        } else {
+            None
+        };
+        self.offer_fallback_after_error_with_payload(error, remote_resend)
+    }
+
+    /// [`Self::offer_fallback_after_error`] with an explicitly captured resend
+    /// payload, for callers whose error-cleanup already cleared the pending
+    /// retry slot before the offer could be armed.
+    pub(super) fn offer_fallback_after_error_with_payload(
+        &mut self,
+        error: &str,
+        remote_resend: Option<super::FallbackResendPayload>,
+    ) -> bool {
         // Never compete with the automatic countdown switcher.
         if self.pending_provider_failover.is_some() {
-            return false;
-        }
-        // Remote sessions switch + resend through the server connection, which is
-        // not reachable from this synchronous error path; mirror the failover
-        // countdown's local-only precedent for now.
-        if self.is_remote {
             return false;
         }
         let routes = self.fallback_candidate_routes();
@@ -281,11 +312,19 @@ impl App {
         let current_provider = self.current_provider_label_for_fallback();
         let current_api_method = self.current_route_api_method().unwrap_or_default();
 
-        let Some(index) = crate::provider::pick_next_fallback_route(
+        // A credential failure (expired OAuth session, failed token refresh,
+        // broken API key) breaks every route behind that credential, so widen
+        // the exclusion set: offering a sibling model on the same broken
+        // credential would fail identically.
+        let options = crate::provider::FallbackPickOptions {
+            credential_failure: crate::provider::error_looks_like_credential_failure(error),
+        };
+        let Some(index) = crate::provider::pick_next_fallback_route_with_options(
             &routes,
             &current_model,
             &current_provider,
             &current_api_method,
+            options,
         ) else {
             return false;
         };
@@ -297,6 +336,8 @@ impl App {
         } else {
             format!("{} via {}", current_provider, from_method.display_label())
         };
+
+        let remote_resend = if self.is_remote { remote_resend } else { None };
 
         let key_label = crate::tui::keybind::fallback_switch_key_label();
         self.push_display_message(DisplayMessage::system(format!(
@@ -311,20 +352,144 @@ impl App {
             selection: crate::provider::RouteSelection::from_model_route(&route),
             target_label,
             from_label,
+            remote_resend,
         });
         true
     }
 
     pub(super) fn clear_pending_fallback_offer(&mut self) {
         self.pending_fallback_offer = None;
+        self.pending_fallback_resend = None;
+    }
+
+    /// Whether `model` already is the guardrail reroute target
+    /// (`claude-opus-4-8`), tolerating case, `[1m]` suffixes, and dated ids.
+    fn is_guardrail_reroute_model(model: &str) -> bool {
+        let canonical = jcode_provider_core::model_id::canonical(model);
+        jcode_provider_core::model_id::strip_date_suffix(&canonical) == GUARDRAIL_REROUTE_MODEL
+    }
+
+    /// Pick the best available `claude-opus-4-8` route for a guardrail
+    /// reroute: native Anthropic OAuth first, then Anthropic API key, then any
+    /// other route (aggregators) in catalog order.
+    fn pick_guardrail_reroute_route(
+        routes: &[crate::provider::ModelRoute],
+    ) -> Option<&crate::provider::ModelRoute> {
+        let mut best: Option<(&crate::provider::ModelRoute, u8)> = None;
+        for route in routes {
+            if !route.available || !Self::is_guardrail_reroute_model(&route.model) {
+                continue;
+            }
+            let tier = match crate::provider::ModelRouteApiMethod::parse(&route.api_method) {
+                crate::provider::ModelRouteApiMethod::ClaudeOAuth => 0,
+                crate::provider::ModelRouteApiMethod::AnthropicApiKey => 1,
+                _ => 2,
+            };
+            if best.is_none_or(|(_, best_tier)| tier < best_tier) {
+                best = Some((route, tier));
+            }
+        }
+        best.map(|(route, _)| route)
+    }
+
+    /// After a provider guardrail/refusal stop, arm a one-keypress offer to
+    /// reroute to the strongest Anthropic route (`claude-opus-4-8`) and resend
+    /// the refused request. Guardrail stops are model-side policy refusals:
+    /// retrying the same model usually refuses again, while a stronger model
+    /// often handles the same legitimate request. Returns true when an offer
+    /// was armed (the offer sets its own status notice).
+    pub(super) fn offer_guardrail_reroute(&mut self) -> bool {
+        // Never compete with the automatic countdown switcher or an offer
+        // already armed by the error path.
+        if self.pending_provider_failover.is_some() || self.pending_fallback_offer.is_some() {
+            return false;
+        }
+        let current_model = self.current_model_for_fallback();
+        // Already on the reroute target: nothing stronger to offer.
+        if Self::is_guardrail_reroute_model(&current_model) {
+            return false;
+        }
+        let routes = self.fallback_candidate_routes();
+        let Some(route) = Self::pick_guardrail_reroute_route(&routes).cloned() else {
+            return false;
+        };
+
+        // Capture the refused turn's payload so accepting the offer can
+        // resend it after the route switch (remote sessions resend through
+        // the server; local sessions resend via pending_turn).
+        let remote_resend = if self.is_remote {
+            self.rate_limit_pending_message
+                .as_ref()
+                .map(|pending| super::FallbackResendPayload {
+                    content: pending.content.clone(),
+                    images: pending.images.clone(),
+                    is_system: pending.is_system,
+                    auto_retry: pending.auto_retry,
+                    system_reminder: pending.system_reminder.clone(),
+                    raw_input: self.last_submitted_input.clone(),
+                })
+        } else {
+            None
+        };
+
+        let target_label = Self::describe_route(&route);
+        let current_provider = self.current_provider_label_for_fallback();
+        let current_api_method = self.current_route_api_method().unwrap_or_default();
+        let from_method = crate::provider::ModelRouteApiMethod::parse(&current_api_method);
+        let from_label = if current_api_method.is_empty() {
+            format!("{} ({})", current_model, current_provider)
+        } else {
+            format!(
+                "{} ({} via {})",
+                current_model,
+                current_provider,
+                from_method.display_label()
+            )
+        };
+
+        let key_label = crate::tui::keybind::fallback_switch_key_label();
+        self.push_display_message(DisplayMessage::system(format!(
+            "↪ Reroute available: press {} to switch to {} and resend this request.\n\nGuardrail refusals are model-side; a stronger model often handles the same request (was {}).",
+            key_label, target_label, from_label,
+        )));
+        self.set_status_notice(format!("Press {} to reroute to {}", key_label, route.model));
+        self.pending_fallback_offer = Some(super::PendingFallbackOffer {
+            selection: crate::provider::RouteSelection::from_model_route(&route),
+            target_label,
+            from_label,
+            remote_resend,
+        });
+        true
     }
 
     /// Apply the armed fallback offer: switch to the alternative route and resend
     /// the failed turn. Returns true when an offer was present and consumed.
+    ///
+    /// Local sessions switch the provider route directly and queue a local
+    /// resend. Remote sessions stage the route selection for the remote
+    /// dispatcher (which sends `SetRoute` to the server) and stage the failed
+    /// payload for resend once the server confirms the switch.
     pub(super) fn apply_pending_fallback_offer(&mut self) -> bool {
         let Some(offer) = self.pending_fallback_offer.take() else {
             return false;
         };
+
+        if self.is_remote {
+            self.upstream_provider = None;
+            self.status_detail = None;
+            // Track the method we are switching to so subsequent fallback picks
+            // know the active credential path (remote sessions have no other
+            // client-side route bookkeeping).
+            self.session.route_api_method = Some(offer.selection.api_method.clone());
+            self.pending_route_selection = Some(offer.selection);
+            self.pending_fallback_resend = offer.remote_resend;
+            self.push_display_message(DisplayMessage::system(format!(
+                "↪ Switching to {} and resending (was {}).",
+                offer.target_label, offer.from_label,
+            )));
+            self.set_status_notice(format!("Switching → {} (will retry)", offer.target_label));
+            return true;
+        }
 
         match self.provider.set_route_selection(&offer.selection) {
             Ok(()) => {
@@ -415,10 +580,8 @@ impl App {
         // stand-in. Local sessions read the real provider. This keeps the cycle
         // and the picker consistent (both expose swarm / swarm-deep).
         let efforts = if self.is_remote {
-            inferred_reasoning_efforts(
-                self.remote_provider_name.as_deref(),
-                self.remote_provider_model.as_deref(),
-            )
+            let (provider_name, provider_model) = self.remote_effort_identity();
+            inferred_reasoning_efforts(provider_name.as_deref(), provider_model.as_deref())
         } else {
             self.provider.available_efforts()
         };
@@ -428,7 +591,7 @@ impl App {
         }
 
         let current = if self.is_remote {
-            self.remote_reasoning_effort.clone()
+            self.remote_reasoning_effort_hint()
         } else {
             self.provider.reasoning_effort()
         };
@@ -1260,11 +1423,13 @@ pub(super) fn handle_model_command(app: &mut App, trimmed: &str) -> bool {
     }
 
     if trimmed == "/model" || trimmed == "/models" {
+        app.record_keybinding_slow(crate::tui::app::shortcut_hints::LearnableAction::ModelSwitch);
         app.open_model_picker();
         return true;
     }
 
     if let Some(model_name) = trimmed.strip_prefix("/model ") {
+        app.record_keybinding_slow(crate::tui::app::shortcut_hints::LearnableAction::ModelSwitch);
         let model_name = model_name.trim();
         match app.provider.set_model(model_name) {
             Ok(()) => {
@@ -1296,6 +1461,7 @@ pub(super) fn handle_model_command(app: &mut App, trimmed: &str) -> bool {
     }
 
     if trimmed == "/effort" {
+        app.record_keybinding_slow(crate::tui::app::shortcut_hints::LearnableAction::EffortCycle);
         let current = app.provider.reasoning_effort();
         let efforts = app.provider.available_efforts();
         if efforts.is_empty() {
@@ -1328,6 +1494,7 @@ pub(super) fn handle_model_command(app: &mut App, trimmed: &str) -> bool {
     }
 
     if let Some(level) = trimmed.strip_prefix("/effort ") {
+        app.record_keybinding_slow(crate::tui::app::shortcut_hints::LearnableAction::EffortCycle);
         let level = level.trim();
         match app.provider.set_reasoning_effort(level) {
             Ok(()) => {

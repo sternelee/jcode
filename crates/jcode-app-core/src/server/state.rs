@@ -231,6 +231,10 @@ pub struct SwarmMember {
     /// updated from `TodoUpdated` bus events. Surfaced on the inline swarm
     /// strip; not persisted.
     pub todo_progress: Option<(u32, u32)>,
+    /// Compact snapshot of this member's todo list (content + status), capped
+    /// at a few entries by the bus monitor. Rendered in the focused inline
+    /// swarm panel; not persisted.
+    pub todo_items: Vec<crate::protocol::SwarmTodoItem>,
 }
 
 impl SwarmMember {
@@ -286,6 +290,7 @@ impl SwarmMember {
             model: record.model,
             provider_key: record.provider_key,
             todo_progress: None,
+            todo_items: Vec::new(),
         }
     }
 }
@@ -563,12 +568,16 @@ impl SessionControlHandle {
         }
     }
 
-    pub fn request_cancel(&self) {
+    /// Fire the stop-current-turn signal. Returns the signal's fire epoch so
+    /// callers that schedule a deferred [`reset_cancel_if_epoch`](Self::reset_cancel_if_epoch)
+    /// can avoid erasing a newer cancel that fired in the meantime (issue #428).
+    pub fn request_cancel(&self) -> u64 {
         crate::logging::info(&format!(
             "SESSION_CANCEL_SIGNAL_FIRE session={}",
             self.session_id
         ));
         self.stop_current_turn_signal.fire();
+        self.stop_current_turn_signal.epoch()
     }
 
     pub fn reset_cancel(&self) {
@@ -577,6 +586,21 @@ impl SessionControlHandle {
             self.session_id
         ));
         self.stop_current_turn_signal.reset();
+    }
+
+    /// Reset the cancel signal only if no newer cancel fired since `epoch`
+    /// was captured from [`request_cancel`](Self::request_cancel). Timed
+    /// resets (used when the running turn is not owned by this connection)
+    /// must use this instead of [`reset_cancel`](Self::reset_cancel):
+    /// an unconditional deferred reset can erase a newer, not-yet-observed
+    /// cancel, making repeated Esc presses appear to be ignored (issue #428).
+    pub fn reset_cancel_if_epoch(&self, epoch: u64) -> bool {
+        let reset = self.stop_current_turn_signal.reset_if_epoch(epoch);
+        crate::logging::info(&format!(
+            "SESSION_CANCEL_SIGNAL_RESET session={} epoch={} applied={}",
+            self.session_id, epoch, reset
+        ));
+        reset
     }
 
     pub fn request_background_current_tool(&self) -> bool {

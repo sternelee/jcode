@@ -42,6 +42,9 @@ pub struct McpManager {
     owned_clients: RwLock<HashMap<String, McpClient>>,
     config: McpConfig,
     session_id: String,
+    /// Project directory used to resolve project-local MCP config. `None`
+    /// falls back to the process working directory (local/headless mode).
+    project_dir: Option<std::path::PathBuf>,
 }
 
 impl McpManager {
@@ -53,17 +56,30 @@ impl McpManager {
             owned_clients: RwLock::new(HashMap::new()),
             config: McpConfig::load(),
             session_id: "owned".to_string(),
+            project_dir: None,
         }
     }
 
     /// Create a manager backed by a shared pool (daemon mode)
     pub fn with_shared_pool(pool: Arc<SharedMcpPool>, session_id: String) -> Self {
+        Self::with_shared_pool_for_dir(pool, session_id, None)
+    }
+
+    /// Create a manager backed by a shared pool, resolving project-local MCP
+    /// config against `project_dir` instead of the server process cwd
+    /// (issue #420: remote/client sessions must use the session working dir).
+    pub fn with_shared_pool_for_dir(
+        pool: Arc<SharedMcpPool>,
+        session_id: String,
+        project_dir: Option<std::path::PathBuf>,
+    ) -> Self {
         Self {
             pool: Some(pool),
             pool_handles: RwLock::new(HashMap::new()),
             owned_clients: RwLock::new(HashMap::new()),
-            config: McpConfig::load(),
+            config: McpConfig::load_for_dir(project_dir.as_deref()),
             session_id,
+            project_dir,
         }
     }
 
@@ -75,6 +91,7 @@ impl McpManager {
             owned_clients: RwLock::new(HashMap::new()),
             config,
             session_id: "owned".to_string(),
+            project_dir: None,
         }
     }
 
@@ -93,11 +110,14 @@ impl McpManager {
         let mut total_successes = 0;
         let mut total_failures = Vec::new();
 
-        // Split servers into shared vs owned
+        // Disabled servers stay in config (so they can be connected on demand
+        // by name) but are never auto-spawned (issue #436).
+        // Split the rest into shared vs owned.
         let (shared_servers, owned_servers): (Vec<_>, Vec<_>) = self
             .config
             .servers
             .iter()
+            .filter(|(_, config)| config.is_enabled())
             .partition(|(_, config)| config.shared && self.pool.is_some());
 
         // Connect shared servers via pool
@@ -362,7 +382,7 @@ impl McpManager {
         self.disconnect_all().await;
 
         // Reload config
-        self.config = McpConfig::load();
+        self.config = McpConfig::load_for_dir(self.project_dir.as_deref());
 
         // If we have a pool, reload it too (reconnects shared servers)
         if let Some(pool) = &self.pool {
@@ -376,6 +396,12 @@ impl McpManager {
     /// Get config
     pub fn config(&self) -> &McpConfig {
         &self.config
+    }
+
+    /// Load a fresh copy of the config from disk, resolved against this
+    /// manager's project directory (or the process cwd when unset).
+    pub fn load_fresh_config(&self) -> McpConfig {
+        McpConfig::load_for_dir(self.project_dir.as_deref())
     }
 
     pub fn debug_memory_profile(&self) -> McpManagerMemoryProfile {
@@ -478,6 +504,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn connect_all_skips_disabled_servers() {
+        // Issue #436: disabled servers stay in config but are never
+        // auto-spawned. This config's command would fail to connect (and thus
+        // produce a failure entry) if it were attempted at all.
+        let mut config = McpConfig::default();
+        config.servers.insert(
+            "off".to_string(),
+            McpServerConfig {
+                command: "true".to_string(),
+                args: vec![],
+                env: HashMap::new(),
+                shared: false,
+                transport: None,
+                url: None,
+                enabled: Some(false),
+                disabled: None,
+            },
+        );
+        let manager = McpManager::with_config(config);
+        let (successes, failures) = manager.connect_all().await.expect("connect_all");
+        assert_eq!(successes, 0, "disabled server must not be spawned");
+        assert!(
+            failures.is_empty(),
+            "disabled server must not be attempted: {failures:?}"
+        );
+        assert!(manager.connected_servers().await.is_empty());
+        // Still present in config so it can be connected on demand by name.
+        assert!(manager.config().servers.contains_key("off"));
+    }
+
+    #[tokio::test]
     async fn connect_on_first_call_fails_cleanly_for_broken_server() {
         // A configured server whose command exits immediately and never speaks
         // MCP. connect-on-first-call must surface a clean, bounded tool error
@@ -494,6 +551,8 @@ mod tests {
                 shared: false,
                 transport: None,
                 url: None,
+                enabled: None,
+                disabled: None,
             },
         );
         let manager = McpManager::with_config(config);

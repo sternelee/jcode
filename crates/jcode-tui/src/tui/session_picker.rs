@@ -740,6 +740,9 @@ impl SessionPicker {
             ResumeTarget::OpenCodeSession { .. } => external_path.as_deref().and_then(|path| {
                 loading::load_opencode_preview_from_path(std::path::Path::new(path))
             }),
+            ResumeTarget::CursorSession { .. } => external_path.as_deref().and_then(|path| {
+                loading::load_cursor_preview_from_path(std::path::Path::new(path))
+            }),
         }
     }
 
@@ -1526,7 +1529,9 @@ impl SessionPicker {
                     let mut skip_mermaid_blank = false;
 
                     for line in md_lines {
-                        if super::mermaid::parse_image_placeholder(&line).is_some() {
+                        if super::mermaid::parse_image_placeholder(&line).is_some()
+                            || super::mermaid::parse_inline_image_placeholder(&line).is_some()
+                        {
                             lines.push(
                                 Line::from(vec![Span::styled(
                                     "[mermaid diagram]",

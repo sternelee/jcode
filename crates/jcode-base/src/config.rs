@@ -142,6 +142,7 @@ const CONFIG_ENV_KEYS: &[&str] = &[
     "JCODE_SCROLL_UP_FALLBACK_KEY",
     "JCODE_SCROLL_UP_KEY",
     "JCODE_SEARXNG_URL",
+    "JCODE_SHOW_AGENTGREP_OUTPUT",
     "JCODE_SHOW_DIFFS",
     "JCODE_SHOW_THINKING",
     "JCODE_SIDE_PANEL_TOGGLE_KEY",
@@ -151,6 +152,7 @@ const CONFIG_ENV_KEYS: &[&str] = &[
     "JCODE_STREAM_IDLE_TIMEOUT_SECS",
     "JCODE_SWARM_ENABLED",
     "JCODE_SWARM_MODEL",
+    "JCODE_SWARM_MAX_CONCURRENT_AGENTS",
     "JCODE_SWARM_SPAWN_MODE",
     "JCODE_TELEGRAM_BOT_TOKEN",
     "JCODE_TELEGRAM_CHAT_ID",
@@ -200,8 +202,11 @@ struct ConfigCache {
 }
 
 static CONFIG_CACHE: LazyLock<RwLock<ConfigCache>> = LazyLock::new(|| {
-    let fingerprint = ConfigCacheFingerprint::current();
     let config = leak_config(Config::load());
+    // Fingerprint after the load: applying env overrides may set env vars
+    // (e.g. copilot_premium -> JCODE_COPILOT_PREMIUM), and fingerprinting
+    // first would guarantee a spurious full reload on the next check.
+    let fingerprint = ConfigCacheFingerprint::current();
     // Seed the global context-limit cache from named provider configs on first
     // load so every codepath (TUI info widget, compaction budget, model
     // switching) sees user-configured `context_window` values from the start.
@@ -226,21 +231,7 @@ fn leak_config(config: Config) -> &'static Config {
 /// deadlock) and shares its logic with
 /// `crate::provider::populate_context_limits_from_config`.
 fn populate_context_limits_from_config_ref(cfg: &Config) {
-    let mut limits = std::collections::HashMap::new();
-    for provider_cfg in cfg.providers.values() {
-        for model in &provider_cfg.models {
-            let id = model.id.trim();
-            if id.is_empty() {
-                continue;
-            }
-            if let Some(limit) = model.context_window {
-                limits.insert(id.to_ascii_lowercase(), limit);
-            }
-        }
-    }
-    if !limits.is_empty() {
-        crate::provider::populate_context_limits(limits);
-    }
+    crate::provider::populate_context_limits_from_config_value(cfg);
 }
 
 /// Get the global config instance.
@@ -281,7 +272,11 @@ pub fn config() -> &'static Config {
                 &fingerprint,
             ));
             cache.config = leak_config(Config::load());
-            cache.fingerprint = fingerprint;
+            // Loading applies env overrides that can themselves set env vars
+            // (e.g. copilot_premium propagates config -> JCODE_COPILOT_PREMIUM).
+            // Re-fingerprint after the load so those self-inflicted env changes
+            // don't trigger a guaranteed second reload on the next check.
+            cache.fingerprint = ConfigCacheFingerprint::current();
             cache.force_reload = false;
         }
         cache.config
@@ -550,7 +545,7 @@ pub struct ToolSelection {
 }
 
 impl ToolConfig {
-    const DEFAULT_DISABLED_TOOLS: &'static [&'static str] = &["gmail", "lsp"];
+    const DEFAULT_DISABLED_TOOLS: &'static [&'static str] = &["gmail"];
 
     pub fn selection(&self) -> ToolSelection {
         let mut allowed_tools = self.base_allowed_tools();
@@ -617,8 +612,6 @@ impl ToolConfig {
                     "apply_patch",
                     "patch",
                     "agentgrep",
-                    "glob",
-                    "grep",
                     "ls",
                     "batch",
                 ]
@@ -637,8 +630,6 @@ impl ToolConfig {
                     "apply_patch",
                     "patch",
                     "agentgrep",
-                    "glob",
-                    "grep",
                     "ls",
                 ]
                 .into_iter()

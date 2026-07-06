@@ -218,6 +218,7 @@ fn attached_swarm_member(
         model: None,
         provider_key: None,
         todo_progress: None,
+        todo_items: Vec::new(),
     }
 }
 
@@ -248,6 +249,7 @@ fn persisted_headless_member(
         model: None,
         provider_key: None,
         todo_progress: None,
+        todo_items: Vec::new(),
     }
 }
 

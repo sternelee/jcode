@@ -60,11 +60,18 @@ const REGISTERED_COMMANDS: &[RegisteredCommand] = &[
     RegisteredCommand::public("/btw", "Ask a side question in the side panel"),
     RegisteredCommand::public("/ssh", "Connect to a remote machine using system SSH"),
     RegisteredCommand::public("/git", "Show git status for the session working directory"),
+    RegisteredCommand::public("/hotkeys", "List hotkeys with your personal usage"),
+    RegisteredCommand::hidden("/keys", "Alias for /hotkeys"),
     RegisteredCommand::public("/commit", "Make logical commits from current changes"),
     RegisteredCommand::public(
         "/commit-push",
         "Make logical commits from current changes, then push",
     ),
+    RegisteredCommand::public(
+        "/cut-release",
+        "Commit + push current changes, bump version, and cut a release",
+    ),
+    RegisteredCommand::hidden("/commit-push-release", "Alias for /cut-release"),
     RegisteredCommand::public("/transcript", "Open the current session transcript file"),
     RegisteredCommand::public("/subagent-model", "Show/change subagent model policy"),
     RegisteredCommand::public("/autoreview", "Show/toggle automatic end-of-turn review"),
@@ -90,7 +97,7 @@ const REGISTERED_COMMANDS: &[RegisteredCommand] = &[
     RegisteredCommand::public("/clear", "Clear conversation history"),
     RegisteredCommand::public("/rewind", "Rewind conversation to previous message"),
     RegisteredCommand::public("/poke", "Poke model to resume with incomplete todos"),
-    RegisteredCommand::public("/plan", "Create a plan-only response in the side panel"),
+    RegisteredCommand::public("/plan", "Create a plan-only response as a plan card"),
     RegisteredCommand::public("/improve", "Autonomously improve the repository"),
     RegisteredCommand::public("/refactor", "Run a safe refactor loop"),
     RegisteredCommand::public("/compact", "Compact context"),
@@ -153,8 +160,8 @@ const REGISTERED_COMMANDS: &[RegisteredCommand] = &[
     RegisteredCommand::public("/save", "Bookmark session for easy access"),
     RegisteredCommand::public("/unsave", "Remove bookmark from session"),
     RegisteredCommand::public("/rename", "Rename current session"),
-    RegisteredCommand::public("/split", "Split session into a new window"),
-    RegisteredCommand::public("/fork", "Arm next prompt to launch in a new forked session"),
+    RegisteredCommand::public("/fork", "Fork session into a new window (optional prompt)"),
+    RegisteredCommand::hidden("/split", "Alias for /fork"),
     RegisteredCommand::public("/transfer", "Compact context into a fresh handoff session"),
     RegisteredCommand::public("/workspace", "Niri-style session workspace"),
     RegisteredCommand::public("/quit", "Exit jcode"),
@@ -677,7 +684,7 @@ impl App {
         }
 
         if prefix.starts_with("/effort ") {
-            let efforts = ["none", "low", "medium", "high", "xhigh"];
+            let efforts = ["none", "low", "medium", "high", "xhigh", "max"];
             return self.rank_suggestions(
                 input,
                 efforts
@@ -1044,7 +1051,7 @@ impl App {
 
         if prefix.starts_with("/rewind ") {
             let arg = prefix.strip_prefix("/rewind ").unwrap_or_default().trim();
-            let visible_count = self.session.visible_conversation_message_count();
+            let visible_count = self.session.rewind_target_count();
 
             // Rewind targets are 1-based visible conversation message numbers.
             // Do not fuzzy-rank numeric arguments: `/rewind 10` should never be
@@ -1427,6 +1434,7 @@ impl App {
             "/help"
                 | "/?"
                 | "/btw"
+                | "/fork"
                 | "/git"
                 | "/transcript"
                 | "/observe"

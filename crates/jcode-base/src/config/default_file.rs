@@ -69,7 +69,7 @@ info_widget_toggle = "alt+i"
 # Focus the inline swarm panel (list of agents this session manages). While
 # focused: j/k select, o pops the selected agent out to a new terminal, esc
 # exits. Active only with agents.swarm_spawn_mode = "inline".
-swarm_panel_focus = "alt+w"
+swarm_panel_focus = "alt+n"
 
 # Spawn a fresh jcode session in a new terminal window, reusing the current
 # session's working directory. Companion to the system-wide launch hotkeys.
@@ -163,6 +163,11 @@ prompt_entry_animation = true
 # results directly in the chat.
 # show_agentgrep_output = false
 
+# Occasionally surface a "learn this keybinding" nudge (in a distinct color)
+# when you keep doing something the slow way (e.g. /resume) instead of using
+# its configured shortcut. Set false to disable all such hints (default: true).
+# keybinding_hints = true
+
 # Disable specific animation variants by name.
 # Examples: ["donut"] or ["donut", "orbit_rings"]
 # Legacy aliases such as "three_rings" and "gyroscope" are still accepted.
@@ -232,10 +237,10 @@ bing_market = "en-US"
 profile = "full"
 # Explicit allow-list. When non-empty, only these tools are exposed.
 # enabled = ["bash", "read", "write", "apply_patch", "agentgrep", "ls"]
-# Privacy-sensitive or stub tools such as gmail and lsp are disabled by default.
+# Privacy-sensitive tools such as gmail are disabled by default.
 # To expose every tool including default-disabled tools, use: enabled = ["*"]
 # Hide selected tools after applying the profile/allow-list.
-# disabled = ["browser", "gmail", "lsp", "swarm"]
+# disabled = ["browser", "gmail", "swarm"]
 # Disable all built-in tools unless enabled is set.
 disable_base_tools = false
 
@@ -263,8 +268,9 @@ tool_profile = "acp"
 # default_provider = "copilot"
 # OpenAI reasoning effort (none|low|medium|high|xhigh)
 openai_reasoning_effort = "low"
-# Anthropic reasoning effort for Claude reasoning models (none|low|medium|high; xhigh on Opus 4.7; max aliases to the strongest supported level)
-# Defaults to the strongest supported level for Claude Opus models (xhigh on Opus 4.7/4.8, high on older Opus) when unset; other models keep their own default.
+# Anthropic reasoning effort for Claude reasoning models (none|low|medium|high|xhigh|max)
+# xhigh needs Opus 4.7/4.8 or Fable 5; max needs an output_config effort model (Opus/Sonnet 4.6+).
+# Defaults to xhigh for Claude Opus 4.7/4.8 (high on older Opus) when unset; other models keep their own default.
 # anthropic_reasoning_effort = "medium"
 # OpenAI transport mode (auto|websocket|https)
 # openai_transport = "auto"
@@ -288,7 +294,9 @@ cross_provider_failover = "countdown"
 # Max seconds to wait for streaming data before timing out a request with no
 # data received. Raise this for slow reasoning models (e.g. DeepSeek) that think
 # silently for minutes before emitting tokens. Default: 180.
-# Also overridable per-launch via JCODE_STREAM_IDLE_TIMEOUT_SECS.
+# Applies to every streaming provider path (OpenAI native, Anthropic, Copilot,
+# OpenRouter/OpenAI-compatible). The TUI's client-side stall guard also extends
+# to match this value. Also overridable per-launch via JCODE_STREAM_IDLE_TIMEOUT_SECS.
 # stream_idle_timeout_secs = 600
 
 [agents]
@@ -302,13 +310,21 @@ cross_provider_failover = "countdown"
 # swarm_model = "inherit"
 #
 # How swarm-created agents are spawned:
-#   "visible"  - open a headed terminal window (default; alias: "headed")
+#   "inline"   - in-process (no window), shown as a live gallery viewport in the coordinator (default)
+#   "visible"  - open a headed terminal window (alias: "headed")
 #   "headless" - create the worker in-process with no terminal window
-#   "inline"   - in-process (no window), shown as a live gallery viewport in the coordinator
 #   "auto"     - try visible first, fall back to headless if no window can open
 # The swarm tool's per-call `spawn_mode` overrides this when set.
 # Env override: JCODE_SWARM_SPAWN_MODE
-swarm_spawn_mode = "visible"
+swarm_spawn_mode = "inline"
+#
+# Max swarm worker agents run_plan keeps active AT ONCE in a deep-mode task graph.
+# This bounds parallelism, not the total agents spawned over the run (that is the
+# per-swarm member cap of 1000). Deep mode is meant to fan out wide, so the default
+# is high (32). 0 = no extra cap: dispatch the whole ready set each loop, bounded
+# only by the member cap. Light mode uses a small fixed fan-out and ignores this.
+# Env override: JCODE_SWARM_MAX_CONCURRENT_AGENTS
+swarm_max_concurrent_agents = 32
 #
 # Max percentage (1-90) of the chat height the inline swarm gallery band may use.
 # Unset = built-in default (40%). Lower values keep more transcript visible; set

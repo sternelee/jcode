@@ -333,6 +333,7 @@ fn handle_reload_queues_signal_for_canary_session() -> Result<()> {
                     model: None,
                     provider_key: None,
                     todo_progress: None,
+                    todo_items: Vec::new(),
                 },
             ),
             (
@@ -357,6 +358,7 @@ fn handle_reload_queues_signal_for_canary_session() -> Result<()> {
                     model: None,
                     provider_key: None,
                     todo_progress: None,
+                    todo_items: Vec::new(),
                 },
             ),
         ])));

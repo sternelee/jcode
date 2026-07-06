@@ -64,6 +64,7 @@ mod dictation;
 mod event_wrappers;
 mod handterm_native_scroll;
 pub(crate) mod helpers;
+mod hotkey_feedback;
 mod inline_interactive;
 mod input;
 mod input_help;
@@ -319,6 +320,44 @@ struct PendingFallbackOffer {
     target_label: String,
     /// Short label for what just failed (e.g. "Claude via API key").
     from_label: String,
+    /// Remote sessions only: the failed turn's payload, captured before error
+    /// cleanup clears it, so accepting the offer can resend it on the new
+    /// route. Local sessions resend via `pending_turn` instead.
+    remote_resend: Option<FallbackResendPayload>,
+}
+
+/// The failed remote turn's payload, held by a [`PendingFallbackOffer`] so a
+/// one-keypress accept can resend it after the route switch completes.
+#[derive(Debug, Clone)]
+struct FallbackResendPayload {
+    /// Expanded message content that was sent to the server.
+    content: String,
+    /// Inline image attachments that accompanied the message.
+    images: Vec<(String, String)>,
+    /// Whether the failed send was a system continuation (poke/reminder).
+    is_system: bool,
+    /// Whether the failed send was flagged for automatic retries.
+    auto_retry: bool,
+    /// Hidden system reminder that accompanied the message, if any.
+    system_reminder: Option<String>,
+    /// The raw prompt the user typed, when known. Used to de-duplicate the
+    /// input box (the error path restores the prompt there) on accept.
+    raw_input: Option<String>,
+}
+
+/// An interactive "let a jcode agent merge the diverged update for you" offer.
+///
+/// Surfaced when an update fails because the local checkout and upstream have
+/// diverged (a fast-forward pull is impossible). Accepting it spawns a fresh
+/// jcode session, pre-loaded with a prompt to reconcile the branches, instead of
+/// silently giving up and continuing on the old version.
+#[derive(Debug, Clone)]
+struct PendingMergeOffer {
+    /// Repository whose local/upstream branches diverged, if known. Used as the
+    /// spawned agent's working directory and named in its prompt.
+    repo_dir: Option<std::path::PathBuf>,
+    /// The raw update-failure detail, shown to the user and the merge agent.
+    detail: String,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -781,6 +820,13 @@ pub struct App {
     // Interactive "switch to next best model/method and resend" offer surfaced
     // after a provider turn error; accepted with a keypress.
     pending_fallback_offer: Option<PendingFallbackOffer>,
+    // Remote sessions: the failed turn payload staged by an accepted fallback
+    // offer, dispatched once the server confirms the route switch.
+    pending_fallback_resend: Option<FallbackResendPayload>,
+    // Interactive "spawn a jcode agent to merge the diverged update" offer shown
+    // after an update fails because the local checkout and upstream diverged.
+    // Accepted with the same key as the fallback offer.
+    pending_merge_offer: Option<PendingMergeOffer>,
     // Local session file write to flush once the first "sending" frame is visible.
     session_save_pending: bool,
     // Tool calls detected during streaming (shown in real-time with details)
@@ -1130,7 +1176,7 @@ pub struct App {
     // stubs (false). Toggled with Alt+Shift+I; persisted in UI preferences so
     // it survives restarts and session resumes.
     inline_images_visible: bool,
-    // Per-image inline expand level (Fit/Large/Huge), keyed by image id. Cycled
+    // Per-image inline expand level (Fit/Large), keyed by image id. Cycled
     // by clicking the `expand` badge under an image. Absent ids are `Fit`.
     // `expanded_images_version` bumps on every change so the body/full prep
     // caches (which embed anchored images) invalidate exactly like the
@@ -1158,6 +1204,12 @@ pub struct App {
     // Pending model switch from picker (for remote mode async processing)
     pending_model_switch: Option<String>,
     pending_route_selection: Option<crate::provider::RouteSelection>,
+    // Reasoning-effort variant chosen together with a model in the picker
+    // (e.g. "gpt-5.5 (high)"), staged for remote mode alongside the model
+    // switch. Without forwarding this to the server, it keeps its configured
+    // default effort (low by default) and silently runs the newly selected
+    // model at the wrong effort (issue #427).
+    pending_reasoning_effort: Option<String>,
     // Remote SetModel has been sent but ModelChanged has not arrived yet. User
     // prompts submitted in this window are held so the first request cannot race
     // the model switch and use stale provider/model state.
@@ -1211,6 +1263,27 @@ pub struct App {
     input_undo_stack: Vec<(String, usize)>,
     // Short-lived notice for status feedback (model switch, cycle diff mode, etc.)
     status_notice: Option<(String, Instant)>,
+    // Distinct learned-keybinding nudge ("you keep doing X the slow way, press
+    // <key>"). Rendered in its own pop-out color, separate from status_notice,
+    // and shown at most once per session.
+    learn_hint: Option<(String, Instant)>,
+    // Whether a learned-keybinding nudge has already been surfaced this session.
+    learn_hint_shown_this_session: bool,
+    // Inline hotkey feedback: "you just pressed X → does Y" for rarely-used
+    // known chords, or "X isn't bound · nearest: ..." for unknown chords.
+    // Rendered in the same pop-out slot as learn_hint.
+    hotkey_feedback: Option<(String, Instant)>,
+    // Lazily-loaded persisted per-action hotkey usage counters.
+    hotkey_usage: Option<hotkey_feedback::HotkeyUsageState>,
+    // Per-chord counts of unknown-hotkey notices shown this session.
+    unknown_hotkey_seen: std::collections::HashMap<String, u32>,
+    // When the last unknown-hotkey notice was shown, for rate limiting.
+    last_unknown_hotkey_notice: Option<Instant>,
+    // Persistent startup notice card (e.g. launch-hotkeys / welcome tip) shown on
+    // the idle screen of a fresh session. Stashed so it can be re-applied after
+    // the remote History bootstrap clears the transcript for a brand-new session,
+    // which otherwise makes the card flash for a moment and disappear.
+    pending_startup_notice: Option<(String, String)>,
     // Experimental feature warnings already shown in this session.
     experimental_feature_warnings_seen: HashSet<String>,
     // Active first-use experimental warning for the currently running tool.
@@ -1297,6 +1370,12 @@ pub struct App {
     /// One-shot flag: force the next paint to clear the terminal first.
     /// Needed after native terminal scrolls mutate the screen outside ratatui's diff model.
     force_full_redraw: bool,
+    /// One-shot flag: force the next paint to re-emit every cell by invalidating
+    /// ratatui's previous buffer, without an intermediate ED2 clear escape.
+    /// Chat scrolling uses this to clear wide-grapheme ghosts (ratatui #2357)
+    /// without the clear-then-repaint flicker around kitty image placeholders
+    /// (issue #404).
+    force_full_repaint: bool,
     /// Last mouse scroll event timestamp (for trackpad velocity detection)
     last_mouse_scroll: Option<Instant>,
     /// Active smooth-scroll target for queued mouse-wheel motion.

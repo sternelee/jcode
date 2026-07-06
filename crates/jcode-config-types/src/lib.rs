@@ -521,6 +521,20 @@ pub struct AgentsConfig {
     /// `0` disables the bound (wait indefinitely). Default 600 (10 min).
     #[serde(default = "default_subagent_timeout_secs")]
     pub subagent_timeout_secs: u64,
+    /// Maximum number of swarm worker agents `run_plan` keeps running *at once*
+    /// in a **deep**-mode task graph. This bounds parallelism, not the total
+    /// number of agents spawned over the run (that is `MAX_SWARM_MEMBERS`). Deep
+    /// mode is meant to fan out wide, so the default is high (32); the real
+    /// ceiling is still the per-swarm member cap. Light mode uses a small fixed
+    /// fan-out instead. `0` means "no extra cap": run_plan dispatches the entire
+    /// ready set every loop, bounded only by the member cap.
+    /// Env override: `JCODE_SWARM_MAX_CONCURRENT_AGENTS`.
+    #[serde(default = "default_swarm_max_concurrent_agents")]
+    pub swarm_max_concurrent_agents: usize,
+}
+
+fn default_swarm_max_concurrent_agents() -> usize {
+    32
 }
 
 fn default_subagent_timeout_secs() -> u64 {
@@ -563,6 +577,7 @@ impl Default for AgentsConfig {
             memory_embedding_base_url: None,
             memory_embedding_dim: None,
             subagent_timeout_secs: default_subagent_timeout_secs(),
+            swarm_max_concurrent_agents: default_swarm_max_concurrent_agents(),
         }
     }
 }
@@ -571,13 +586,13 @@ impl Default for AgentsConfig {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SwarmSpawnMode {
-    /// Open a visible/headed terminal window. This preserves historical behavior.
-    #[default]
+    /// Open a visible/headed terminal window. This was the historical default.
     Visible,
     /// Create the worker in-process without opening a terminal window.
     Headless,
     /// Like headless (no terminal window), but the coordinator renders a live
     /// inline gallery viewport of each worker's streaming output.
+    #[default]
     Inline,
     /// Try visible first and fall back to headless if a window cannot be opened.
     Auto,
@@ -783,7 +798,7 @@ pub struct KeybindingsConfig {
     /// Toggle the info widget (default: "alt+i")
     pub info_widget_toggle: String,
     /// Focus/unfocus the inline swarm panel for keyboard navigation (default:
-    /// "alt+w"). Active only when `agents.swarm_spawn_mode = "inline"` and the
+    /// "alt+n"). Active only when `agents.swarm_spawn_mode = "inline"` and the
     /// session manages swarm agents.
     pub swarm_panel_focus: String,
     /// Spawn a fresh jcode session in a new terminal window (default: unbound).
@@ -832,7 +847,7 @@ impl Default for KeybindingsConfig {
             typing_scroll_lock_toggle: get("typing_scroll_lock_toggle", "alt+s"),
             diff_mode_cycle: get("diff_mode_cycle", "alt+g"),
             info_widget_toggle: get("info_widget_toggle", "alt+i"),
-            swarm_panel_focus: get("swarm_panel_focus", "alt+w"),
+            swarm_panel_focus: get("swarm_panel_focus", "alt+n"),
             new_terminal: get("new_terminal", ""),
             open_resume: get(
                 "open_resume",
@@ -867,6 +882,10 @@ impl Default for NativeScrollbarConfig {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 /// Display/UI configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -893,7 +912,8 @@ pub struct DisplayConfig {
     #[serde(default)]
     reasoning_display: Option<ReasoningDisplayMode>,
     /// How to display mermaid diagrams (none/margin/pinned, default: none).
-    /// Mermaid rendering is temporarily disabled for users unless JCODE_ENABLE_MERMAID=1.
+    /// `none` still renders diagrams inline in the transcript via the inline
+    /// image pipeline; `margin`/`pinned` add dedicated widget placements.
     pub diagram_mode: DiagramDisplayMode,
     /// Markdown block spacing style (compact/document, default: compact)
     pub markdown_spacing: MarkdownSpacingMode,
@@ -926,6 +946,11 @@ pub struct DisplayConfig {
     pub show_agentgrep_output: bool,
     /// Native terminal scrollbar configuration for scrollable panes
     pub native_scrollbars: NativeScrollbarConfig,
+    /// Surface occasional "learn this keybinding" nudges when the user keeps
+    /// performing an action the slow way (slash command) instead of using its
+    /// configured shortcut (default: true). Set false to disable all such hints.
+    #[serde(default = "default_true")]
+    pub keybinding_hints: bool,
 }
 
 impl Default for DisplayConfig {
@@ -955,6 +980,7 @@ impl Default for DisplayConfig {
             copy_badge_alt_label: String::new(),
             show_agentgrep_output: false,
             native_scrollbars: NativeScrollbarConfig::default(),
+            keybinding_hints: true,
         }
     }
 }
